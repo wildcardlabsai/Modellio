@@ -21,7 +21,7 @@ npm run dev          # http://localhost:5173
 | `npm run build` | Type-check and build for production (`dist/`) |
 | `npm run typecheck` | TypeScript only |
 | `npm test` | Unit tests (geometry, transforms, store, undo/redo) |
-| `npm run e2e` | Real-browser workflow tests (Phase 1 + 2). Start `npm run dev` first. Needs Playwright + Chromium. |
+| `npm run e2e` | Real-browser workflow tests (Phases 1–3). Start `npm run dev` first. Needs Playwright + Chromium. |
 
 ## Phase 1 status: foundation ✅
 
@@ -55,13 +55,30 @@ npm run dev          # http://localhost:5173
 * **Workplane panel:** plate size with common printer presets, grid toggle, and snap steps.
 * Undo/redo covers all of the above.
 
+## Phase 3 status: advanced modelling ✅
+
+* **Real Boolean operations** with the Manifold kernel (WASM), whose output is guaranteed watertight:
+  **Union**, **Subtract** and **Intersect** from the Combine menu, the toolbar or the multi-selection inspector.
+* **Holes:** press <kbd>H</kbd> or use the Solid/Hole switch. Holes render as translucent grey cutters and are cut
+  from the solids when combined.
+* **Combinations stay editable.** Select any part in the Objects tree, edit it, and the result updates
+  live. You can switch a group between Assembly, Union and Intersect at any time, and ungroup gives the parts back.
+  The inspector reports a watertight result with its triangle count, or explains why a combination failed
+  (for example, an empty result).
+* **Flatten to mesh** bakes a combination into one fixed solid. **Separate parts** splits a mesh into its
+  disconnected pieces, in place.
+* **3D text:** six bundled fonts (Inter, Inter Bold, Roboto Slab, Bebas Neue, Pacifico, Space Mono; all OFL),
+  multi-line, with editable content, font and size. Text is built by the kernel, so it is always a valid solid,
+  even in script fonts with overlapping strokes. Make text a hole to engrave it.
+* **New shapes:** star, capsule and paraboloid, plus a **fillet radius** (rounded edges) on the box.
+* **Measure tool** (<kbd>M</kbd>): click two points to read the distance and ΔX/ΔY/ΔZ. Points snap to corners.
+
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
 ## Roadmap
 
 | Phase | Scope |
 | --- | --- |
-| 3 – Advanced modelling | Boolean union/subtract/intersect (Manifold), holes, 3D text, more shapes |
 | 4 – File handling | STL/OBJ import and export, local projects (IndexedDB) |
 | 5 – Refinement | Performance, accessibility, onboarding, polish |
 
@@ -69,4 +86,4 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the technical design.
 
 ## Tech stack
 
-React 19 · TypeScript · Vite · Three.js · React Three Fiber · drei · Zustand + Immer · Tailwind CSS v4 · Lucide · Vitest · Playwright
+React 19 · TypeScript · Vite · Three.js · React Three Fiber · drei · Manifold (WASM) · opentype.js · Zustand + Immer · Tailwind CSS v4 · Lucide · Vitest · Playwright

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { SHAPES, buildShapeGeometry } from '@/cad/shapeRegistry';
+import { LIBRARY_SHAPES, buildShapeGeometry } from '@/cad/shapeRegistry';
+import type { ParametricType } from '@/cad/geometry/primitives';
 import type { PrimitiveType } from '@/types/document';
 
 let cache: Partial<Record<PrimitiveType, string>> | null = null;
@@ -31,8 +32,8 @@ export function renderShapeThumbnails(px = 128): Partial<Record<PrimitiveType, s
     const camera = new THREE.PerspectiveCamera(30, 1, 1, 1000);
     camera.up.set(0, 0, 1);
 
-    for (const def of SHAPES) {
-      const geometry = buildShapeGeometry(def.type, def.defaultSize, def.defaultParams);
+    for (const def of LIBRARY_SHAPES) {
+      const geometry = buildShapeGeometry(def.type as ParametricType, def.defaultSize, def.defaultParams);
       const material = new THREE.MeshStandardMaterial({ color: def.defaultColor, roughness: 0.35, metalness: 0.05 });
       const mesh = new THREE.Mesh(geometry, material);
       scene.add(mesh);

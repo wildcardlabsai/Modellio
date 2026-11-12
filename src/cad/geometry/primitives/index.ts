@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { PrimitiveType, ShapeParams, Vec3 } from '@/types/document';
 import { clamp } from '@/utils/math';
 import { fitToSize, flipGeometry, mergeParts, polyhedron, yUpToZUp } from '../geometryUtils';
@@ -10,10 +11,19 @@ import { fitToSize, flipGeometry, mergeParts, polyhedron, yUpToZUp } from '../ge
  */
 type Builder = (size: Vec3, params: ShapeParams) => THREE.BufferGeometry;
 
+/** Shapes built purely from size + numeric params (text and mesh need more context). */
+export type ParametricType = Exclude<PrimitiveType, 'text' | 'mesh'>;
+
 const seg = (params: ShapeParams, fallback = 48) =>
   Math.round(clamp(params.segments ?? fallback, 3, 256));
 
-const box: Builder = (size) => fitToSize(new THREE.BoxGeometry(1, 1, 1), size);
+/** Box with an optional fillet radius (mm) on every edge. The radius is absolute, never stretched. */
+const box: Builder = (size, p) => {
+  const r = clamp(p.radius ?? 0, 0, Math.min(...size) / 2 - 1e-3);
+  if (r <= 1e-3) return fitToSize(new THREE.BoxGeometry(1, 1, 1), size);
+  const segs = Math.round(clamp(p.filletSegments ?? 4, 1, 16));
+  return fitToSize(new RoundedBoxGeometry(size[0], size[1], size[2], segs, r), size);
+};
 
 const sphere: Builder = (size, p) => {
   const s = seg(p, 48);
@@ -139,7 +149,45 @@ const polygon: Builder = (size, p) => {
   return fitToSize(geo, size);
 };
 
-export const PRIMITIVE_BUILDERS: Record<PrimitiveType, Builder> = {
+/** Extruded star with `points` tips; `innerRatio` = inner / outer radius. */
+const star: Builder = (size, p) => {
+  const points = Math.round(clamp(p.points ?? 5, 3, 32));
+  const inner = clamp(p.innerRatio ?? 0.5, 0.05, 0.95);
+  const shape = new THREE.Shape();
+  for (let i = 0; i < points * 2; i++) {
+    const a = Math.PI / 2 + (i / (points * 2)) * Math.PI * 2;
+    const r = i % 2 === 0 ? 0.5 : 0.5 * inner;
+    if (i === 0) shape.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else shape.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  shape.closePath();
+  return fitToSize(new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false, steps: 1 }), size);
+};
+
+/** Capsule (cylinder with hemispherical ends) along Z. */
+const capsule: Builder = (size, p) => {
+  const s = seg(p, 48);
+  const r = 0.5;
+  const h = Math.max(0.01, (size[2] / Math.max(size[0], size[1])) - 1); // keep the ends round
+  return fitToSize(yUpToZUp(new THREE.CapsuleGeometry(r, h, Math.max(4, Math.round(s / 4)), s)), size);
+};
+
+/** Paraboloid dome: r(z) ∝ √(1 − z), flat base. */
+const paraboloid: Builder = (size, p) => {
+  const s = seg(p, 48);
+  const rows = Math.max(8, Math.round(s / 3));
+  const profile: THREE.Vector2[] = [];
+  for (let i = 0; i <= rows; i++) {
+    const t = i / rows; // 0 = apex, 1 = base rim
+    profile.push(new THREE.Vector2(0.5 * Math.sqrt(t), 1 - t));
+  }
+  profile.reverse(); // rim → apex gives outward-facing lathe triangles
+  const dome = yUpToZUp(new THREE.LatheGeometry(profile, s));
+  const base = flipGeometry(new THREE.CircleGeometry(0.5, s));
+  return fitToSize(mergeParts([dome, base]), size);
+};
+
+export const PRIMITIVE_BUILDERS: Record<ParametricType, Builder> = {
   box,
   sphere,
   cylinder,
@@ -151,4 +199,7 @@ export const PRIMITIVE_BUILDERS: Record<PrimitiveType, Builder> = {
   tube,
   halfSphere,
   polygon,
+  star,
+  capsule,
+  paraboloid,
 };

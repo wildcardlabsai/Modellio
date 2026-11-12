@@ -15,6 +15,8 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Select all', `${MOD} A`],
       ['Deselect / cancel drag', 'Esc'],
       ['Drop to workplane', 'D'],
+      ['Toggle hole / solid', 'H'],
+      ['Measure tool', 'M'],
     ],
   },
   {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Undo2, Redo2, Copy, Trash2, Group, Ungroup, AlignHorizontalJustifyCenter, FlipHorizontal2, Combine, Upload, Download, Pencil, ChevronDown } from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
 import { AlignMenu, MirrorMenu } from './AlignMenu';
+import { CombineMenu } from './CombineMenu';
 import { useEditor } from '@/store/editorStore';
 import { IconButton } from '@/components/ui/IconButton';
 import { MOD } from '@/utils/platform';
@@ -83,10 +84,17 @@ export function Toolbar() {
       >
         {(close) => <MirrorMenu onDone={close} />}
       </Popover>
-      <IconButton label="Combine (Boolean) — Phase 3" disabled>
-        <Combine size={17} />
-        <span className="hidden xl:inline">Combine</span>
-      </IconButton>
+      <Popover
+        trigger={({ open, toggle }) => (
+          <IconButton label="Combine (Boolean)" active={open} disabled={!hasSelection} onClick={toggle}>
+            <Combine size={17} />
+            <span className="hidden xl:inline">Combine</span>
+            <ChevronDown size={13} />
+          </IconButton>
+        )}
+      >
+        {(close) => <CombineMenu onDone={close} />}
+      </Popover>
       <div className="flex-1" />
       <IconButton label="Import STL/OBJ — Phase 4" disabled>
         <Upload size={17} />

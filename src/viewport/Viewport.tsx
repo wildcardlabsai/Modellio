@@ -13,6 +13,7 @@ import { ViewCube } from './ViewCube';
 import { VIEW_DIRECTIONS, gizmoRecentlyUsed, screenToWorkplane } from './viewportBridge';
 import { snapTo } from '@/utils/math';
 import { ViewportOverlay } from './ViewportOverlay';
+import { MeasureTool } from './MeasureTool';
 
 export const SHAPE_DRAG_MIME = 'application/x-modellio-shape';
 
@@ -78,7 +79,12 @@ export function Viewport() {
     if (!type) return;
     e.preventDefault();
     const hit = screenToWorkplane(e.clientX, e.clientY);
-    const { snap, addShape } = useEditor.getState();
+    const { snap, addShape, addText } = useEditor.getState();
+    if (type.startsWith('text:')) {
+      const step = snap.enabled ? snap.translate : 0;
+      void addText(type.slice(5) || 'Text', hit ? [snapTo(hit.x, step), snapTo(hit.y, step)] : undefined);
+      return;
+    }
     if (!hit) {
       addShape(type);
       return;
@@ -103,7 +109,7 @@ export function Viewport() {
         gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping }}
         camera={{ position: [home.x, home.y, home.z], fov: 40, near: 0.5, far: 20000, up: [0, 0, 1] }}
         onPointerMissed={(e) => {
-          if (e.type !== 'click' || gizmoRecentlyUsed()) return;
+          if (e.type !== 'click' || gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
           if (!(e.shiftKey || e.ctrlKey || e.metaKey)) useEditor.getState().clearSelection();
         }}
       >
@@ -117,6 +123,7 @@ export function Viewport() {
         <TransformGizmo />
         <CameraController />
         <ViewCube />
+        <MeasureTool />
       </Canvas>
       <ViewportOverlay />
       {dragOver && (

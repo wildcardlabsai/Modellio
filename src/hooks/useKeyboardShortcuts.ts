@@ -74,6 +74,7 @@ export function useKeyboardShortcuts() {
           return;
         case 'Escape':
           if (s.transaction) s.cancelTransaction();
+          else if (s.tool === 'measure') s.setTool('select');
           else s.clearSelection();
           return;
         case 'ArrowLeft':
@@ -107,6 +108,17 @@ export function useKeyboardShortcuts() {
           break;
         case 'd':
           if (s.selection.length) s.dropToWorkplane(s.selection);
+          break;
+        case 'h': {
+          // Toggle hole/solid for the selection (all holes → solid, otherwise → hole).
+          const shapes = s.selection.map((id) => s.doc.objects[id]);
+          if (!shapes.length) break;
+          const allHoles = shapes.every((o) => o?.kind === 'shape' && o.isHole);
+          s.setHole(s.selection, !allHoles);
+          break;
+        }
+        case 'm':
+          s.setTool(s.tool === 'measure' ? 'select' : 'measure');
           break;
       }
     };

@@ -34,6 +34,9 @@ export function ViewportOverlay() {
   const actionSeq = useEditor((s) => s.actionSeq);
   const isEmpty = useEditor((s) => s.doc.rootIds.length === 0);
   const [viewsOpen, setViewsOpen] = useState(false);
+  const tool = useEditor((s) => s.tool);
+  const setTool = useEditor((s) => s.setTool);
+  const measureCount = useEditor((s) => s.measurePoints.length);
   const toast = useToast(lastAction, actionSeq);
   const notice = useNotice();
 
@@ -51,6 +54,15 @@ export function ViewportOverlay() {
           <Focus size={18} />
         </IconButton>
       </div>
+
+      {tool === 'measure' && (
+        <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-navy/95 py-1.5 pl-3 pr-1.5 text-xs font-medium text-white shadow-float">
+          <span>{measureCount === 1 ? 'Click the second point' : 'Measure: click two points on any surface (snaps to corners)'}</span>
+          <button type="button" onClick={() => setTool('select')} className="rounded-md bg-white/15 px-2 py-1 hover:bg-white/25">
+            Done <kbd className="ml-1 text-white/70">Esc</kbd>
+          </button>
+        </div>
+      )}
 
       {/* Hint when scale is not possible */}
       {mode === 'scale' && selection.length > 1 && (

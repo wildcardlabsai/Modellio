@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
-import { Copy, Trash2, Lock, Eye, ArrowDownToLine, Link2, Link2Off, Layers, FolderOpen, Ungroup, Group, ChevronDown, Info } from 'lucide-react';
+import { Copy, Trash2, Lock, Eye, ArrowDownToLine, Link2, Link2Off, Layers, FolderOpen, Ungroup, Group, ChevronDown, Info, Combine, CircleCheck, CircleAlert, Layers2, Scissors, SquaresUnite, SquaresSubtract, SquaresIntersect } from 'lucide-react';
+import { computeCombined } from '@/cad/operations/combine';
+import { FONTS } from '@/cad/text/fonts';
+import { getMeshAsset } from '@/cad/assets';
+import { useCadReady } from '@/viewport/cadReady';
+import type { CombineMode, FontId } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
 import type { GroupObject, SceneObject, ShapeObject, Vec3 } from '@/types/document';
 import { getShapeDefinition } from '@/cad/shapeRegistry';
@@ -147,9 +152,12 @@ function ObjectInspector({ object }: { object: SceneObject }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
         {isGroup ? (
-          <FolderOpen size={22} className="shrink-0 text-brand" />
+          object.combine ? <Combine size={22} className="shrink-0 text-brand" /> : <FolderOpen size={22} className="shrink-0 text-brand" />
         ) : (
-          <span className="h-6 w-6 shrink-0 rounded-md shadow-inner" style={{ background: color }} />
+          <span
+            className="h-6 w-6 shrink-0 rounded-md shadow-inner"
+            style={object.kind === 'shape' && object.isHole ? { background: 'repeating-linear-gradient(45deg,#c3cad6 0 3px,#eef1f5 3px 6px)' } : { background: color }}
+          />
         )}
         <NameField id={object.id} name={object.name} />
         <IconButton label="Duplicate" shortcut={`${MOD}+D`} onClick={() => s.duplicateSelected()}>
@@ -195,6 +203,9 @@ function ObjectInspector({ object }: { object: SceneObject }) {
                 </span>
               </div>
             )}
+            {object.kind === 'shape' && <SolidHoleSwitch object={object} locked={locked} />}
+            {object.kind === 'group' && <CombineSection group={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape === 'text' && <TextSection object={object} locked={locked} />}
             <Section
               title={isGroup ? 'Group size (mm)' : 'Size (mm)'}
               action={
@@ -239,6 +250,7 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               />
             </Section>
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
               <Toggle label="Lock proportions" icon={<Link2 size={15} className="text-muted" />} checked={lockProportions} onChange={s.setLockProportions} />
@@ -309,6 +321,175 @@ function ShapeParams({ object, locked }: { object: ShapeObject; locked: boolean 
           </div>
         ))}
       </div>
+    </Section>
+  );
+}
+
+function SolidHoleSwitch({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const s = useEditor.getState();
+  return (
+    <section className="px-5 pt-4">
+      <div role="radiogroup" aria-label="Solid or hole" className="grid grid-cols-2 gap-2">
+        {[
+          { hole: false, label: 'Solid', swatch: { background: object.color } },
+          { hole: true, label: 'Hole', swatch: { background: 'repeating-linear-gradient(45deg,#c3cad6 0 3px,#eef1f5 3px 6px)' } },
+        ].map((o) => {
+          const active = object.isHole === o.hole;
+          return (
+            <button
+              key={o.label}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={locked}
+              onClick={() => !active && s.setHole([object.id], o.hole)}
+              className={`flex items-center justify-center gap-2 rounded-lg border py-2 text-[13px] font-semibold ${
+                active ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-canvas'
+              } disabled:opacity-50`}
+            >
+              <span className="h-4 w-4 rounded" style={o.swatch} />
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function TextSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const s = useEditor.getState();
+  const [draft, setDraft] = useState(object.text?.content ?? '');
+  useEffect(() => setDraft(object.text?.content ?? ''), [object.text?.content]);
+  const commit = () => {
+    if (draft !== object.text?.content) void s.setText(object.id, { content: draft });
+  };
+  return (
+    <Section title="Text">
+      <textarea
+        aria-label="Text content"
+        value={draft}
+        disabled={locked}
+        rows={2}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit();
+          if (e.key === 'Escape') setDraft(object.text?.content ?? '');
+        }}
+        className="w-full resize-none rounded-lg border border-line px-3 py-2 text-[14px] text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
+      />
+      <div className="mt-2 grid grid-cols-[1fr_110px] items-center gap-2">
+        <select
+          aria-label="Font"
+          value={object.text?.font}
+          disabled={locked}
+          onChange={(e) => void s.setText(object.id, { font: e.target.value as FontId })}
+          className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] text-ink outline-none focus:border-brand"
+        >
+          {FONTS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        <NumberField
+          ariaLabel="Font size"
+          value={object.params.fontSize ?? 14}
+          min={1}
+          max={500}
+          step={1}
+          decimals={1}
+          suffix="pt"
+          disabled={locked}
+          onCommit={(v) => void s.setText(object.id, { fontSize: v })}
+        />
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted">Depth is the Z size. Ctrl/⌘+Enter applies text changes.</p>
+    </Section>
+  );
+}
+
+function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const s = useEditor.getState();
+  const asset = object.meshId ? getMeshAsset(object.meshId) : undefined;
+  return (
+    <Section title="Mesh">
+      <p className="text-[12px] text-muted">{asset ? `${(asset.indices.length / 3).toLocaleString()} triangles · watertight` : 'Mesh data missing'}</p>
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => s.separateSelected()}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+      >
+        <Scissors size={15} /> Separate parts
+      </button>
+    </Section>
+  );
+}
+
+const COMBINE_MODES: { mode: CombineMode | null; label: string }[] = [
+  { mode: null, label: 'Assembly' },
+  { mode: 'union', label: 'Union' },
+  { mode: 'intersect', label: 'Intersect' },
+];
+
+function CombineSection({ group, locked }: { group: GroupObject; locked: boolean }) {
+  const s = useEditor.getState();
+  const doc = useEditor((st) => st.doc);
+  const version = useCadReady((st) => st.version);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const result = useMemo(() => (group.combine ? computeCombined(doc, group.id) : null), [doc, group, version]);
+  return (
+    <Section title="Combine">
+      <div role="radiogroup" aria-label="Combine mode" className="grid grid-cols-3 rounded-lg bg-canvas p-1">
+        {COMBINE_MODES.map(({ mode, label }) => {
+          const active = (group.combine ?? null) === mode;
+          return (
+            <button
+              key={label}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={locked}
+              onClick={() => !active && s.setCombineMode(group.id, mode)}
+              className={`rounded-md py-1.5 text-[12px] font-medium ${active ? 'bg-white text-brand shadow-sm' : 'text-muted hover:text-ink'}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {group.combine ? (
+        result ? (
+          result.error ? (
+            <p role="alert" className="mt-2 flex items-start gap-1.5 text-[12px] text-red-700">
+              <CircleAlert size={14} className="mt-px shrink-0" /> {result.error}
+            </p>
+          ) : (
+            <p className="mt-2 flex items-center gap-1.5 text-[12px] text-emerald-700">
+              <CircleCheck size={14} /> Watertight solid · {result.triangles.toLocaleString()} triangles
+            </p>
+          )
+        ) : (
+          <p className="mt-2 text-[12px] text-muted">Computing…</p>
+        )
+      ) : (
+        <p className="mt-2 text-[12px] text-muted">Parts are kept separate. Choose Union to merge them and cut holes.</p>
+      )}
+      {group.combine && (
+        <button
+          type="button"
+          disabled={locked || !result?.mesh}
+          onClick={() => {
+            s.select([group.id]);
+            s.bakeSelected();
+          }}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+        >
+          <Layers2 size={15} /> Flatten to mesh
+        </button>
+      )}
     </Section>
   );
 }
@@ -384,6 +565,29 @@ function MultiInspector({ count }: { count: number }) {
           >
             <ArrowDownToLine size={15} /> Drop all
           </button>
+        </div>
+        <div>
+          <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Combine</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                ['union', 'Union', SquaresUnite],
+                ['subtract', 'Subtract', SquaresSubtract],
+                ['intersect', 'Intersect', SquaresIntersect],
+              ] as const
+            ).map(([op, label, Icon]) => (
+              <button
+                key={op}
+                type="button"
+                onClick={() => s.combineSelected(op)}
+                className="flex flex-col items-center gap-1 rounded-lg border border-line py-2 text-[12px] font-medium text-[#344054] hover:border-brand/40 hover:bg-brand-50 hover:text-brand"
+              >
+                <Icon size={17} />
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted">Subtract keeps the first object you selected.</p>
         </div>
         <AlignMenu onDone={() => {}} />
         <div className="border-t border-line pt-3">

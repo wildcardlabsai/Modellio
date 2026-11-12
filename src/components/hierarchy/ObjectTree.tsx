@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type DragEvent } from 'react';
-import { ChevronRight, Eye, EyeOff, Lock, Unlock, Trash2, FolderClosed, FolderOpen } from 'lucide-react';
+import { ChevronRight, Eye, EyeOff, Lock, Unlock, Trash2, FolderClosed, FolderOpen, Combine } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import type { ModelDocument, ObjectId } from '@/types/document';
 import { isEffectivelyLocked, siblingsOf } from '@/cad/hierarchy';
@@ -156,13 +156,19 @@ export function ObjectTree() {
                 <span className="w-[18px]" />
               )}
               {isGroup ? (
-                collapsed[id] ? (
+                o.combine ? (
+                  <Combine size={15} className="shrink-0 text-brand" />
+                ) : collapsed[id] ? (
                   <FolderClosed size={15} className="shrink-0 text-muted" />
                 ) : (
                   <FolderOpen size={15} className="shrink-0 text-muted" />
                 )
               ) : (
-                <span className="h-3.5 w-3.5 shrink-0 rounded" style={{ background: o.color }} />
+                <span
+                  className="h-3.5 w-3.5 shrink-0 rounded"
+                  title={o.isHole ? 'Hole' : undefined}
+                  style={o.isHole ? { background: 'repeating-linear-gradient(45deg,#aab3c2 0 2px,#eef1f5 2px 4px)', outline: '1px dashed #8c97ab' } : { background: o.color }}
+                />
               )}
               {renaming === id ? (
                 <input

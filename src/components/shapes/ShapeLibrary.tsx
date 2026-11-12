@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
-import { SHAPES } from '@/cad/shapeRegistry';
+import { LIBRARY_SHAPES } from '@/cad/shapeRegistry';
 import { useEditor } from '@/store/editorStore';
 import { renderShapeThumbnails } from './thumbnails';
 import { SHAPE_DRAG_MIME } from '@/viewport/Viewport';
@@ -11,7 +11,7 @@ export function ShapeLibrary() {
   const thumbs = useMemo(() => renderShapeThumbnails(), []);
   const [open, setOpen] = useState(true);
   const [query, setQuery] = useState('');
-  const shapes = SHAPES.filter((s) => s.label.toLowerCase().includes(query.trim().toLowerCase()));
+  const shapes = LIBRARY_SHAPES.filter((s) => s.label.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
     <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Shape library">
@@ -60,11 +60,27 @@ export function ShapeLibrary() {
                 <span className="text-center text-[12px] font-medium leading-tight text-[#344054]">{s.label}</span>
               </button>
             ))}
+            {'text'.includes(query.trim().toLowerCase()) && (
+              <button
+                type="button"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(SHAPE_DRAG_MIME, 'text:Text');
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
+                onClick={() => void useEditor.getState().addText('Text')}
+                title="Add Text — click, or drag onto the workplane"
+                className="group flex aspect-[0.92] flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-canvas p-1.5 transition-all hover:border-brand/30 hover:bg-brand-50 hover:shadow-sm active:scale-[0.97]"
+              >
+                <span className="flex h-12 w-12 items-center justify-center text-[34px] font-extrabold leading-none text-brand drop-shadow-[0_2px_0_#1d4ed8] transition-transform group-hover:scale-105">A</span>
+                <span className="text-center text-[12px] font-medium leading-tight text-[#344054]">Text</span>
+              </button>
+            )}
             {!shapes.length && <p className="col-span-3 py-6 text-center text-[13px] text-muted">No shapes match “{query}”.</p>}
           </div>
         )}
         <div className="mt-4 rounded-xl border border-dashed border-line p-3 text-[12px] leading-relaxed text-muted">
-          <span className="font-semibold text-[#344054]">Coming next:</span> 3D text, holes &amp; Boolean combine, imported STL/OBJ parts.
+          <span className="font-semibold text-[#344054]">Tip:</span> press <kbd className="rounded border border-line bg-white px-1">H</kbd> to turn a shape into a hole, then use <strong>Combine</strong> to cut it.
         </div>
       </div>
     </aside>

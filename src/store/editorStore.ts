@@ -31,7 +31,12 @@ import {
   worldBoundsOf,
   worldMatrix,
 } from '@/cad/hierarchy';
-import { getShapeDefinition } from '@/cad/shapeRegistry';
+import { getShapeDefinition, getTextMesh } from '@/cad/shapeRegistry';
+import { bakeGroupDraft, computeCombined, separateDraft } from '@/cad/operations/combine';
+import { initKernel } from '@/cad/kernel/kernel';
+import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
+import { meshDataBounds } from '@/cad/kernel/meshData';
+import type { CombineMode, TextContent } from '@/types/document';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
 import { normalizeDegrees, roundTo } from '@/utils/math';
@@ -63,6 +68,10 @@ export interface EditorState {
   snap: SnapSettings;
   lockProportions: boolean;
   showGrid: boolean;
+  /** Active viewport tool. */
+  tool: 'select' | 'measure';
+  /** Measure tool: up to two picked world points (mm). */
+  measurePoints: Vec3[];
   /** Groups collapsed in the object tree (UI state, not part of the document). */
   collapsed: Record<ObjectId, boolean>;
   clipboard: ClipboardData | null;
@@ -95,6 +104,8 @@ export interface EditorState {
   setSnap: (snap: Partial<SnapSettings>) => void;
   setLockProportions: (v: boolean) => void;
   setShowGrid: (v: boolean) => void;
+  setTool: (tool: 'select' | 'measure') => void;
+  addMeasurePoint: (p: Vec3) => void;
   toggleCollapsed: (id: ObjectId) => void;
   requestFrame: () => void;
 
@@ -123,6 +134,19 @@ export interface EditorState {
   setLocked: (id: ObjectId, locked: boolean) => void;
   dropToWorkplane: (ids: ObjectId[]) => void;
   setWorkplaneSize: (size: [number, number]) => void;
+
+  // --- Phase 3: solid modelling ---
+  /** Combine 2+ objects. 'subtract' keeps the first-selected object and turns the rest into holes. */
+  combineSelected: (op: 'union' | 'subtract' | 'intersect') => void;
+  setCombineMode: (groupId: ObjectId, mode: CombineMode | null) => void;
+  /** Make the selected objects holes (or solids again). */
+  setHole: (ids: ObjectId[], hole: boolean) => void;
+  /** Replace a combined group with a single mesh ("flatten"). */
+  bakeSelected: () => void;
+  /** Split a mesh into its disconnected parts. */
+  separateSelected: () => void;
+  addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
+  setText: (id: ObjectId, patch: Partial<TextContent> & { fontSize?: number }) => Promise<void>;
 }
 
 const DUPLICATE_OFFSET: Vec3 = [10, 10, 0];
@@ -153,6 +177,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     snap: { enabled: true, translate: 1, rotate: 15 },
     lockProportions: false,
     showGrid: true,
+    tool: 'select',
+    measurePoints: [],
     collapsed: {},
     clipboard: null,
     frameRequest: 0,
@@ -244,6 +270,11 @@ export const useEditor = create<EditorState>()((set, get) => {
     setSnap: (snap) => set({ snap: { ...get().snap, ...snap } }),
     setLockProportions: (lockProportions) => set({ lockProportions }),
     setShowGrid: (showGrid) => set({ showGrid }),
+    setTool: (tool) => set({ tool, measurePoints: [] }),
+    addMeasurePoint: (p) => {
+      const pts = get().measurePoints;
+      set({ measurePoints: pts.length >= 2 ? [p] : [...pts, p] });
+    },
     toggleCollapsed: (id) => set({ collapsed: { ...get().collapsed, [id]: !get().collapsed[id] } }),
     requestFrame: () => set({ frameRequest: get().frameRequest + 1 }),
 
@@ -413,6 +444,136 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (o) o.locked = locked;
       }),
     dropToWorkplane: (ids) => get().apply('Drop to workplane', (doc) => dropToWorkplaneDraft(doc, ids)),
+    combineSelected: (op) => {
+      const { doc, selection } = get();
+      const ids = editableSelection();
+      if (ids.length < 2) {
+        get().notify('Select two or more objects to combine.');
+        return;
+      }
+      // Keep the user's selection order: the first-selected object is the one we cut into.
+      const ordered = selection.filter((id) => ids.includes(id));
+      const gid = createId('grp');
+      const name = uniqueName(doc, op === 'union' ? 'Union' : op === 'subtract' ? 'Difference' : 'Intersection');
+      get().apply(op === 'union' ? 'Union' : op === 'subtract' ? 'Subtract' : 'Intersect', (d) => {
+        if (op === 'subtract') {
+          for (const s of descendantShapes(d, ordered.slice(1))) (d.objects[s.id] as ShapeObject).isHole = true;
+          for (const s of descendantShapes(d, [ordered[0]])) (d.objects[s.id] as ShapeObject).isHole = false;
+        }
+        if (groupDraft(d, ordered, { id: gid, name })) {
+          const g = d.objects[gid];
+          if (g.kind === 'group') g.combine = op === 'intersect' ? 'intersect' : 'union';
+        }
+      });
+      if (get().doc.objects[gid]) set({ selection: [gid] });
+    },
+
+    setCombineMode: (groupId, mode) =>
+      get().apply(mode ? (mode === 'union' ? 'Combine: union' : 'Combine: intersect') : 'Uncombine', (d) => {
+        const g = d.objects[groupId];
+        if (g?.kind !== 'group') return;
+        if (mode) g.combine = mode;
+        else delete g.combine;
+      }),
+
+    setHole: (ids, hole) => {
+      const { doc } = get();
+      const targets = topLevel(doc, ids).filter((id) => !isEffectivelyLocked(doc, id));
+      if (!targets.length) return;
+      get().apply(hole ? 'Make hole' : 'Make solid', (d) => {
+        for (const s of descendantShapes(d, targets)) (d.objects[s.id] as ShapeObject).isHole = hole;
+      });
+    },
+
+    bakeSelected: () => {
+      const { doc, selection } = get();
+      const groups = selection.filter((id) => {
+        const o = doc.objects[id];
+        return o?.kind === 'group' && o.combine && !isEffectivelyLocked(doc, id);
+      });
+      if (!groups.length) {
+        get().notify('Select a combined group to flatten it into one mesh.');
+        return;
+      }
+      const failed = groups.filter((id) => !computeCombined(doc, id)?.mesh);
+      if (failed.length) {
+        get().notify(computeCombined(doc, failed[0])?.error ?? 'The combined result is not ready yet.');
+        return;
+      }
+      const created: ObjectId[] = [];
+      get().apply('Flatten to mesh', (d) => {
+        for (const id of groups) {
+          const nid = bakeGroupDraft(d, id, doc.objects[id].name);
+          if (nid) created.push(nid);
+        }
+      });
+      set({ selection: created });
+    },
+
+    separateSelected: () => {
+      const { doc, selection } = get();
+      const meshes = selection.filter((id) => {
+        const o = doc.objects[id];
+        return o?.kind === 'shape' && o.shape === 'mesh' && !isEffectivelyLocked(doc, id);
+      });
+      if (!meshes.length) {
+        get().notify('Select a mesh (e.g. a flattened combination) to separate.');
+        return;
+      }
+      const created: ObjectId[] = [];
+      get().apply('Separate', (d) => {
+        for (const id of meshes) created.push(...separateDraft(d, id));
+      });
+      if (created.length) set({ selection: created });
+      else get().notify('This mesh is already a single connected solid.');
+    },
+
+    addText: async (content = 'Text', at) => {
+      try {
+        await Promise.all([initKernel(), loadFont(DEFAULT_FONT)]);
+      } catch (e) {
+        get().notify(`Text is unavailable: ${e instanceof Error ? e.message : e}`);
+        return null;
+      }
+      const doc = get().doc;
+      const def = getShapeDefinition('text');
+      const params = { ...def.defaultParams };
+      const text: TextContent = { content, font: DEFAULT_FONT };
+      const mesh = getTextMesh({ text, params });
+      if (!mesh) return null;
+      const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());
+      const depth = def.defaultSize[2];
+      const size: Vec3 = [roundTo(ext.x), roundTo(ext.y), depth];
+      const position = at ? ([roundTo(at[0]), roundTo(at[1]), depth / 2] as Vec3) : findFreePosition(doc, size);
+      const obj = { ...createShape(doc, 'text', position), text, params, size, name: uniqueName(doc, content.split('\n')[0].slice(0, 24) || 'Text') };
+      get().apply('Add text', (d) => addObjectDraft(d, obj));
+      set({ selection: [obj.id] });
+      return obj.id;
+    },
+
+    setText: async (id, patch) => {
+      const o = get().doc.objects[id];
+      if (o?.kind !== 'shape' || o.shape !== 'text' || !o.text) return;
+      const text: TextContent = { content: patch.content ?? o.text.content, font: patch.font ?? o.text.font };
+      if (!text.content.trim()) {
+        get().notify('Text cannot be empty.');
+        return;
+      }
+      await Promise.all([initKernel(), loadFont(text.font)]);
+      const params = { ...o.params, ...(patch.fontSize ? { fontSize: patch.fontSize } : {}) };
+      const mesh = getTextMesh({ text, params });
+      if (!mesh) return;
+      const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());
+      // New text keeps its depth; width/height follow the new layout.
+      get().apply('Edit text', (d) => {
+        const t = d.objects[id];
+        if (t?.kind !== 'shape') return;
+        t.text = text;
+        t.params = params;
+        t.size = [roundTo(ext.x), roundTo(ext.y), t.size[2]];
+      });
+    },
+
     setWorkplaneSize: (size) =>
       get().apply('Workplane size', (doc) => {
         doc.settings.workplane = [Math.max(20, roundTo(size[0], 2)), Math.max(20, roundTo(size[1], 2))];

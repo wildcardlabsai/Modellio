@@ -113,17 +113,56 @@ export function translateWorldDraft(doc: ModelDocument, id: ObjectId, delta: THR
 // ---------- bounds ----------
 
 /**
+ * Combined (Boolean) groups are bounded by their actual result, not by their
+ * parts. The Boolean module registers a resolver returning the result's
+ * bounds in the group's local frame (null if not computed yet).
+ */
+type CombinedBoundsResolver = (doc: ModelDocument, groupId: ObjectId) => THREE.Box3 | null;
+let combinedBounds: CombinedBoundsResolver | null = null;
+export function setCombinedBoundsResolver(fn: CombinedBoundsResolver | null) {
+  combinedBounds = fn;
+}
+
+function boxCorners(b: THREE.Box3): THREE.Vector3[] {
+  const out: THREE.Vector3[] = [];
+  for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) out.push(new THREE.Vector3(x, y, z));
+  return out;
+}
+
+/**
  * Axis-aligned bounds of the subtrees of `ids`, measured in the frame whose
- * world matrix is `frame` (identity = world). Uses each shape's oriented box.
+ * world matrix is `frame` (identity = world). Uses each shape's oriented box,
+ * and the real Boolean result for combined groups.
  */
 export function boundsInFrame(doc: ModelDocument, ids: ObjectId[], frame?: THREE.Matrix4): THREE.Box3 {
   const inv = frame ? frame.clone().invert() : null;
   const box = new THREE.Box3();
-  for (const shape of descendantShapes(doc, ids)) {
-    const m = worldMatrix(doc, shape.id);
+  const toFrame = (id: ObjectId) => {
+    const m = worldMatrix(doc, id);
     if (inv) m.premultiply(inv);
-    for (const c of localCorners(shape.size)) box.expandByPoint(c.applyMatrix4(m));
-  }
+    return m;
+  };
+  const visit = (id: ObjectId) => {
+    const o = doc.objects[id];
+    if (!o) return;
+    if (o.kind === 'shape') {
+      const m = toFrame(id);
+      for (const c of localCorners(o.size)) box.expandByPoint(c.applyMatrix4(m));
+      return;
+    }
+    if (o.combine && combinedBounds) {
+      const b = combinedBounds(doc, id);
+      if (b) {
+        if (!b.isEmpty()) {
+          const m = toFrame(id);
+          for (const c of boxCorners(b)) box.expandByPoint(c.applyMatrix4(m));
+        }
+        return;
+      }
+    }
+    o.children.forEach(visit);
+  };
+  ids.forEach(visit);
   return box;
 }
 

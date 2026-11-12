@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { SHAPES, buildShapeGeometry } from '@/cad/shapeRegistry';
+import { LIBRARY_SHAPES, buildShapeGeometry } from '@/cad/shapeRegistry';
+import type { ParametricType } from './primitives';
 import { analyzeMesh } from './validate';
 import type { Vec3 } from '@/types/document';
 
@@ -10,7 +11,8 @@ const sizes: Vec3[] = [
 ];
 
 describe('primitive geometry', () => {
-  for (const def of SHAPES) {
+  for (const d of LIBRARY_SHAPES) {
+    const def = { ...d, type: d.type as ParametricType };
     describe(def.type, () => {
       for (const size of sizes) {
         it(`has an exact ${size.join('×')} mm bounding box centred on the origin`, () => {
@@ -73,6 +75,20 @@ describe('primitive geometry', () => {
     expect(pyr.volume).toBeCloseTo(1000, 3);
     const wedge = analyzeMesh(buildShapeGeometry('wedge', [10, 10, 10], {}));
     expect(wedge.volume).toBeCloseTo(500, 3);
+  });
+
+  it('builds a watertight filleted box with an absolute radius', () => {
+    for (const radius of [0.5, 3, 9.99]) {
+      const g = buildShapeGeometry('box', [40, 20, 20], { radius, filletSegments: 4 });
+      const r = analyzeMesh(g);
+      expect(r.watertight).toBe(true);
+      g.computeBoundingBox();
+      const ext = g.boundingBox!.getSize(new THREE.Vector3());
+      expect([ext.x, ext.y, ext.z].map((v) => +v.toFixed(3))).toEqual([40, 20, 20]);
+      // Rounding removes material: volume < sharp box, > box minus edge strips.
+      expect(r.volume).toBeLessThan(16000);
+      expect(r.volume).toBeGreaterThan(16000 - (4 - Math.PI) * radius * radius * 160);
+    }
   });
 
   it('respects absolute tube wall thickness', () => {

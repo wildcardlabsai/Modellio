@@ -32,7 +32,21 @@ export type PrimitiveType =
   | 'torus'
   | 'tube'
   | 'halfSphere'
-  | 'polygon';
+  | 'polygon'
+  | 'star'
+  | 'capsule'
+  | 'paraboloid'
+  /** 3D text: outlines from `text` extruded by the kernel. */
+  | 'text'
+  /** Arbitrary mesh from the asset store (Boolean bakes, separated parts, imports). */
+  | 'mesh';
+
+export type FontId = 'inter-bold' | 'inter' | 'roboto-slab' | 'bebas-neue' | 'pacifico' | 'space-mono';
+
+export interface TextContent {
+  content: string;
+  font: FontId;
+}
 
 /** Numeric shape parameters (segments, wall thickness, polygon sides, ...). */
 export type ShapeParams = Record<string, number>;
@@ -68,10 +82,24 @@ export interface ShapeObject extends BaseObject {
    * mesh is reflected and its winding corrected. Omitted means [1, 1, 1].
    */
   mirror?: Vec3;
+  /** Text shapes only. */
+  text?: TextContent;
+  /** Mesh shapes only: id in the immutable asset store (mesh is centred on its bounds). */
+  meshId?: string;
 }
+
+/**
+ * How a group combines its parts:
+ *  - undefined: a plain assembly (parts keep their own colours, nothing is cut)
+ *  - 'union':     result = union(solids) − union(holes)
+ *  - 'intersect': result = intersection(solids) − union(holes)
+ * The result is computed live by the kernel, so parts stay editable.
+ */
+export type CombineMode = 'union' | 'intersect';
 
 export interface GroupObject extends BaseObject {
   kind: 'group';
+  combine?: CombineMode;
   /** Child ids in display order. Children's transforms are relative to this group. */
   children: ObjectId[];
 }

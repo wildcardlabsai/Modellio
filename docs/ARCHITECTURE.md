@@ -36,7 +36,11 @@ or adapters over it, and geometry is always generated from it.
 | `src/components/` | DOM UI: layout, toolbar, shape library, inspector, scene list, UI primitives. |
 | `src/hooks/` | Keyboard shortcuts. |
 | `src/utils/` | Math, ids, the safe arithmetic evaluator for numeric fields. |
-| Reserved: `src/cad/operations`, `export`, `import`, `serialization`, `selection` | Phases 3–4 (Booleans, STL/OBJ, persistence). |
+| `src/cad/kernel/` | Manifold (WASM) loader and the `MeshData` interchange format (welded positions + indices). |
+| `src/cad/operations/combine.ts` | Live Boolean evaluation of combined groups, flatten-to-mesh, separate. |
+| `src/cad/text/` | Font registry (opentype.js) and kernel-based text solids. |
+| `src/cad/assets.ts` | Immutable mesh asset store (referenced by id from documents). |
+| Reserved: `src/cad/export`, `import`, `serialization` | Phase 4 (STL/OBJ, persistence). |
 
 ## Coordinate system and units
 
@@ -77,7 +81,7 @@ Absolute parameters (e.g. tube wall thickness in mm) stay absolute when an objec
 * Flat-faced solids are built with `polyhedron()` (explicit faces, flat normals).
   Curved solids reuse Three.js generators, rotated into Z-up.
 
-### Boolean library evaluation (for Phase 3)
+### Boolean library evaluation
 
 | Library | Verdict |
 | --- | --- |
@@ -86,7 +90,7 @@ Absolute parameters (e.g. tube wall thickness in mm) stay absolute when an objec
 | three-csg-ts / BSP CSG | Slow, with poor robustness on coplanar faces. Rejected. |
 | @jscad/modeling | A good solid-modelling kernel (also used for text extrusion and hull). Its Booleans are slower and its data model differs. Candidate for text/2D tooling, not core Booleans. |
 
-Primitive meshes are already watertight, so they can be passed straight to Manifold after welding vertices.
+Primitive meshes are already watertight, so they are passed straight to Manifold after welding vertices.
 
 ## Hierarchy (Phase 2)
 
@@ -119,6 +123,59 @@ and when the axes are aligned the rotation doesn't change at all. Each shape abs
 into a per-axis `mirror` flag. When the mesh is generated, it is reflected and its
 triangle winding reversed, so normals still point outwards. Tests check that every primitive stays
 watertight with the same positive volume under every mirror combination, and that mirroring twice is the identity.
+
+## Solid modelling (Phase 3)
+
+### Kernel
+
+[Manifold](https://github.com/elalish/manifold) (`manifold-3d`, WASM) is the solid-modelling kernel. Its JS glue and
+WASM are loaded on demand at startup. Every Boolean is evaluated by Manifold, which guarantees manifold
+(watertight, consistently oriented) output and handles coplanar faces robustly. Tests cover exact volumes,
+coplanar pockets, rotated and nested combinations, and empty results. All Manifold objects are deleted in
+`finally` blocks to free WASM memory.
+
+### Non-destructive combinations
+
+A group with `combine: 'union' | 'intersect'` evaluates
+
+```
+result = (union | intersection)(visible solids) − union(visible holes)
+```
+
+in the group's local frame. Each part is turned into geometry, welded into `MeshData`, transformed by
+`inverse(groupWorld) · partWorld`, and converted to a Manifold. Nested combined groups contribute their own
+results; plain sub-groups pass their leaves up; a combination made only of holes acts as a hole.
+
+* **Subtract** is not a separate mode. It marks every object except the first-selected one as a hole, then
+  makes a union, which is exactly the Tinkercad mental model, and stays editable.
+* **Caching:** results are cached (LRU) by a key built from everything that affects geometry (transforms,
+  sizes, params, mirror flags, text, mesh ids, holes, visibility). Colour changes, renames and undo/redo
+  re-use cached results.
+* **Rendering:** the result is drawn with crease-angle normals, so curved surfaces look smooth and edges stay sharp.
+  Parts inside a combination are not drawn, except a translucent ghost of a part selected in the tree, so it can be
+  edited with the gizmo while the result updates live.
+* **Bounds:** `hierarchy.boundsInFrame` asks the Boolean module (through a registered resolver, avoiding an import
+  cycle) for the real result bounds. Selection boxes, drop-to-workplane and alignment use the true solid.
+
+### Mesh shapes and the asset store
+
+`shape: 'mesh'` objects reference an immutable, centred `MeshData` asset by id. They reuse every shape code path:
+size is authoritative (the mesh is fitted to `size`), mirror, holes, gizmo, align and Booleans. *Flatten to mesh*
+bakes a combination into one; *Separate* uses `Manifold.decompose()` to split disconnected solids. Undo snapshots
+only hold the id, so geometry is never duplicated in history. Phase 4 imports (STL/OBJ) will become mesh shapes too.
+
+### Text
+
+Fonts are bundled WOFF files (Fontsource, SIL OFL) parsed by opentype.js and loaded lazily. Glyph outlines are
+flattened to contours (Y flipped to Y-up) and passed to `CrossSection(contours, 'NonZero')`. That unions
+overlapping strokes correctly (script fonts), then `Manifold.extrude` creates a solid that is valid by construction.
+Text content, font and size are stored on the object. When they change, `size` is re-derived from the natural
+layout (depth is kept). Resizing afterwards stretches the text, like any other shape. Text meshes are cached.
+
+### Measure tool
+
+Raycasts against pickable meshes (shapes and Boolean results) and falls back to the workplane. The hit snaps to
+the nearest vertex of the hit triangle when it is within 10 px on screen, for exact corner-to-corner readings.
 
 ## State, history and transactions
 
@@ -172,4 +229,6 @@ watertight with the same positive volume under every mirror combination, and tha
 * **Persistence (Phase 4):** the document is plain JSON with `schemaVersion`. A
   `ProjectRepository` interface (IndexedDB now, Supabase later) will sit in
   `src/cad/serialization`.
-* **Holes (Phase 3):** `ShapeObject.isHole` is already in the model.
+* **Performance (Phase 5):** Boolean evaluation runs on the main thread. It is cached and typically takes milliseconds,
+  but very large text or imported meshes would benefit from moving `computeCombined` to a Web Worker; the
+  function is already pure (document in, `MeshData` out).
