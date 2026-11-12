@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useEditor } from '@/store/editorStore';
 import type { Vec3 } from '@/types/document';
-import { roundTo } from '@/utils/math';
+import * as THREE from 'three';
+import { isEffectivelyLocked, topLevel, translateWorldDraft } from '@/cad/hierarchy';
 
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -40,6 +41,27 @@ export function useKeyboardShortcuts() {
       if (mod && key === 'a') {
         e.preventDefault();
         s.selectAll();
+        return;
+      }
+      if (mod && key === 'g') {
+        e.preventDefault();
+        if (e.shiftKey) s.ungroupSelected();
+        else s.groupSelected();
+        return;
+      }
+      if (mod && key === 'c') {
+        e.preventDefault();
+        s.copySelected();
+        return;
+      }
+      if (mod && key === 'x') {
+        e.preventDefault();
+        s.cutSelected();
+        return;
+      }
+      if (mod && key === 'v') {
+        e.preventDefault();
+        s.paste();
         return;
       }
       if (mod) return;
@@ -105,11 +127,9 @@ function nudge(e: KeyboardEvent) {
   if (e.key === 'ArrowDown') d[1] = -step;
   if (e.key === 'PageUp') d[2] = step;
   if (e.key === 'PageDown') d[2] = -step;
+  const ids = topLevel(s.doc, s.selection).filter((id) => !isEffectivelyLocked(s.doc, id));
+  // Nudges are in world axes, so they behave the same inside rotated groups.
   s.apply('Nudge', (doc) => {
-    for (const id of s.selection) {
-      const o = doc.objects[id];
-      if (!o || o.locked) continue;
-      o.transform.position = o.transform.position.map((v, i) => roundTo(v + d[i])) as Vec3;
-    }
+    for (const id of ids) translateWorldDraft(doc, id, new THREE.Vector3(...d));
   });
 }

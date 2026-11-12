@@ -21,7 +21,7 @@ npm run dev          # http://localhost:5173
 | `npm run build` | Type-check and build for production (`dist/`) |
 | `npm run typecheck` | TypeScript only |
 | `npm test` | Unit tests (geometry, transforms, store, undo/redo) |
-| `npm run e2e` | Real-browser workflow test. Start `npm run dev` first. Needs Playwright + Chromium. |
+| `npm run e2e` | Real-browser workflow tests (Phase 1 + 2). Start `npm run dev` first. Needs Playwright + Chromium. |
 
 ## Phase 1 status: foundation ✅
 
@@ -37,13 +37,30 @@ npm run dev          # http://localhost:5173
   parameters, colour, lock proportions, visibility and locking. There is also a scene object list.
 * Duplicate (Ctrl/⌘ D), delete (Del), undo (Ctrl/⌘ Z), redo (Ctrl/⌘ ⇧ Z), arrow-key nudge and drop to workplane (D).
 
+## Phase 2 status: core CAD ✅
+
+* **Scene hierarchy:** real nested groups. Transforms are relative to the parent group, and grouping
+  and ungrouping never move anything in 3D.
+* **Object tree:** select (synchronised with the viewport), Shift for range and Ctrl/⌘ for toggle,
+  expand and collapse, double-click to rename, hide/show, lock (inherited by children), delete,
+  and drag-and-drop to reorder or move objects into and out of groups.
+* **Groups in the viewport:** click selects the whole group and double-click selects a part
+  inside it. Groups can be moved, rotated and resized with the gizmo or with exact sizes in the inspector.
+  Resizing rewrites the real dimensions of every part, and groups containing parts at odd angles
+  resize uniformly so no shear is introduced.
+* **Align:** left/centre/right, front/centre/back and bottom/middle/top. A single object aligns to the workplane.
+  There is also **distribute** with equal gaps on X/Y/Z.
+* **Mirror X/Y/Z:** genuinely reflected geometry. Triangle winding is corrected so meshes stay watertight.
+* **Clipboard:** copy, cut and paste (Ctrl/⌘ C/X/V), including whole groups. Repeated pastes cascade.
+* **Workplane panel:** plate size with common printer presets, grid toggle, and snap steps.
+* Undo/redo covers all of the above.
+
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
 ## Roadmap
 
 | Phase | Scope |
 | --- | --- |
-| 2 – Core CAD | Hierarchy tree, grouping, alignment, mirror, workplane tools |
 | 3 – Advanced modelling | Boolean union/subtract/intersect (Manifold), holes, 3D text, more shapes |
 | 4 – File handling | STL/OBJ import and export, local projects (IndexedDB) |
 | 5 – Refinement | Performance, accessibility, onboarding, polish |

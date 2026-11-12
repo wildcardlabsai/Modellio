@@ -1,19 +1,13 @@
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import type { ModelDocument, ObjectId } from '@/types/document';
-import { collectSubtree } from '@/cad/document';
-import { worldBounds } from '@/cad/transforms/transform';
+import { topLevel, worldBoundsOf } from '@/cad/hierarchy';
 
 export function selectionBounds(doc: ModelDocument, ids: ObjectId[]): THREE.Box3 {
-  const box = new THREE.Box3();
-  for (const id of collectSubtree(doc, ids)) {
-    const o = doc.objects[id];
-    if (o?.kind === 'shape') box.union(worldBounds(o));
-  }
-  return box;
+  return worldBoundsOf(doc, topLevel(doc, ids));
 }
 
 export function sceneBounds(doc: ModelDocument): THREE.Box3 {
-  return selectionBounds(
+  return worldBoundsOf(
     doc,
     doc.rootIds.filter((id) => doc.objects[id]?.visible),
   );

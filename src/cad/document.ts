@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import type { ModelDocument, ObjectId, PrimitiveType, SceneObject, ShapeObject, Vec3 } from '@/types/document';
+import type { ModelDocument, ObjectId, PrimitiveType, SceneObject, ShapeObject, Transform, Vec3 } from '@/types/document';
 import { getShapeDefinition } from './shapeRegistry';
-import { worldBounds } from './transforms/transform';
+import { worldBoundsOf } from './hierarchy';
 import { createId } from '@/utils/id';
 import { MIN_DIMENSION } from './geometry/geometryUtils';
 import { roundTo } from '@/utils/math';
@@ -47,9 +47,7 @@ export function createShape(doc: ModelDocument, type: PrimitiveType, position?: 
  * outwards in a spiral so clicked shapes don't stack inside each other.
  */
 export function findFreePosition(doc: ModelDocument, size: Vec3, preferred: [number, number] = [0, 0]): Vec3 {
-  const others = Object.values(doc.objects)
-    .filter((o): o is ShapeObject => o.kind === 'shape' && o.visible)
-    .map((o) => worldBounds(o));
+  const others = doc.rootIds.filter((id) => doc.objects[id]?.visible).map((id) => worldBoundsOf(doc, [id]));
   const step = Math.max(size[0], size[1]) + 5;
   const candidate = (x: number, y: number): Vec3 => [roundTo(x), roundTo(y), size[2] / 2];
   const fits = (p: Vec3) => {
@@ -155,4 +153,51 @@ export function proportionalSize(current: Vec3, axis: 0 | 1 | 2, value: number):
 export function getShape(doc: ModelDocument, id: ObjectId): ShapeObject | undefined {
   const o = doc.objects[id];
   return o?.kind === 'shape' ? o : undefined;
+}
+
+// ---------- clipboard ----------
+
+export interface ClipboardData {
+  /** Deep copies of every object in the copied subtrees. */
+  objects: SceneObject[];
+  /** Top-level ids, with their WORLD transform (they are pasted at the root). */
+  roots: { id: ObjectId; world: Transform }[];
+}
+
+export function copySubtrees(doc: ModelDocument, ids: ObjectId[], worldOf: (id: ObjectId) => Transform): ClipboardData {
+  const all = collectSubtree(doc, ids);
+  return {
+    objects: all.map((id) => JSON.parse(JSON.stringify(doc.objects[id])) as SceneObject),
+    roots: ids.filter((id) => doc.objects[id]).map((id) => ({ id, world: worldOf(id) })),
+  };
+}
+
+/** Paste clipboard contents at the root with fresh ids. Returns the new top-level ids. */
+export function pasteDraft(doc: ModelDocument, clip: ClipboardData, offset: Vec3): ObjectId[] {
+  const idMap = new Map(clip.objects.map((o) => [o.id, createId()]));
+  const created: ObjectId[] = [];
+  const byId = new Map(clip.objects.map((o) => [o.id, o]));
+  const add = (oldId: ObjectId, parentId: ObjectId | null, world?: Transform) => {
+    const src = byId.get(oldId);
+    if (!src) return;
+    const copy: SceneObject = JSON.parse(JSON.stringify(src));
+    copy.id = idMap.get(oldId)!;
+    copy.parentId = parentId;
+    copy.name = uniqueName(doc, src.name.replace(/ \d+$/, ''));
+    if (world) {
+      copy.transform = {
+        position: world.position.map((v, i) => roundTo(v + offset[i])) as Vec3,
+        rotation: [...world.rotation] as Vec3,
+      };
+    }
+    if (copy.kind === 'group') copy.children = [];
+    addObjectDraft(doc, copy);
+    if (src.kind === 'group') src.children.forEach((c) => add(c, copy.id));
+    return copy.id;
+  };
+  for (const r of clip.roots) {
+    const id = add(r.id, null, r.world);
+    if (id) created.push(id);
+  }
+  return created;
 }

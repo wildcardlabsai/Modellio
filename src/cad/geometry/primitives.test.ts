@@ -36,6 +36,21 @@ describe('primitive geometry', () => {
         g.dispose();
       });
 
+      it('stays watertight with outward normals under every mirror combination', () => {
+        const combos: Vec3[] = [[-1, 1, 1], [1, -1, 1], [1, 1, -1], [-1, -1, 1], [-1, -1, -1]];
+        const reference = analyzeMesh(buildShapeGeometry(def.type, [20, 14, 9], def.defaultParams)).volume;
+        for (const m of combos) {
+          const g = buildShapeGeometry(def.type, [20, 14, 9], def.defaultParams, m);
+          const r = analyzeMesh(g);
+          expect(r.watertight).toBe(true);
+          expect(r.volume).toBeCloseTo(reference, 3);
+          g.computeBoundingBox();
+          const ext = g.boundingBox!.getSize(new THREE.Vector3());
+          expect([ext.x, ext.y, ext.z].map((v) => +v.toFixed(3))).toEqual([20, 14, 9]);
+          g.dispose();
+        }
+      });
+
       it('has unit-length normals for every vertex', () => {
         const g = buildShapeGeometry(def.type, [30, 10, 5], def.defaultParams);
         const n = g.getAttribute('normal');

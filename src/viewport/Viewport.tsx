@@ -2,9 +2,10 @@ import { Suspense, useState, type DragEvent } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useEditor } from '@/store/editorStore';
-import type { PrimitiveType, ShapeObject } from '@/types/document';
+import type { PrimitiveType } from '@/types/document';
 import { Workplane } from './Workplane';
-import { ShapeMesh } from './ShapeMesh';
+import { SceneNode } from './SceneNode';
+import { isEffectivelyVisible, topLevel } from '@/cad/hierarchy';
 import { SelectionOverlay } from './SelectionOverlay';
 import { TransformGizmo } from './TransformGizmo';
 import { CameraController } from './CameraController';
@@ -17,22 +18,18 @@ export const SHAPE_DRAG_MIME = 'application/x-modellio-shape';
 
 function SceneObjects() {
   const doc = useEditor((s) => s.doc);
+  const rootIds = useEditor((s) => s.doc.rootIds);
   const selection = useEditor((s) => s.selection);
-  const selected = new Set(selection);
-  const shapes = Object.values(doc.objects).filter((o): o is ShapeObject => o.kind === 'shape');
-  const primary = selection.length === 1 ? doc.objects[selection[0]] : undefined;
+  const items = topLevel(doc, selection).filter((id) => isEffectivelyVisible(doc, id));
 
   return (
     <>
-      {shapes.map((o) => (
-        <ShapeMesh key={o.id} object={o} selected={selected.has(o.id)} />
+      {rootIds.map((id) => (
+        <SceneNode key={id} id={id} />
       ))}
-      {primary?.kind === 'shape' && primary.visible && <SelectionOverlay object={primary} showDimensions />}
-      {selection.length > 1 &&
-        selection.map((id) => {
-          const o = doc.objects[id];
-          return o?.kind === 'shape' && o.visible ? <SelectionOverlay key={id} object={o} showDimensions={false} /> : null;
-        })}
+      {items.map((id) => (
+        <SelectionOverlay key={id} doc={doc} id={id} showDimensions={items.length === 1} />
+      ))}
     </>
   );
 }
@@ -64,6 +61,7 @@ function Lights() {
 /** The central 3D modelling workspace. */
 export function Viewport() {
   const workplane = useEditor((s) => s.doc.settings.workplane);
+  const showGrid = useEditor((s) => s.showGrid);
   const [dragOver, setDragOver] = useState(false);
   const home = VIEW_DIRECTIONS.home.clone().multiplyScalar(240);
 
@@ -112,7 +110,7 @@ export function Viewport() {
         <color attach="background" args={['#f5f7fb']} />
         <fog attach="fog" args={['#f5f7fb', 1200, 4000]} />
         <Lights />
-        <Workplane size={workplane} />
+        <Workplane size={workplane} showGrid={showGrid} />
         <Suspense fallback={null}>
           <SceneObjects />
         </Suspense>

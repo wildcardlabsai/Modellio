@@ -19,6 +19,7 @@ export const VIEW_DIRECTIONS: Record<ViewName, THREE.Vector3> = {
 interface Bridge {
   camera: THREE.Camera | null;
   renderer: THREE.WebGLRenderer | null;
+  scene: THREE.Scene | null;
   domElement: HTMLElement | null;
   setView: (dir: THREE.Vector3) => void;
   frame: (box: THREE.Box3 | null) => void;
@@ -30,6 +31,7 @@ interface Bridge {
 export const viewport: Bridge = {
   camera: null,
   renderer: null,
+  scene: null,
   domElement: null,
   setView: () => {},
   frame: () => {},

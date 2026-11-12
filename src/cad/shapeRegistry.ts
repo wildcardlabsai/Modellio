@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import type { PrimitiveType, ShapeParams, Vec3 } from '@/types/document';
 import { PRIMITIVE_BUILDERS } from './geometry/primitives';
-import { MIN_DIMENSION } from './geometry/geometryUtils';
+import { MIN_DIMENSION, mirrorGeometry } from './geometry/geometryUtils';
 
 export interface ParamSpec {
   key: string;
@@ -64,11 +64,12 @@ export function getShapeDefinition(type: PrimitiveType): ShapeDefinition {
 }
 
 /** Generate the real geometry of a primitive. Caller owns (and disposes) the result. */
-export function buildShapeGeometry(type: PrimitiveType, size: Vec3, params: ShapeParams): THREE.BufferGeometry {
+export function buildShapeGeometry(type: PrimitiveType, size: Vec3, params: ShapeParams, mirror?: Vec3): THREE.BufferGeometry {
   const safe: Vec3 = [
     Math.max(MIN_DIMENSION, Math.abs(size[0])),
     Math.max(MIN_DIMENSION, Math.abs(size[1])),
     Math.max(MIN_DIMENSION, Math.abs(size[2])),
   ];
-  return PRIMITIVE_BUILDERS[type](safe, params);
+  const geometry = PRIMITIVE_BUILDERS[type](safe, params);
+  return mirror ? mirrorGeometry(geometry, mirror) : geometry;
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { TopBar } from '@/components/layout/TopBar';
 import { Toolbar } from '@/components/toolbar/Toolbar';
-import { LeftRail } from '@/components/layout/LeftRail';
+import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
+import { WorkplanePanel } from '@/components/layout/WorkplanePanel';
 import { ShapeLibrary } from '@/components/shapes/ShapeLibrary';
 import { Inspector } from '@/components/inspector/Inspector';
 import { Viewport } from '@/viewport/Viewport';
@@ -9,14 +10,16 @@ import { ShortcutsDialog } from '@/components/layout/ShortcutsDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
+import * as hierarchy from '@/cad/hierarchy';
 
 export function App() {
   useKeyboardShortcuts();
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [panel, setPanel] = useState<LeftPanel>('shapes');
 
   // Expose the store for debugging and automated workflow tests.
   useEffect(() => {
-    (window as unknown as { modellio: unknown }).modellio = { store: useEditor, viewport, worldToScreen };
+    (window as unknown as { modellio: unknown }).modellio = { store: useEditor, viewport, worldToScreen, hierarchy };
   }, []);
 
   useEffect(() => {
@@ -32,8 +35,8 @@ export function App() {
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <Toolbar />
       <div className="flex min-h-0 flex-1">
-        <LeftRail />
-        <ShapeLibrary />
+        <LeftRail panel={panel} onChange={setPanel} />
+        {panel === 'shapes' ? <ShapeLibrary /> : <WorkplanePanel />}
         <main className="relative min-w-0 flex-1">
           <Viewport />
         </main>

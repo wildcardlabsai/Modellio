@@ -8,6 +8,9 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Undo', `${MOD} Z`],
       ['Redo', `${MOD} ⇧ Z`],
       ['Duplicate', `${MOD} D`],
+      ['Copy / Cut / Paste', `${MOD} C / X / V`],
+      ['Group', `${MOD} G`],
+      ['Ungroup', `${MOD} ⇧ G`],
       ['Delete', 'Del / ⌫'],
       ['Select all', `${MOD} A`],
       ['Deselect / cancel drag', 'Esc'],
@@ -33,6 +36,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Zoom to cursor', 'Wheel'],
       ['Fit selection / all', 'F'],
       ['Multi-select', '⇧ / Ctrl click'],
+      ['Select inside a group', 'Double-click'],
     ],
   },
 ];

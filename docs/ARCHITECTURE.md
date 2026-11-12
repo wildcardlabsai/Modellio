@@ -29,13 +29,14 @@ or adapters over it, and geometry is always generated from it.
 | `src/cad/geometry/` | Pure geometry: primitive builders, mesh helpers, the watertightness validator. No React. |
 | `src/cad/shapeRegistry.ts` | Shape library definitions: default size, parameters, inspector schema. **The extension point for new primitives.** |
 | `src/cad/transforms/` | Matrix ↔ document transform conversion, world bounds, workplane drop. |
-| `src/cad/document.ts` | Pure document operations (add, remove, duplicate, naming, free-spot placement). |
+| `src/cad/document.ts` | Pure document operations (add, remove, duplicate, naming, free-spot placement, clipboard). |
+| `src/cad/hierarchy.ts` | Scene-graph maths: world matrices, bounds in any frame, group/ungroup, re-parenting, group scaling, mirror, align/distribute. |
 | `src/store/` | Zustand editor store and the snapshot history. |
 | `src/viewport/` | Everything Three.js / R3F: meshes, gizmo, camera, view cube, workplane, overlays. |
 | `src/components/` | DOM UI: layout, toolbar, shape library, inspector, scene list, UI primitives. |
 | `src/hooks/` | Keyboard shortcuts. |
 | `src/utils/` | Math, ids, the safe arithmetic evaluator for numeric fields. |
-| Reserved: `src/cad/operations`, `export`, `import`, `serialization`, `selection` | Phases 2–4 (Booleans, STL/OBJ, persistence). |
+| Reserved: `src/cad/operations`, `export`, `import`, `serialization`, `selection` | Phases 3–4 (Booleans, STL/OBJ, persistence). |
 
 ## Coordinate system and units
 
@@ -86,6 +87,38 @@ Absolute parameters (e.g. tube wall thickness in mm) stay absolute when an objec
 | @jscad/modeling | A good solid-modelling kernel (also used for text extrusion and hull). Its Booleans are slower and its data model differs. Candidate for text/2D tooling, not core Booleans. |
 
 Primitive meshes are already watertight, so they can be passed straight to Manifold after welding vertices.
+
+## Hierarchy (Phase 2)
+
+* Groups are real scene-graph nodes. `transform` is **local to the parent**;
+  `worldMatrix(doc, id)` composes the chain. The viewport renders nested
+  `<group>` elements, so Three.js composes the same matrices.
+* **World placement is invariant** under group, ungroup, re-parenting (tree drag-and-drop) and
+  paste. Each of these captures world matrices first, then rewrites local transforms as
+  `inverse(newParentWorld) · world`. Tests check this, including rotated groups.
+* A group's pivot is placed at its bounds centre when it is created (and after it is resized).
+* **Group resizing never stores a scale.** Factors are applied in the group's
+  frame about the bottom centre of its bounds, so it stays on the plate. Child positions
+  are scaled, and child sizes are scaled per axis through each child's rotation.
+  This is exact only when every descendant is axis-aligned with the group (multiples of 90°).
+  Otherwise non-uniform scaling would need shear, which a real solid can't hold, so the
+  group scales uniformly instead and the UI says so.
+* Lock and visibility are inherited: `isEffectivelyLocked` and `isEffectivelyVisible`. Hidden subtrees are
+  not mounted, so they can't be picked.
+* Selection in the viewport picks the outermost group; double-click selects the part itself.
+  Commands act on the **top-level** selection (`topLevel()`), so a group and its child are never
+  transformed twice.
+
+## Mirror
+
+A world reflection `M` has determinant −1. It can't be stored as a rotation, and a
+negative scale would break the "size is authoritative" rule. For each mirrored node,
+MODELLIO stores the new world matrix `M · W · F`, where `F` reflects the node's
+**local axis most aligned with the mirror normal**. That product is a proper rotation,
+and when the axes are aligned the rotation doesn't change at all. Each shape absorbs `F`
+into a per-axis `mirror` flag. When the mesh is generated, it is reflected and its
+triangle winding reversed, so normals still point outwards. Tests check that every primitive stays
+watertight with the same positive volume under every mirror combination, and that mirroring twice is the identity.
 
 ## State, history and transactions
 
@@ -139,6 +172,4 @@ Primitive meshes are already watertight, so they can be passed straight to Manif
 * **Persistence (Phase 4):** the document is plain JSON with `schemaVersion`. A
   `ProjectRepository` interface (IndexedDB now, Supabase later) will sit in
   `src/cad/serialization`.
-* **Groups (Phase 2):** `GroupObject`, `parentId` and `children` already exist in the model, and
-  delete/duplicate already handle subtrees.
 * **Holes (Phase 3):** `ShapeObject.isHole` is already in the model.

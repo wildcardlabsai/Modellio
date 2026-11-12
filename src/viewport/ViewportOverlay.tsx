@@ -35,6 +35,7 @@ export function ViewportOverlay() {
   const isEmpty = useEditor((s) => s.doc.rootIds.length === 0);
   const [viewsOpen, setViewsOpen] = useState(false);
   const toast = useToast(lastAction, actionSeq);
+  const notice = useNotice();
 
   return (
     <>
@@ -54,7 +55,7 @@ export function ViewportOverlay() {
       {/* Hint when scale is not possible */}
       {mode === 'scale' && selection.length > 1 && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-lg bg-navy/90 px-3 py-1.5 text-xs font-medium text-white shadow-float">
-          Resize works on one object at a time — use the inspector for exact sizes.
+          Resize works on one object at a time. Group objects to resize them together.
         </div>
       )}
 
@@ -81,7 +82,7 @@ export function ViewportOverlay() {
             onChange={(e) => setSnap({ translate: Number(e.target.value) })}
             className="bg-transparent font-medium tabular-nums outline-none disabled:opacity-40"
           >
-            {SNAP_STEPS.map((s) => (
+            {[...new Set([...SNAP_STEPS, snap.translate])].sort((a, b) => a - b).map((s) => (
               <option key={s} value={s}>
                 {s} mm
               </option>
@@ -95,7 +96,7 @@ export function ViewportOverlay() {
             onChange={(e) => setSnap({ rotate: Number(e.target.value) })}
             className="bg-transparent font-medium tabular-nums outline-none disabled:opacity-40"
           >
-            {[1, 5, 15, 22.5, 45, 90].map((s) => (
+            {[...new Set([1, 5, 15, 22.5, 45, 90, snap.rotate])].sort((a, b) => a - b).map((s) => (
               <option key={s} value={s}>
                 {s}°
               </option>
@@ -147,13 +148,13 @@ export function ViewportOverlay() {
         </div>
       )}
 
-      {/* Action toast (undo/redo feedback) */}
-      {toast && (
+      {/* Action toast (undo/redo feedback) and notices */}
+      {(notice || toast) && (
         <div
           role="status"
           className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2 rounded-lg bg-navy px-3 py-1.5 text-xs font-medium text-white shadow-float"
         >
-          {toast}
+          {notice ?? toast}
         </div>
       )}
     </>
@@ -169,5 +170,18 @@ function useToast(lastAction: string | null, version: number) {
     const t = setTimeout(() => setMsg(null), 1400);
     return () => clearTimeout(t);
   }, [lastAction, version]);
+  return msg;
+}
+
+/** Show store notices (e.g. "Select two or more objects to group") briefly. */
+function useNotice() {
+  const notice = useEditor((s) => s.notice);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    setMsg(notice.text);
+    const t = setTimeout(() => setMsg(null), 2200);
+    return () => clearTimeout(t);
+  }, [notice]);
   return msg;
 }

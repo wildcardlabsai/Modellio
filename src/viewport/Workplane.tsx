@@ -4,10 +4,11 @@ import { Grid } from '@react-three/drei';
 
 interface Props {
   size: [number, number];
+  showGrid: boolean;
 }
 
 /** The build plate: a fine 1 mm grid with 10 mm sections plus X/Y/Z axes, in the XY plane. */
-export function Workplane({ size }: Props) {
+export function Workplane({ size, showGrid }: Props) {
   const [w, h] = size;
 
   const axes = useMemo(() => {
@@ -34,7 +35,7 @@ export function Workplane({ size }: Props) {
         <shadowMaterial transparent opacity={0.12} />
       </mesh>
       {/* drei's Grid lives in its local XZ plane; rotate it into world XY. */}
-      <Grid
+      {showGrid && <Grid
         rotation={[Math.PI / 2, 0, 0]}
         args={[w, h]}
         cellSize={1}
@@ -46,7 +47,7 @@ export function Workplane({ size }: Props) {
         fadeDistance={Math.max(w, h) * 4}
         fadeStrength={1.2}
         side={THREE.DoubleSide}
-      />
+      />}
       <lineSegments geometry={axes.x}>
         <lineBasicMaterial color="#e5484d" />
       </lineSegments>

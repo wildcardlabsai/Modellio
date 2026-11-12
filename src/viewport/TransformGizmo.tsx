@@ -3,17 +3,32 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { useEditor } from '@/store/editorStore';
-import type { ObjectId, ShapeObject, Transform, Vec3 } from '@/types/document';
-import { eulerFromDegrees, matrixToTransform, transformToMatrix } from '@/cad/transforms/transform';
-import { selectionBounds } from './bounds';
+import type { ModelDocument, ObjectId, Transform, Vec3 } from '@/types/document';
+import { eulerFromDegrees, matrixToTransform } from '@/cad/transforms/transform';
+import {
+  groupLocalBounds,
+  isEffectivelyLocked,
+  isEffectivelyVisible,
+  parentWorldMatrix,
+  scaleGroupDraft,
+  topLevel,
+  worldBoundsOf,
+  worldMatrix,
+} from '@/cad/hierarchy';
 import { viewport } from './viewportBridge';
 import { DEG2RAD, roundTo, snapTo } from '@/utils/math';
 import { MIN_DIMENSION } from '@/cad/geometry/geometryUtils';
 
 interface DragItem {
   id: ObjectId;
+  kind: 'shape' | 'group';
+  /** Local transform at drag start. */
   transform: Transform;
-  matrix: THREE.Matrix4;
+  /** World matrix at drag start. */
+  world: THREE.Matrix4;
+  /** Inverse of the parent's world matrix (world → parent frame). */
+  parentInv: THREE.Matrix4;
+  parentInvQuat: THREE.Quaternion;
   size: Vec3;
 }
 
@@ -25,11 +40,16 @@ interface DragState {
 
 const LABELS = { translate: 'Move', rotate: 'Rotate', scale: 'Resize' } as const;
 
+/** The objects the gizmo manipulates: visible, top-level members of the selection. */
+function gizmoItems(doc: ModelDocument, selection: ObjectId[]): ObjectId[] {
+  return topLevel(doc, selection).filter((id) => isEffectivelyVisible(doc, id));
+}
+
 /**
  * Translate / rotate / scale gizmo.
  *
  * The gizmo manipulates an invisible proxy object placed at the selection's
- * pivot. Every change is converted into document edits (position, rotation,
+ * pivot (in WORLD space, so it works at any depth of the group hierarchy). Every change is converted into document edits (position, rotation,
  * size) inside a single transaction, so the document stays the single source
  * of truth and one drag = one undo step. Scale is never left on objects: it is
  * baked into the authoritative `size`, keeping inspector values and exported
@@ -86,19 +106,18 @@ export function TransformGizmo() {
     return () => controls.removeEventListener('dragging-changed', onDragging);
   }, [controls, orbit]);
 
-  const shapes = selection.map((id) => doc.objects[id]).filter((o): o is ShapeObject => o?.kind === 'shape' && o.visible);
-  const blocked = shapes.some((o) => o.locked);
-  const enabled = shapes.length > 0 && !blocked && !(mode === 'scale' && shapes.length > 1);
+  const items = gizmoItems(doc, selection);
+  const blocked = items.some((id) => isEffectivelyLocked(doc, id));
+  const enabled = items.length > 0 && !blocked && !(mode === 'scale' && items.length > 1);
 
   const syncProxy = useCallback(() => {
     const { doc: d, selection: sel } = useEditor.getState();
-    const objs = sel.map((id) => d.objects[id]).filter((o): o is ShapeObject => o?.kind === 'shape');
-    if (!objs.length) return;
-    if (objs.length === 1) {
-      proxy.position.set(...objs[0].transform.position);
-      proxy.quaternion.setFromEuler(eulerFromDegrees(objs[0].transform.rotation));
+    const ids = gizmoItems(d, sel);
+    if (!ids.length) return;
+    if (ids.length === 1) {
+      worldMatrix(d, ids[0]).decompose(proxy.position, proxy.quaternion, new THREE.Vector3());
     } else {
-      selectionBounds(d, sel).getCenter(proxy.position);
+      worldBoundsOf(d, ids).getCenter(proxy.position);
       proxy.quaternion.identity();
     }
     proxy.scale.set(1, 1, 1);
@@ -122,36 +141,48 @@ export function TransformGizmo() {
 
   const onMouseDown = () => {
     proxy.updateMatrix();
+    const { doc: d } = useEditor.getState();
     drag.current = {
       proxyStart: proxy.matrix.clone(),
       proxyStartPos: proxy.position.clone(),
-      items: shapes.map((o) => ({
-        id: o.id,
-        transform: o.transform,
-        matrix: transformToMatrix(o.transform),
-        size: [...o.size] as Vec3,
-      })),
+      items: items.map((id) => {
+        const o = d.objects[id];
+        const parentInv = parentWorldMatrix(d, id).invert();
+        const parentInvQuat = new THREE.Quaternion();
+        parentInv.decompose(new THREE.Vector3(), parentInvQuat, new THREE.Vector3());
+        return {
+          id,
+          kind: o.kind,
+          transform: o.transform,
+          world: worldMatrix(d, id),
+          parentInv,
+          parentInvQuat,
+          size: o.kind === 'shape' ? ([...o.size] as Vec3) : (groupLocalBounds(d, id).getSize(new THREE.Vector3()).toArray() as Vec3),
+        };
+      }),
     };
     viewport.gizmoActive = true;
-    useEditor.getState().beginTransaction(shapes.length > 1 ? `${LABELS[mode]} ${shapes.length} objects` : LABELS[mode]);
+    useEditor.getState().beginTransaction(items.length > 1 ? `${LABELS[mode]} ${items.length} objects` : LABELS[mode]);
   };
 
   const onObjectChange = () => {
     const d = drag.current;
     if (!d) return;
     proxy.updateMatrix();
-    const { applyTransient, snap: snapSettings } = useEditor.getState();
+    const { applyTransient, snap: snapSettings, transaction } = useEditor.getState();
 
     if (mode === 'translate') {
+      // World delta → each object's parent frame. Rotation is left untouched.
       const delta = proxy.position.clone().sub(d.proxyStartPos);
       applyTransient((draft) => {
         for (const item of d.items) {
           const o = draft.objects[item.id];
           if (!o) continue;
+          const local = delta.clone().applyQuaternion(item.parentInvQuat);
           o.transform.position = [
-            roundTo(item.transform.position[0] + delta.x),
-            roundTo(item.transform.position[1] + delta.y),
-            roundTo(item.transform.position[2] + delta.z),
+            roundTo(item.transform.position[0] + local.x),
+            roundTo(item.transform.position[1] + local.y),
+            roundTo(item.transform.position[2] + local.z),
           ];
         }
       });
@@ -163,13 +194,13 @@ export function TransformGizmo() {
       applyTransient((draft) => {
         for (const item of d.items) {
           const o = draft.objects[item.id];
-          if (o) o.transform = matrixToTransform(delta.clone().multiply(item.matrix));
+          if (o) o.transform = matrixToTransform(item.parentInv.clone().multiply(delta).multiply(item.world));
         }
       });
       return;
     }
 
-    // Scale: single object. Convert the proxy scale into a new size.
+    // Scale: one object. Convert the proxy scale into new real dimensions.
     const item = d.items[0];
     let factors = [Math.abs(proxy.scale.x), Math.abs(proxy.scale.y), Math.abs(proxy.scale.z)];
     if (useEditor.getState().lockProportions) {
@@ -181,7 +212,16 @@ export function TransformGizmo() {
       if (factors[i] === 1) return s;
       return Math.max(MIN_DIMENSION, roundTo(step ? snapTo(s * factors[i], step) || step : s * factors[i]));
     }) as Vec3;
-    // Keep the object's local bottom face anchored, so resizing an object
+
+    if (item.kind === 'group') {
+      const base = transaction?.base;
+      if (!base) return;
+      const f = size.map((v, i) => (item.size[i] > 1e-9 ? v / item.size[i] : 1)) as Vec3;
+      applyTransient((draft) => scaleGroupDraft(draft, base, item.id, f));
+      return;
+    }
+
+    // Keep the shape's local bottom face anchored, so resizing an object
     // that rests on the workplane does not push it through the plate.
     const lift = new THREE.Vector3(0, 0, (size[2] - item.size[2]) / 2).applyEuler(eulerFromDegrees(item.transform.rotation));
     applyTransient((draft) => {

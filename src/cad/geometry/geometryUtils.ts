@@ -102,3 +102,27 @@ export function mergeParts(parts: THREE.BufferGeometry[]): THREE.BufferGeometry 
   if (!merged) throw new Error('Failed to merge geometry parts');
   return merged;
 }
+
+/**
+ * Reflect a geometry across its local axes (signs of ±1). Positions and normals
+ * are transformed by the reflection, and when the reflection is improper
+ * (odd number of flips) the triangle winding is reversed so faces still point
+ * outwards and the mesh remains a valid, positively-oriented solid.
+ */
+export function mirrorGeometry(geometry: THREE.BufferGeometry, signs: Vec3): THREE.BufferGeometry {
+  if (signs[0] === 1 && signs[1] === 1 && signs[2] === 1) return geometry;
+  geometry.scale(signs[0], signs[1], signs[2]);
+  const improper = signs[0] * signs[1] * signs[2] < 0;
+  if (improper) {
+    // Reverse winding only: normals were already reflected correctly above.
+    const normal = geometry.getAttribute('normal');
+    flipGeometry(geometry);
+    if (normal) {
+      for (let i = 0; i < normal.count; i++) normal.setXYZ(i, -normal.getX(i), -normal.getY(i), -normal.getZ(i));
+      normal.needsUpdate = true;
+    }
+  }
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}

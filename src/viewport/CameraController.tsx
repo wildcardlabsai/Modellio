@@ -28,6 +28,7 @@ export function CameraController() {
   const controls = useRef<OrbitControlsImpl>(null);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
   const invalidate = useThree((s) => s.invalidate);
   const anim = useRef<Animation | null>(null);
   const frameRequest = useEditor((s) => s.frameRequest);
@@ -36,6 +37,7 @@ export function CameraController() {
     viewport.camera = camera;
     viewport.domElement = gl.domElement;
     viewport.renderer = gl;
+    viewport.scene = scene;
 
     const start = (toDir: THREE.Vector3, toTarget: THREE.Vector3, toDist: number) => {
       const c = controls.current;
@@ -71,7 +73,7 @@ export function CameraController() {
       const dist = Math.max(fitH, fitW) * 1.15;
       start(camera.position.clone().sub(c.target), sphere.center, dist);
     };
-  }, [camera, gl, invalidate]);
+  }, [camera, gl, scene, invalidate]);
 
   // Frame requests from the UI (F key, toolbar button).
   useEffect(() => {

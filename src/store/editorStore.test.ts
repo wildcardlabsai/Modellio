@@ -137,3 +137,91 @@ describe('editor store', () => {
     expect(S().doc.objects[a]).toBe(before.objects[a]);
   });
 });
+
+describe('phase 2 commands', () => {
+  const addTwo = () => {
+    const a = S().addShape('box');
+    const b = S().addShape('cylinder');
+    S().select([a, b]);
+    return [a, b];
+  };
+
+  it('groups and ungroups as single undo steps and selects the result', () => {
+    const [a, b] = addTwo();
+    S().groupSelected();
+    const [gid] = S().selection;
+    expect(S().doc.objects[gid].kind).toBe('group');
+    expect(S().doc.rootIds).toEqual([gid]);
+    S().undo();
+    expect(S().doc.rootIds).toEqual([a, b]);
+    S().redo();
+    S().select([gid]);
+    S().ungroupSelected();
+    expect(S().selection).toEqual([a, b]);
+    expect(S().doc.objects[gid]).toBeUndefined();
+  });
+
+  it('refuses to group a single object and explains why', () => {
+    S().addShape('box');
+    S().groupSelected();
+    expect(S().doc.rootIds).toHaveLength(1);
+    expect(S().notice?.text).toMatch(/two or more/);
+  });
+
+  it('locking a group protects its children from deletion', () => {
+    addTwo();
+    S().groupSelected();
+    const [gid] = S().selection;
+    S().setLocked(gid, true);
+    const child = (S().doc.objects[gid] as { children: string[] }).children[0];
+    S().select([child]);
+    S().deleteSelected();
+    expect(S().doc.objects[child]).toBeDefined();
+  });
+
+  it('copy/paste deep-copies a group with fresh ids and cascades', () => {
+    addTwo();
+    S().groupSelected();
+    const [gid] = S().selection;
+    S().copySelected();
+    S().paste();
+    const [p1] = S().selection;
+    S().paste();
+    const [p2] = S().selection;
+    expect(p1).not.toBe(gid);
+    expect(Object.keys(S().doc.objects)).toHaveLength(9); // 3 groups × (group + 2 shapes)
+    const x = (id: string) => S().doc.objects[id].transform.position[0];
+    expect(x(p1) - x(gid)).toBeCloseTo(10);
+    expect(x(p2) - x(gid)).toBeCloseTo(20);
+  });
+
+  it('mirror is undoable and restores mirror flags', () => {
+    const id = S().addShape('wedge');
+    S().mirrorSelected(0);
+    expect((S().doc.objects[id] as { mirror?: number[] }).mirror).toEqual([-1, 1, 1]);
+    S().undo();
+    expect((S().doc.objects[id] as { mirror?: number[] }).mirror).toBeUndefined();
+  });
+
+  it('setGroupSize resizes the whole group to the exact dimension', async () => {
+    addTwo();
+    S().groupSelected();
+    const [gid] = S().selection;
+    const { groupLocalBounds } = await import('@/cad/hierarchy');
+    const before = groupLocalBounds(S().doc, gid).max.x - groupLocalBounds(S().doc, gid).min.x;
+    S().setGroupSize(gid, [before * 2, 20, 20]);
+    const b = groupLocalBounds(S().doc, gid);
+    expect(b.max.x - b.min.x).toBeCloseTo(before * 2);
+  });
+
+  it('moveInTree re-parents and is undoable', () => {
+    addTwo();
+    S().groupSelected();
+    const [gid] = S().selection;
+    const c = S().addShape('sphere');
+    S().moveInTree([c], gid, 0);
+    expect(S().doc.objects[c].parentId).toBe(gid);
+    S().undo();
+    expect(S().doc.objects[c].parentId).toBeNull();
+  });
+});
