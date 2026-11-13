@@ -31,13 +31,23 @@ await page.goto(URL + '/', { waitUntil: 'networkidle' });
 const landing = page.getByTestId('landing');
 check('1. / shows the landing page', await landing.isVisible());
 check(
-  '2. Hero headline and both studio CTAs',
-  (await page.getByRole('heading', { level: 1 }).textContent()).includes('Make anything') &&
-    (await page.getByRole('link', { name: /Start designing/ }).count()) >= 1 &&
-    (await page.getByRole('link', { name: /Split a 3MF file/ }).count()) >= 1,
+  '2. The first screen offers both paths: Design Studio from scratch, or a maker',
+  (await page.getByRole('heading', { level: 1 }).textContent()).includes('What are you making') &&
+    (await page
+      .getByTestId('path-scratch')
+      .getByRole('link', { name: /Start designing/ })
+      .isVisible()) &&
+    (await page.getByTestId('path-makers').getByTestId('maker-link-cookie').isVisible()) &&
+    (await page.getByTestId('path-makers').getByTestId('maker-link-split').isVisible()),
 );
+const fold = await page.evaluate(() => {
+  const r = (id) => document.querySelector(`[data-testid="${id}"]`).getBoundingClientRect();
+  return { scratch: r('path-scratch').top, makers: r('path-makers').top, h: window.innerHeight };
+});
+check('2b. Both paths start above the fold on a laptop screen', fold.scratch < fold.h && fold.makers < fold.h, JSON.stringify(fold));
 check('3. The editor is not mounted on the landing page', (await page.getByTestId('left-panel').count()) === 0);
-for (const id of ['design', 'split']) check(`4. Live studio card: ${id}`, await page.getByTestId(`studio-card-${id}`).isVisible());
+for (const id of ['design', 'split', 'cookie'])
+  check(`4. Live studio card: ${id}`, await page.getByTestId(`studio-card-${id}`).isVisible());
 const soon = ['keyring', 'sign', 'organiser', 'box', 'lithophane'];
 let soonOk = true;
 for (const id of soon) {
@@ -65,7 +75,7 @@ check(
 );
 await page.getByRole('navigation', { name: 'Page sections' }).first().getByRole('link', { name: 'FAQ' }).click();
 await page.waitForTimeout(600);
-check('7. Section links scroll to their section', await page.getByRole('heading', { name: 'Questions, answered' }).isVisible());
+check('7. Section links scroll to their section', await page.getByRole('heading', { name: 'Questions', exact: true }).isVisible());
 const faq = page.locator('details').first();
 await faq.locator('summary').click();
 check('8. FAQ answers expand', await faq.evaluate((d) => d.open));
@@ -165,7 +175,7 @@ for (const [label, vp] of [
     await p.waitForTimeout(500);
     check(
       '22. phone: menu links navigate and close the menu',
-      !(await menu.isVisible()) && (await p.getByRole('heading', { name: 'Start from something useful' }).isVisible()),
+      !(await menu.isVisible()) && (await p.getByRole('heading', { name: 'Or start from a template' }).isVisible()),
     );
   }
   await p.screenshot({ path: `${OUT}/landing-02-${label}.png` });

@@ -1,203 +1,118 @@
-import {
-  Box,
-  Scissors,
-  KeyRound,
-  Signpost,
-  Grid3x3,
-  Package,
-  Image,
-  Cookie,
-  Ruler,
-  Combine,
-  Type,
-  Printer,
-  Download,
-  History,
-  Share2,
-  LayoutTemplate,
-  Palette,
-  Layers,
-  Puzzle,
-  type LucideIcon,
-} from 'lucide-react';
 import type { StudioId } from '@/app/studio';
 
-export interface StudioCard {
+/** A tool on the landing page. Live tools open in the app; the rest are listed as coming soon. */
+export interface Maker {
   id: string;
   name: string;
-  tagline: string;
+  /** One line: what you put in and what you get out. */
+  line: string;
   description: string;
-  Icon: LucideIcon;
-  /** Live studios open in the app; the rest are on the roadmap. */
   studio?: Exclude<StudioId, 'home'>;
   image?: string;
-  badge?: string;
-  points: string[];
+  /** What you get, as short facts. */
+  facts: string[];
+  /** Call to action on the button. */
+  action?: string;
 }
 
-export const LIVE_STUDIOS: StudioCard[] = [
+export const DESIGN_STUDIO: Maker = {
+  id: 'design',
+  name: 'Design Studio',
+  line: 'A blank workplane and a box of shapes.',
+  description:
+    'Drop shapes on the workplane, set their sizes in millimetres, then join them together or cut one out of another. Add raised or engraved text, round off edges, check that it will print, and export it for your slicer.',
+  studio: 'design',
+  image: '/landing/design-studio.jpg',
+  action: 'Open the Design Studio',
+  facts: [
+    '15 shapes, including 3D text',
+    'Sizes to 0.01 mm, or inches',
+    'Join, cut out, intersect',
+    'Holes, chamfers, hollowing',
+    'Print check for overhangs and thin walls',
+    'STL, OBJ and 3MF in and out',
+    'Autosave and version history',
+    'Share a link to a design',
+  ],
+};
+
+export const MAKERS: Maker[] = [
   {
-    id: 'design',
-    name: 'Design Studio',
-    tagline: 'Model anything from simple shapes',
+    id: 'cookie',
+    name: 'Cookie Cutter & Stamp Maker',
+    line: 'A shape, a name or a drawing in; a cutter, a stamp and a handle out.',
     description:
-      'Drag shapes onto the workplane, size them to the millimetre, and combine them into solid parts. Cut holes, add 3D text, round edges and check the result is ready to print.',
-    Icon: Box,
-    studio: 'design',
-    image: '/landing/design-studio.jpg',
-    points: ['Exact sizes in mm or inches', 'Combine, subtract and intersect', 'Export STL, OBJ and 3MF'],
+      'Pick one of the built-in shapes, type a name, or upload a logo or a scan of a child’s drawing. It makes a cutter, a stamp that fits inside it and presses the design into the dough, and a handle for the stamp. Everything prints without supports.',
+    studio: 'cookie',
+    image: '/landing/cookie-maker.jpg',
+    action: 'Open Cookie Cutter & Stamp Maker',
+    facts: [
+      'Shapes, text, SVG or a picture',
+      'Mirrored so text reads the right way',
+      'Stamp fits inside the cutter',
+      'One 3MF, or an STL per part',
+    ],
   },
   {
     id: 'split',
     name: 'Split Studio',
-    tagline: 'Turn a multi-colour 3MF into parts you can print',
+    line: 'A multi-colour 3MF in; one closed part per colour out.',
     description:
-      'Open a multi-colour 3MF from Bambu Studio, OrcaSlicer, PrusaSlicer or a CAD tool. Split Studio finds every colour, object and painted region, so you can print each colour as its own part on a single-colour printer.',
-    Icon: Scissors,
+      'For multi-colour models when you only have one nozzle. Open a 3MF from Bambu Studio, OrcaSlicer or PrusaSlicer and it separates every colour, including painted areas, into its own solid part, adds pegs so the parts line up, and lays them out on plates for your printer.',
     studio: 'split',
     image: '/landing/split-studio.jpg',
-    badge: 'New',
-    points: [
-      'Reads slicer filaments and painted areas',
-      'Splits each colour into a closed, printable part',
-      'Adds pegs and sockets, then exports plates',
-    ],
-  },
-  {
-    id: 'cookie',
-    name: 'Cookie Cutter & Stamp Maker',
-    tagline: 'Any shape, name or drawing as a cookie cutter',
-    description:
-      'Pick a shape, type a name or upload a logo or a child’s drawing. You get a cutter, a matching stamp that presses the design into the dough, and a handle, all ready to print without supports.',
-    Icon: Cookie,
-    studio: 'cookie',
-    image: '/landing/cookie-maker.jpg',
-    badge: 'New',
-    points: [
-      'Shapes, text, SVG logos and traced pictures',
-      'Cutter, stamp and handle that fit together',
-      'Mirrored so the cookie comes out the right way',
-    ],
+    action: 'Open Split Studio',
+    facts: ['Reads slicer colours and paint', 'Thin colours become inlays', 'Pegs and blind sockets', 'One plate per colour'],
   },
 ];
 
-export const COMING_SOON: StudioCard[] = [
-  {
-    id: 'keyring',
-    name: 'Keyring Maker',
-    tagline: 'Name tags and keyrings in seconds',
-    description: 'Type a name, pick a font and shape, and get a print-ready keyring with a strong loop.',
-    Icon: KeyRound,
-    points: [],
-  },
-  {
-    id: 'sign',
-    name: 'Sign Generator',
-    tagline: 'Door signs, labels and plaques',
-    description: 'Raised or engraved text on a backing plate, with fixing holes and colour layers.',
-    Icon: Signpost,
-    points: [],
-  },
+export const COMING_SOON: Maker[] = [
+  { id: 'keyring', name: 'Keyring Maker', line: 'A name and a font in; a keyring with a strong loop out.', description: '', facts: [] },
+  { id: 'sign', name: 'Sign Maker', line: 'Desk, door and house-number signs with stands or screw holes.', description: '', facts: [] },
   {
     id: 'organiser',
     name: 'Organiser Generator',
-    tagline: 'Drawer and desk organisers that fit',
-    description: 'Enter your drawer size and get a grid of trays and dividers that fit it exactly.',
-    Icon: Grid3x3,
-    points: [],
+    line: 'Your drawer size in; Gridfinity-compatible bins and a baseplate out.',
+    description: '',
+    facts: [],
   },
-  {
-    id: 'box',
-    name: 'Box & Lid Maker',
-    tagline: 'Boxes with lids that actually close',
-    description: 'Parametric boxes with snap or sliding lids and the right tolerance for your printer.',
-    Icon: Package,
-    points: [],
-  },
+  { id: 'box', name: 'Box & Lid Maker', line: 'Boxes to the millimetre with lids that actually fit.', description: '', facts: [] },
   {
     id: 'lithophane',
     name: 'Lithophane Studio',
-    tagline: 'Photos that glow when lit',
-    description: 'Turn a photo into a lithophane panel, lamp shade or night-light insert.',
-    Icon: Image,
-    points: [],
+    line: 'A photo in; a panel that shows the picture when lit from behind.',
+    description: '',
+    facts: [],
   },
-];
-
-export const DESIGN_FEATURES: { Icon: LucideIcon; title: string; body: string }[] = [
-  {
-    Icon: Ruler,
-    title: 'Precise to the millimetre',
-    body: 'Type exact sizes and positions, snap to a grid and measure between any two points.',
-  },
-  {
-    Icon: Combine,
-    title: 'Real solid modelling',
-    body: 'Combine, subtract and intersect shapes on watertight geometry, and edit the parts later.',
-  },
-  { Icon: Type, title: '3D text', body: 'Add raised or engraved lettering in several fonts for names, labels and signs.' },
-  {
-    Icon: Printer,
-    title: 'Ready to print',
-    body: 'Lay flat on any face, hollow out, and check for overhangs and thin walls before you slice.',
-  },
-  { Icon: Download, title: 'Open formats', body: 'Import STL and OBJ. Export STL, OBJ or 3MF with colours for your slicer.' },
-  { Icon: History, title: 'Saved as you go', body: 'Projects autosave in your browser, with version history and full undo.' },
-  { Icon: Share2, title: 'Share a link', body: 'Send a view-only link to your design. The recipient can save their own copy.' },
-  { Icon: LayoutTemplate, title: 'Start from a template', body: 'Begin with a phone stand, plant pot or organiser and make it your own.' },
-];
-
-export const SPLIT_FEATURES: { Icon: LucideIcon; title: string; body: string; soon?: boolean }[] = [
-  { Icon: Palette, title: 'Finds every colour', body: 'Reads 3MF materials, colour groups, slicer filaments and painted triangles.' },
-  {
-    Icon: Layers,
-    title: 'Keeps your assembly',
-    body: 'Objects, parts and repeated copies stay separate, with their exact positions in mm.',
-  },
-  { Icon: Scissors, title: 'Split by colour', body: 'Each colour becomes its own closed solid; thin painted areas become inlays.' },
-  { Icon: Puzzle, title: 'Pegs and sockets', body: 'Alignment pegs and blind sockets so the printed parts fit back together.' },
-];
-
-export const STEPS = [
-  { title: 'Design or import', body: 'Start from a blank workplane or a template, or open an STL, OBJ or 3MF.' },
-  { title: 'Shape and check', body: 'Size, combine and refine, then run the print check to catch problems early.' },
-  { title: 'Export and print', body: 'Download STL, OBJ or 3MF and open it in your slicer.' },
-];
-
-export const AUDIENCES = [
-  { title: 'Beginners', body: 'If you can drag a box, you can model. Everything is labelled and every action can be undone.' },
-  { title: 'Makers', body: 'Brackets, spacers, clips and replacement parts, sized to fit what you already have.' },
-  { title: 'Teachers', body: 'Runs on school laptops and iPads in the browser, with no installs or licences.' },
-  { title: 'Multi-colour printers', body: 'Plan colour prints and split them into parts for a single-colour printer.' },
 ];
 
 export const FAQ = [
   {
-    q: 'Is MODELLIO free?',
-    a: 'Yes. The Design Studio and Split Studio are free to use. There is no install and you don’t need an account.',
+    q: 'Is it free?',
+    a: 'Yes. Everything on this page is free to use, with no install and no account.',
   },
   {
-    q: 'Where are my designs stored?',
-    a: 'Projects are saved in your browser on this device and autosave as you work. You can also download a project file at any time to back it up or move it to another computer. Files you open in Split Studio are processed on your device and are not uploaded.',
+    q: 'Design Studio or a maker — which should I use?',
+    a: 'If a maker exists for the thing you want, start there: it asks a few questions and does the fiddly geometry for you. For anything else, or to change what a maker made, use the Design Studio. Makers have a "Customise in Design Studio" button for exactly that.',
   },
   {
-    q: 'Which printers and slicers does it work with?',
-    a: 'Any. MODELLIO exports standard STL, OBJ and 3MF files, which Bambu Studio, OrcaSlicer, PrusaSlicer, Cura and other slicers open.',
+    q: 'Where are my designs kept?',
+    a: 'In your browser, on this device, saved as you work. You can download a project file at any time to back it up or move it to another computer. Files you open in Split Studio or the makers are processed on your device and are not uploaded.',
+  },
+  {
+    q: 'Will it work with my printer?',
+    a: 'It exports standard STL, OBJ and 3MF files, which Bambu Studio, OrcaSlicer, PrusaSlicer, Cura and other slicers open.',
   },
   {
     q: 'Is this an AI model generator?',
-    a: 'No. MODELLIO is a real CAD tool: every shape is genuine, watertight geometry measured in millimetres, and you stay in control of every dimension.',
+    a: 'No. You decide every shape and size; nothing is generated from a prompt. What you see is real, closed geometry measured in millimetres.',
   },
   {
-    q: 'Does it work on a tablet?',
-    a: 'Yes. MODELLIO runs in modern browsers on desktop and on tablets such as the iPad, with touch-friendly controls. Phones are better for viewing than modelling.',
+    q: 'Are printed cookie cutters food safe?',
+    a: 'Printed parts have fine layer lines that can hold dough. Use a filament rated for food contact, wash by hand in warm soapy water, and dust the cutter with flour before use.',
   },
   {
-    q: 'Are the cookie cutters food safe?',
-    a: 'The design is, but printed parts have tiny layer lines that can trap dough. Use a filament rated for food contact, hand-wash in warm soapy water, and dust the cutter with flour before use.',
-  },
-  {
-    q: 'When will the new studios arrive?',
-    a: 'Keyring Maker, Sign Generator, Organiser Generator, Box & Lid Maker and Lithophane Studio are in development. They will appear on this page as they launch.',
+    q: 'Does it work on an iPad?',
+    a: 'Yes. It runs in modern browsers on desktops, laptops and tablets, with touch controls. Phones are fine for looking, cramped for designing.',
   },
 ];
