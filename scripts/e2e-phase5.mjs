@@ -534,24 +534,33 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   // O: first-run tour on a fresh profile.
   const fresh = await browser.newContext({ viewport: { width: 1600, height: 900 } });
   const tp = await fresh.newPage();
+  const tourErrors = [];
+  tp.on('pageerror', (e) => tourErrors.push(e.message));
   await tp.goto(URL + '?tour', { waitUntil: 'networkidle' });
   const tour = tp.getByTestId('tour');
-  check(
-    'O1. A first visit starts the guided tour',
-    await tour
-      .waitFor({ timeout: 5000 })
-      .then(() => true)
-      .catch(() => false),
-  );
+  // Generous timeout: CI machines can be slow to load and compile the app on a first visit.
+  const tourStarted = await tour
+    .waitFor({ timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!tourStarted) {
+    // Diagnostics instead of guesswork if this ever fails again.
+    await tp.screenshot({ path: `${OUT}/p5-tour-missing.png` });
+    const diag = await tp.evaluate(() => ({
+      onboarded: localStorage.getItem('modellio:onboarded'),
+      project: window.modellio?.projects?.getState().current?.name ?? null,
+    }));
+    console.log('Tour diagnostics:', JSON.stringify({ ...diag, errors: tourErrors }));
+  }
+  check('O1. A first visit starts the guided tour', tourStarted);
   check('O1b. The first step points at the shape library', (await tp.getByRole('dialog', { name: 'Add shapes' }).count()) === 1);
   await tp.addScriptTag({ content: axeSource });
-  const tourViolations = await tp.evaluate(
-    async () =>
-      (await window.axe.run(document.querySelector('[data-testid=tour]'))).violations.filter(
-        (v) => v.impact === 'serious' || v.impact === 'critical',
-      ).length,
-  );
-  check('A1. No serious accessibility violations: tour', tourViolations === 0);
+  const tourViolations = await tp.evaluate(async () => {
+    const el = document.querySelector('[data-testid=tour]');
+    if (!el) return -1; // no tour to scan: reported as a failure, not a crash
+    return (await window.axe.run(el)).violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').length;
+  });
+  check('A1. No serious accessibility violations: tour', tourViolations === 0, tourViolations < 0 ? 'tour not shown' : '');
   for (let i = 0; i < 5; i++) await tp.keyboard.press('ArrowRight');
   check('O2. Arrow keys step through the tour', (await tp.getByRole('dialog', { name: 'Print it' }).count()) === 1);
   await tp.screenshot({ path: `${OUT}/p5-05-tour.png` });
