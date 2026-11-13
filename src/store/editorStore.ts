@@ -122,7 +122,11 @@ export interface EditorState {
 
   // --- modelling commands ---
   /** Add a primitive. With `exact`, it is placed precisely at `at` (drag & drop). */
-  addShape: (type: PrimitiveType, at?: [number, number], opts?: { exact?: boolean }) => ObjectId;
+  addShape: (
+    type: PrimitiveType,
+    at?: [number, number],
+    opts?: { exact?: boolean; /** Rest on a surface: world point + outward normal. */ surface?: { point: Vec3; normal: Vec3 } },
+  ) => ObjectId;
   deleteSelected: () => void;
   duplicateSelected: () => void;
   copySelected: () => void;
@@ -312,6 +316,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       const position: Vec3 =
         opts?.exact && at ? [roundTo(at[0]), roundTo(at[1]), def.defaultSize[2] / 2] : findFreePosition(doc, def.defaultSize, at ?? [0, 0]);
       const obj = createShape(doc, type, position);
+      if (opts?.surface) {
+        // Stand the shape on the face: local +Z along the face normal, base on the hit point.
+        const n = new THREE.Vector3(...opts.surface.normal).normalize();
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+        const p = new THREE.Vector3(...opts.surface.point).addScaledVector(n, def.defaultSize[2] / 2);
+        obj.transform = matrixToTransform(new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1)));
+      }
       get().apply(`Add ${def.label}`, (d) => addObjectDraft(d, obj));
       set({ selection: [obj.id] });
       return obj.id;

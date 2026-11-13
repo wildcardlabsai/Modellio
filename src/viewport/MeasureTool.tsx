@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
-import { Html, Line } from '@react-three/drei';
+import { Line } from '@react-three/drei';
+import { usePublishLabels, type Label } from './labels';
 import { useEditor } from '@/store/editorStore';
 import type { Vec3 } from '@/types/document';
 import { formatMm, roundTo } from '@/utils/math';
@@ -78,6 +79,30 @@ export function MeasureTool() {
     return { a, b, mid: a.clone().lerp(b, 0.5), d: b.clone().sub(a) };
   }, [points]);
 
+  const labels = useMemo<Label[] | null>(
+    () =>
+      tool === 'measure' && info
+        ? [
+            {
+              key: 'measure',
+              position: info.mid.toArray() as [number, number, number],
+              content: (
+                <div className="rounded-lg bg-navy px-2.5 py-1.5 text-center text-white shadow-float" data-testid="measure-label">
+                  <div className="text-[14px] font-bold tabular-nums">{formatMm(info.d.length())} mm</div>
+                  <div className="mt-0.5 flex gap-2 text-[11px] font-medium tabular-nums">
+                    <span className="text-[#ff8a8d]">ΔX {formatMm(Math.abs(info.d.x))}</span>
+                    <span className="text-[#6ee7a8]">ΔY {formatMm(Math.abs(info.d.y))}</span>
+                    <span className="text-[#93b4ff]">ΔZ {formatMm(Math.abs(info.d.z))}</span>
+                  </div>
+                </div>
+              ),
+            },
+          ]
+        : null,
+    [tool, info],
+  );
+  usePublishLabels('measure', labels);
+
   if (tool !== 'measure') return null;
   return (
     <group userData={{ noThumbnail: true }}>
@@ -90,19 +115,6 @@ export function MeasureTool() {
       {info && (
         <>
           <Line points={[info.a, info.b]} color="#F59E0B" lineWidth={2.5} depthTest={false} renderOrder={19} />
-          <Html position={info.mid} center zIndexRange={[30, 0]}>
-            <div
-              className="pointer-events-none whitespace-nowrap rounded-lg bg-navy px-2.5 py-1.5 text-center text-white shadow-float"
-              data-testid="measure-label"
-            >
-              <div className="text-[14px] font-bold tabular-nums">{formatMm(info.d.length())} mm</div>
-              <div className="mt-0.5 flex gap-2 text-[11px] font-medium tabular-nums">
-                <span className="text-[#ff8a8d]">ΔX {formatMm(Math.abs(info.d.x))}</span>
-                <span className="text-[#6ee7a8]">ΔY {formatMm(Math.abs(info.d.y))}</span>
-                <span className="text-[#93b4ff]">ΔZ {formatMm(Math.abs(info.d.z))}</span>
-              </div>
-            </div>
-          </Html>
         </>
       )}
     </group>

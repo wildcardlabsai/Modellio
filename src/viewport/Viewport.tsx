@@ -2,19 +2,30 @@ import { Suspense, useEffect, useState, type DragEvent } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useEditor } from '@/store/editorStore';
-import type { PrimitiveType } from '@/types/document';
+import type { PrimitiveType, Vec3 } from '@/types/document';
 import { Workplane } from './Workplane';
 import { SceneNode } from './SceneNode';
-import { isEffectivelyVisible, topLevel } from '@/cad/hierarchy';
+import { isEffectivelyVisible, topLevel, worldBoundsOf } from '@/cad/hierarchy';
 import { SelectionOverlay } from './SelectionOverlay';
 import { TransformGizmo } from './TransformGizmo';
 import { CameraController } from './CameraController';
 import { ViewCube } from './ViewCube';
-import { VIEW_DIRECTIONS, gizmoRecentlyUsed, screenToWorkplane } from './viewportBridge';
+import {
+  VIEW_DIRECTIONS,
+  gizmoRecentlyUsed,
+  pickSurface,
+  screenToWorkplane,
+  viewport,
+  worldToScreen,
+  manipulatorAt,
+} from './viewportBridge';
 import { snapTo } from '@/utils/math';
 import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
 import { CrashProbe, useDebug } from '@/utils/debug';
+import { SnapGuides } from './guides';
+import { LabelLayer, LabelProjector } from './labels';
+import { ResizeHandles } from './ResizeHandles';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ViewportCrash } from '@/components/layout/CrashScreens';
 
@@ -76,6 +87,46 @@ export function Viewport() {
   const [dragOver, setDragOver] = useState(false);
   const [sceneError, setSceneError] = useState<Error | null>(null);
   const [sceneKey, setSceneKey] = useState(0);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+  /**
+   * Shift + drag on empty space draws a selection box (it would otherwise pan).
+   * Shift + click on an object still toggles it.
+   */
+  const onPointerDownCapture = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !e.shiftKey || useEditor.getState().tool !== 'select') return;
+    if (manipulatorAt(e.clientX, e.clientY) || pickSurface(e.clientX, e.clientY)?.objectName) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const host = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const start = { x0: e.clientX - host.left, y0: e.clientY - host.top };
+    let rect = { ...start, x1: start.x0, y1: start.y0 };
+    setMarquee(rect);
+    const onMove = (ev: PointerEvent) => {
+      rect = { ...start, x1: ev.clientX - host.left, y1: ev.clientY - host.top };
+      setMarquee(rect);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      setMarquee(null);
+      if (Math.abs(rect.x1 - rect.x0) < 4 && Math.abs(rect.y1 - rect.y0) < 4) return;
+      const [xa, xb] = [Math.min(rect.x0, rect.x1) + host.left, Math.max(rect.x0, rect.x1) + host.left];
+      const [ya, yb] = [Math.min(rect.y0, rect.y1) + host.top, Math.max(rect.y0, rect.y1) + host.top];
+      const { doc, select } = useEditor.getState();
+      // An object is boxed when the centre of its bounds is inside the rectangle.
+      const hits = doc.rootIds.filter((id) => {
+        if (!doc.objects[id]?.visible) return false;
+        const c = worldBoundsOf(doc, [id]).getCenter(new THREE.Vector3());
+        const p = worldToScreen(c.x, c.y, c.z);
+        return !!p && p.x >= xa && p.x <= xb && p.y >= ya && p.y <= yb;
+      });
+      if (hits.length) select(hits, { additive: true });
+      viewport.lastGizmoRelease = performance.now(); // swallow the click that ends the drag
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
   const home = VIEW_DIRECTIONS.home.clone().multiplyScalar(240);
 
   const onDragOver = (e: DragEvent) => {
@@ -109,12 +160,19 @@ export function Viewport() {
       return;
     }
     const step = snap.enabled ? snap.translate : 0;
+    // Dropped onto another object: stand the new shape on that face.
+    const surface = pickSurface(e.clientX, e.clientY);
+    if (surface?.objectName) {
+      addShape(type, undefined, { surface: { point: surface.point.toArray() as Vec3, normal: surface.normal.toArray() as Vec3 } });
+      return;
+    }
     addShape(type, [snapTo(hit.x, step), snapTo(hit.y, step)], { exact: true });
   };
 
   return (
     <div
       className="relative h-full w-full overflow-hidden bg-canvas"
+      onPointerDownCapture={onPointerDownCapture}
       onDragOver={onDragOver}
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
@@ -136,6 +194,7 @@ export function Viewport() {
         <fog attach="fog" args={['#f5f7fb', 1200, 4000]} />
         <Lights />
         <CameraController />
+        <LabelProjector />
         {/*
           Scene crashes are caught INSIDE the canvas, so the WebGL context and the
           canvas element survive; a DOM panel is shown over it until "Restart".
@@ -146,12 +205,27 @@ export function Viewport() {
             <SceneObjects />
           </Suspense>
           <TransformGizmo />
+          <ResizeHandles />
           <ViewCube />
           <MeasureTool />
+          <SnapGuides />
           <CrashProbe />
         </ErrorBoundary>
       </Canvas>
+      <LabelLayer />
       <ViewportOverlay />
+      {marquee && (
+        <div
+          data-testid="marquee"
+          className="pointer-events-none absolute border border-brand bg-brand/10"
+          style={{
+            left: Math.min(marquee.x0, marquee.x1),
+            top: Math.min(marquee.y0, marquee.y1),
+            width: Math.abs(marquee.x1 - marquee.x0),
+            height: Math.abs(marquee.y1 - marquee.y0),
+          }}
+        />
+      )}
       {sceneError && (
         <div className="absolute inset-0 z-10">
           <ViewportCrash

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { Html, Line } from '@react-three/drei';
+import { Line } from '@react-three/drei';
+import { usePublishLabels, type Label } from './labels';
 import type { ModelDocument, ObjectId } from '@/types/document';
 import { formatMm } from '@/utils/math';
 import { groupLocalBounds, worldBoundsOf, worldMatrix } from '@/cad/hierarchy';
@@ -42,11 +43,47 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
   }, [box]);
 
   const world = useMemo(() => worldBoundsOf(doc, [id]), [doc, id]);
-  if (box.isEmpty()) return null;
-  const size = box.getSize(new THREE.Vector3());
-  const c = box.getCenter(new THREE.Vector3());
-  const elevation = world.min.z;
   const isGroup = o.kind === 'group';
+
+  // Dimension and elevation labels (world positions; offset in pixels off the edges/handles).
+  const labels = useMemo<Label[] | null>(() => {
+    if (!showDimensions || box.isEmpty()) return null;
+    const size = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
+    const at = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(matrix).toArray() as [number, number, number];
+    const out: Label[] = [
+      {
+        key: `${id}:x`,
+        position: at(c.x, box.min.y, box.min.z),
+        offset: [0, 18],
+        content: <div className={`${label} bg-axis-x`}>{formatMm(size.x)}</div>,
+      },
+      {
+        key: `${id}:y`,
+        position: at(box.max.x, c.y, box.min.z),
+        offset: [30, 0],
+        content: <div className={`${label} bg-axis-y`}>{formatMm(size.y)}</div>,
+      },
+      {
+        key: `${id}:z`,
+        position: at(box.max.x, box.min.y, c.z),
+        offset: [30, 0],
+        content: <div className={`${label} bg-axis-z`}>{formatMm(size.z)}</div>,
+      },
+    ];
+    if (Math.abs(world.min.z) > 0.005) {
+      out.push({
+        key: `${id}:elev`,
+        position: [world.min.x, world.min.y, world.min.z / 2],
+        content: <div className={`${label} bg-navy/85`}>↕ {formatMm(world.min.z)}</div>,
+      });
+    }
+    return out;
+  }, [showDimensions, box, matrix, world, id]);
+  usePublishLabels(`sel:${id}`, labels);
+
+  if (box.isEmpty()) return null;
+  const elevation = world.min.z;
 
   return (
     <>
@@ -64,37 +101,20 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
           depthTest={false}
           renderOrder={10}
         />
-        {showDimensions && (
-          <>
-            <Html position={[c.x, box.min.y, box.min.z]} center zIndexRange={[20, 0]}>
-              <div className={`${label} bg-axis-x`}>{formatMm(size.x)}</div>
-            </Html>
-            <Html position={[box.max.x, c.y, box.min.z]} center zIndexRange={[20, 0]}>
-              <div className={`${label} bg-axis-y`}>{formatMm(size.y)}</div>
-            </Html>
-            <Html position={[box.max.x, box.min.y, c.z]} center zIndexRange={[20, 0]}>
-              <div className={`${label} bg-axis-z`}>{formatMm(size.z)}</div>
-            </Html>
-          </>
-        )}
       </group>
       {showDimensions && Math.abs(elevation) > 0.005 && (
-        <group userData={{ noThumbnail: true }}>
-          <Line
-            points={[
-              [world.min.x, world.min.y, 0],
-              [world.min.x, world.min.y, world.min.z],
-            ]}
-            color="#101828"
-            lineWidth={1}
-            dashed
-            dashSize={1.5}
-            gapSize={1}
-          />
-          <Html position={[world.min.x, world.min.y, world.min.z / 2]} center zIndexRange={[20, 0]}>
-            <div className={`${label} bg-navy/85`}>↕ {formatMm(elevation)}</div>
-          </Html>
-        </group>
+        <Line
+          userData={{ noThumbnail: true }}
+          points={[
+            [world.min.x, world.min.y, 0],
+            [world.min.x, world.min.y, world.min.z],
+          ]}
+          color="#101828"
+          lineWidth={1}
+          dashed
+          dashSize={1.5}
+          gapSize={1}
+        />
       )}
     </>
   );

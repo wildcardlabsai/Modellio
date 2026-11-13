@@ -127,7 +127,207 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   await reset();
 }
 
-void [close, screen, bounds, download, home]; // helpers used by the sections below
+// ===================== Direct manipulation =====================
+{
+  await reset();
+  await home();
+  const [a, b] = await S(() => {
+    const s = window.modellio.store.getState();
+    const a = s.addShape('box', [-30, 0], { exact: true });
+    const b = s.addShape('box', [30, 0], { exact: true });
+    s.setSize(b, [24, 24, 30]);
+    s.setPosition(b, [30, 0, 15]);
+    s.clearSelection();
+    return [a, b];
+  });
+  await page.waitForTimeout(300);
+  // D1: press on box A and drag it on top of box B.
+  const from = await screen([-30, 0, 20]);
+  const to = await screen([30, 0, 20]); // movement is 1:1 at the grab height (A's top, z = 20)
+  const past0 = (await state()).past;
+  const camBefore = await S(() => window.modellio.viewport.camera.position.toArray().map(Math.round).join());
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 25 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  let ba = await bounds([a]);
+  check(
+    'D1. Dragging an object onto another stacks it on the top face',
+    close(ba.min[2], 30, 0.01) && Math.abs((ba.min[0] + ba.max[0]) / 2 - 30) < 6,
+    `bottom z ${ba.min[2]}`,
+  );
+  check('D1b. …selects it, and the whole drag is one undo step', (await state()).selection[0] === a && (await state()).past === past0 + 1);
+  const camAfter = await S(() => window.modellio.viewport.camera.position.toArray().map(Math.round).join());
+  check('D1c. The camera did not orbit while dragging the object', camBefore === camAfter, `${camBefore} → ${camAfter}`);
+  await page.keyboard.press('Control+z');
+  ba = await bounds([a]);
+  check('D1d. Undo puts it back on the plate', close(ba.min[2], 0, 0.01) && close(ba.min[0], -40, 0.01));
+
+  // D2: drop a cylinder from the library onto B's top face.
+  const top = await screen([30, 0, 30]);
+  const vp = await page.locator('[data-testid=viewport]').boundingBox();
+  await page
+    .locator('button[title^="Add Cylinder "]')
+    .dragTo(page.locator('[data-testid=viewport]'), { targetPosition: { x: top.x - vp.x, y: top.y - vp.y } });
+  let st = await state();
+  const cyl = st.selection[0];
+  let bc = await bounds([cyl]);
+  check(
+    'D2. A shape dropped on a top face stands on it',
+    st.doc.objects[cyl]?.shape === 'cylinder' && close(bc.min[2], 30, 0.05),
+    `bottom z ${bc.min[2].toFixed(2)}`,
+  );
+
+  // D3: drop a cone onto B's front (−Y) face: it should point out of that face.
+  const side = await screen([30, -12, 15]);
+  await page
+    .locator('button[title^="Add Cone "]')
+    .dragTo(page.locator('[data-testid=viewport]'), { targetPosition: { x: side.x - vp.x, y: side.y - vp.y } });
+  st = await state();
+  const cone = st.selection[0];
+  const axis = await S((id) => {
+    const { store, hierarchy } = window.modellio;
+    const e = hierarchy.worldMatrix(store.getState().doc, id).elements;
+    return [e[8], e[9], e[10]].map((v) => Math.round(v * 1000) / 1000);
+  }, cone);
+  bc = await bounds([cone]);
+  check(
+    'D3. A shape dropped on a side face is oriented along the face normal',
+    close(axis[1], -1, 0.01) && close(bc.max[1], -12, 0.05),
+    `axis ${axis}`,
+  );
+  await S(
+    (ids) => {
+      const s = window.modellio.store.getState();
+      s.select(ids);
+      s.deleteSelected();
+    },
+    [cyl, cone],
+  );
+
+  // D4: resize handles (R): drag the +X edge handle of A outward.
+  await S((id) => window.modellio.store.getState().select([id]), a);
+  await page.keyboard.press('r');
+  await page.waitForTimeout(200);
+  const ex = await screen([-20, 0, 0]);
+  const ex2 = await screen([-5, 0, 0]);
+  await page.mouse.move(ex.x, ex.y);
+  await page.mouse.down();
+  await page.mouse.move(ex2.x, ex2.y, { steps: 15 });
+  await page.mouse.up();
+  ba = await bounds([a]);
+  check(
+    'D4. +X edge handle stretches X only, the −X side stays put',
+    close(ba.min[0], -40, 0.01) && close(ba.max[0], -5, 0.6) && close(ba.max[1] - ba.min[1], 20, 0.01),
+    `x ${ba.min[0]} … ${ba.max[0]}`,
+  );
+  // D5: top handle sets the height.
+  const tz = await screen([(ba.min[0] + ba.max[0]) / 2, 0, 20]);
+  await page.mouse.move(tz.x, tz.y);
+  await page.mouse.down();
+  await page.mouse.move(tz.x, tz.y - 60, { steps: 12 });
+  await page.mouse.up();
+  ba = await bounds([a]);
+  check('D5. Top handle raises the height from the bottom', close(ba.min[2], 0, 0.01) && ba.max[2] > 25, `height ${ba.max[2]}`);
+  // D6: Shift + corner = uniform.
+  const before = await S((id) => window.modellio.store.getState().doc.objects[id].size, a);
+  const corner = await screen([ba.max[0], ba.min[1], 0]);
+  const corner2 = await screen([ba.max[0] + 10, ba.min[1] - 3, 0]);
+  await page.keyboard.down('Shift');
+  await page.mouse.move(corner.x, corner.y);
+  await page.mouse.down();
+  await page.mouse.move(corner2.x, corner2.y, { steps: 12 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  const after = await S((id) => window.modellio.store.getState().doc.objects[id].size, a);
+  const ratios = after.map((v, i) => v / before[i]);
+  check(
+    'D6. Shift + corner handle resizes uniformly',
+    ratios[0] > 1.05 && ratios.every((r) => close(r, ratios[0], 0.03)),
+    ratios.map((r) => r.toFixed(3)).join(' / '),
+  );
+  await page.keyboard.press('w');
+  await page.screenshot({ path: `${OUT}/p5-01-handles.png` });
+
+  // D7: smart snapping to a neighbour (B moved to a non-grid position).
+  await S(
+    ([a, b]) => {
+      const s = window.modellio.store.getState();
+      s.setSize(a, [20, 20, 20]);
+      s.setPosition(a, [-30, 0, 10]);
+      s.setPosition(b, [30.3, 0, 15]); // B's min X = 18.3
+      s.clearSelection();
+    },
+    [a, b],
+  );
+  await page.waitForTimeout(200);
+  const p0 = await screen([-30, -10, 10]);
+  const p1 = await screen([7.6, -10, 10]); // A's max X ≈ 17.6 → should snap to 18.3
+  await page.mouse.move(p0.x, p0.y);
+  await page.mouse.down();
+  await page.mouse.move(p1.x, p1.y, { steps: 20 });
+  const guides = await S(() => window.modellio.guides.getState().guides.length);
+  await page.mouse.up();
+  ba = await bounds([a]);
+  check('D7. Dragging near a neighbour snaps edges together (off-grid)', close(ba.max[0], 18.3, 0.01), `A max X ${ba.max[0]}`);
+  check('D7b. …and shows a snap guide while dragging', guides > 0, `${guides} guide(s)`);
+
+  // D8: Shift + drag box-select.
+  await page.keyboard.press('Escape');
+  const r0 = await screen([-60, -40, 0]);
+  const r1 = await screen([60, 40, 0]);
+  await page.keyboard.down('Shift');
+  await page.mouse.move(Math.min(r0.x, r1.x) - 40, Math.max(r0.y, r1.y) + 30);
+  await page.mouse.down();
+  await page.mouse.move(Math.max(r0.x, r1.x) + 40, Math.min(r0.y, r1.y) - 140, { steps: 10 });
+  const marqueeShown = await page.getByTestId('marquee').isVisible();
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  st = await state();
+  check('D8. Shift + drag on empty space box-selects', marqueeShown && st.selection.length === 2, `${st.selection.length} selected`);
+
+  // D9: double-click inside a combination picks the part.
+  const hole = await S(
+    ([a]) => {
+      const s = window.modellio.store.getState();
+      s.setSize(a, [30, 30, 20]);
+      s.setPosition(a, [-30, 0, 10]);
+      const h = s.addShape('cylinder', [-30, 0], { exact: true });
+      s.setSize(h, [10, 10, 30]);
+      s.setPosition(h, [-30, 0, 10]);
+      s.setHole([h], true);
+      s.select([a, h]);
+      s.combineSelected('union');
+      return h;
+    },
+    [a],
+  );
+  await home();
+  await page.keyboard.press('r'); // resize mode: the move gizmo is hidden, so it can't take the double-click
+  await page.waitForTimeout(600);
+  const onBox = await screen([-38, -8, 20]);
+  await page.mouse.dblclick(onBox.x, onBox.y);
+  st = await state();
+  check(
+    'D9. Double-clicking a combination selects the part under the cursor',
+    st.selection[0] === a,
+    st.doc.objects[st.selection[0]]?.name,
+  );
+  // Look into the hole through its opening (off-centre: the top resize handle sits at the centre);
+  // the surface seen there is the hole's inner wall.
+  const inHole = await screen([-32.5, 2.5, 20]);
+  await page.keyboard.press('Escape'); // deselect the box part (its ghost would cover the opening)
+  await page.waitForTimeout(200);
+  await page.mouse.dblclick(inHole.x, inHole.y);
+  st = await state();
+  check('D9b. …including a hole, picked through the cut it makes', st.selection[0] === hole, st.doc.objects[st.selection[0]]?.name);
+  await page.screenshot({ path: `${OUT}/p5-02-combination-pick.png` });
+  await page.keyboard.press('w');
+  await reset();
+}
+
+void download; // used by later sections
 
 // @@SECTIONS@@
 

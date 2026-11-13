@@ -167,12 +167,12 @@ await page.screenshot({ path: `${OUT}/04-rotated.png` });
 await page.keyboard.press('r');
 await page.waitForTimeout(150);
 p = b2.transform.position;
-u = await gizmoUnit(p);
-a = await screen([p[0], p[1], p[2] + 0.5 * u]);
+// Resize mode shows one-sided handles; the top handle sits on the centre of the top face.
+a = await screen([p[0], p[1], p[2] + b2.size[2] / 2]);
 await drag(a, { x: a.x, y: a.y - 80 });
 let b3 = await obj(boxId);
 check(
-  '7. Resize handle makes the box taller, bottom stays on the workplane',
+  '7. Top resize handle makes the box taller, bottom stays on the workplane',
   b3.size[2] > 20 && close(b3.size[0], 20) && close(b3.transform.position[2] - b3.size[2] / 2, 0, 0.01),
   `size ${JSON.stringify(b3.size)}, z ${b3.transform.position[2]}`,
 );

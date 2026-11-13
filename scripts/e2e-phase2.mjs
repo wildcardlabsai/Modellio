@@ -139,8 +139,8 @@ check('3b. Group drag is one undo step', s.past === pastBefore + 1);
 await page.keyboard.press('r');
 await page.waitForTimeout(150);
 gp = await worldPos(gid);
-u = await gizmoUnit(gp);
-const zh = await screen([gp[0], gp[1], gp[2] + 0.5 * u]);
+const gTop = (await bounds([gid])).max[2];
+const zh = await screen([gp[0], gp[1], gTop]); // the top resize handle
 await drag(zh, { x: zh.x, y: zh.y - 70 });
 let b = await bounds([gid]);
 check(

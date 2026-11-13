@@ -19,6 +19,7 @@ import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ViewportCrash } from '@/components/layout/CrashScreens';
 import { useDebug } from '@/utils/debug';
+import { useGuides } from '@/viewport/guides';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
@@ -39,6 +40,7 @@ export function App() {
       hierarchy,
       computeCombined,
       debug: useDebug,
+      guides: useGuides,
     };
   }, []);
 

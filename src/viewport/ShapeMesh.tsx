@@ -7,6 +7,7 @@ import { useEditor } from '@/store/editorStore';
 import { rootAncestor } from '@/cad/hierarchy';
 import { gizmoRecentlyUsed } from './viewportBridge';
 import { useCadReady } from './cadReady';
+import { startSurfaceDrag } from './surfaceDrag';
 import { DEG2RAD } from '@/utils/math';
 
 export const HOLE_COLOR = '#8C97AB';
@@ -71,6 +72,10 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
       renderOrder={translucent ? 2 : 0}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        startSurfaceDrag(e, object.id);
+      }}
       onPointerOver={(e) => {
         e.stopPropagation();
         setHovered(true);

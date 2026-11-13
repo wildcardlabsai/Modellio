@@ -2,13 +2,43 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import { useEditor } from '@/store/editorStore';
-import type { ObjectId } from '@/types/document';
+import * as THREE from 'three';
+import type { ModelDocument, ObjectId } from '@/types/document';
 import { computeCombined } from '@/cad/operations/combine';
 import { meshDataToGeometry } from '@/cad/kernel/meshData';
-import { rootAncestor } from '@/cad/hierarchy';
+import { descendantShapes, isEffectivelyVisible, rootAncestor, worldMatrix } from '@/cad/hierarchy';
+import { buildGeometryForShape } from '@/cad/shapeRegistry';
 import { gizmoRecentlyUsed } from './viewportBridge';
 import { useCadReady } from './cadReady';
+import { startSurfaceDrag } from './surfaceDrag';
 import { HOLE_COLOR } from './ShapeMesh';
+
+/**
+ * Which part of a combination was double-clicked? The parts are not drawn, so
+ * ray-cast their real geometry and choose the one whose surface coincides with
+ * the visible result at the click point (that also finds holes through the cut
+ * they made).
+ */
+function pickPart(doc: ModelDocument, groupId: ObjectId, ray: THREE.Ray, resultDistance: number): ObjectId | null {
+  const raycaster = new THREE.Raycaster(ray.origin, ray.direction);
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  let best: { id: ObjectId; score: number } | null = null;
+  for (const part of descendantShapes(doc, [groupId])) {
+    if (!isEffectivelyVisible(doc, part.id)) continue;
+    const geo = buildGeometryForShape(part);
+    if (!geo) continue;
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.matrixAutoUpdate = false;
+    mesh.matrixWorld.copy(worldMatrix(doc, part.id));
+    for (const hit of raycaster.intersectObject(mesh, false)) {
+      const score = Math.abs(hit.distance - resultDistance);
+      if (!best || score < best.score) best = { id: part.id, score };
+    }
+    geo.dispose();
+  }
+  material.dispose();
+  return best && best.score < 0.5 ? best.id : null;
+}
 
 /**
  * The live Boolean result of a combined group, rendered in the group's local
@@ -49,10 +79,15 @@ export const CombinedMesh = memo(function CombinedMesh({
       castShadow={!result.isHole}
       receiveShadow={!result.isHole}
       onClick={onClick}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        startSurfaceDrag(e, id);
+      }}
       onDoubleClick={(e) => {
         if (gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
         e.stopPropagation();
-        useEditor.getState().select([id]);
+        const s = useEditor.getState();
+        s.select([pickPart(s.doc, id, e.ray, e.distance) ?? id]);
       }}
       onPointerOver={(e) => {
         e.stopPropagation();

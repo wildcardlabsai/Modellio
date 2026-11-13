@@ -3,21 +3,14 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { useEditor } from '@/store/editorStore';
-import type { ModelDocument, ObjectId, Transform, Vec3 } from '@/types/document';
-import { eulerFromDegrees, matrixToTransform } from '@/cad/transforms/transform';
-import {
-  groupLocalBounds,
-  isEffectivelyLocked,
-  isEffectivelyVisible,
-  parentWorldMatrix,
-  scaleGroupDraft,
-  topLevel,
-  worldBoundsOf,
-  worldMatrix,
-} from '@/cad/hierarchy';
+import type { ModelDocument, ObjectId, Transform } from '@/types/document';
+import { matrixToTransform } from '@/cad/transforms/transform';
+import { isEffectivelyLocked, isEffectivelyVisible, parentWorldMatrix, topLevel, worldBoundsOf, worldMatrix } from '@/cad/hierarchy';
 import { viewport } from './viewportBridge';
-import { DEG2RAD, roundTo, snapTo } from '@/utils/math';
-import { MIN_DIMENSION } from '@/cad/geometry/geometryUtils';
+import { DEG2RAD, roundTo } from '@/utils/math';
+import { collectSubtree } from '@/cad/document';
+import { smartSnap } from '@/cad/snapping';
+import { useGuides } from './guides';
 
 interface DragItem {
   id: ObjectId;
@@ -29,13 +22,15 @@ interface DragItem {
   /** Inverse of the parent's world matrix (world → parent frame). */
   parentInv: THREE.Matrix4;
   parentInvQuat: THREE.Quaternion;
-  size: Vec3;
 }
 
 interface DragState {
   proxyStart: THREE.Matrix4;
   proxyStartPos: THREE.Vector3;
   items: DragItem[];
+  /** For smart snapping: the selection's world bounds at drag start, and its neighbours'. */
+  startBounds: THREE.Box3;
+  others: THREE.Box3[];
 }
 
 const LABELS = { translate: 'Move', rotate: 'Rotate', scale: 'Resize' } as const;
@@ -79,6 +74,7 @@ export function TransformGizmo() {
   useEffect(() => {
     const helper = controls.getHelper();
     helper.userData.noThumbnail = true;
+    viewport.gizmoHovered = () => !!controls.object && controls.axis !== null;
     scene.add(helper);
     const onChange = () => invalidate();
     const onDown = () => handlers.current.onMouseDown();
@@ -109,7 +105,8 @@ export function TransformGizmo() {
 
   const items = gizmoItems(doc, selection);
   const blocked = items.some((id) => isEffectivelyLocked(doc, id));
-  const enabled = items.length > 0 && !blocked && !(mode === 'scale' && items.length > 1);
+  // Resizing uses the one-sided ResizeHandles instead of the gizmo's scale mode.
+  const enabled = items.length > 0 && !blocked && mode !== 'scale';
 
   const syncProxy = useCallback(() => {
     const { doc: d, selection: sel } = useEditor.getState();
@@ -143,7 +140,10 @@ export function TransformGizmo() {
   const onMouseDown = () => {
     proxy.updateMatrix();
     const { doc: d } = useEditor.getState();
+    const moving = new Set(collectSubtree(d, items));
     drag.current = {
+      startBounds: worldBoundsOf(d, items),
+      others: d.rootIds.filter((id) => !moving.has(id) && d.objects[id]?.visible).map((id) => worldBoundsOf(d, [id])),
       proxyStart: proxy.matrix.clone(),
       proxyStartPos: proxy.position.clone(),
       items: items.map((id) => {
@@ -158,7 +158,6 @@ export function TransformGizmo() {
           world: worldMatrix(d, id),
           parentInv,
           parentInvQuat,
-          size: o.kind === 'shape' ? ([...o.size] as Vec3) : (groupLocalBounds(d, id).getSize(new THREE.Vector3()).toArray() as Vec3),
         };
       }),
     };
@@ -170,11 +169,23 @@ export function TransformGizmo() {
     const d = drag.current;
     if (!d) return;
     proxy.updateMatrix();
-    const { applyTransient, snap: snapSettings, transaction } = useEditor.getState();
+    const { applyTransient, snap: snapSettings } = useEditor.getState();
 
     if (mode === 'translate') {
       // World delta → each object's parent frame. Rotation is left untouched.
-      const delta = proxy.position.clone().sub(d.proxyStartPos);
+      let delta = proxy.position.clone().sub(d.proxyStartPos);
+      // Align with neighbouring objects (edges/centres) when close; Z is left to the gizmo.
+      if (Math.abs(delta.x) + Math.abs(delta.y) > 0) {
+        const z = delta.z;
+        const snapped = smartSnap(
+          d.startBounds,
+          d.others,
+          delta,
+          Math.max(1.5, (snapSettings.enabled ? snapSettings.translate : 0) * 0.75),
+        );
+        delta = snapped.delta.setZ(z);
+        useGuides.setState({ guides: snapped.guides });
+      }
       applyTransient((draft) => {
         for (const item of d.items) {
           const o = draft.objects[item.id];
@@ -200,44 +211,10 @@ export function TransformGizmo() {
       });
       return;
     }
-
-    // Scale: one object. Convert the proxy scale into new real dimensions.
-    const item = d.items[0];
-    let factors = [Math.abs(proxy.scale.x), Math.abs(proxy.scale.y), Math.abs(proxy.scale.z)];
-    if (useEditor.getState().lockProportions) {
-      const dominant = factors.reduce((best, f) => (Math.abs(f - 1) > Math.abs(best - 1) ? f : best), 1);
-      factors = [dominant, dominant, dominant];
-    }
-    const step = snapSettings.enabled ? snapSettings.translate : 0;
-    const size = item.size.map((s, i) => {
-      if (factors[i] === 1) return s;
-      return Math.max(MIN_DIMENSION, roundTo(step ? snapTo(s * factors[i], step) || step : s * factors[i]));
-    }) as Vec3;
-
-    if (item.kind === 'group') {
-      const base = transaction?.base;
-      if (!base) return;
-      const f = size.map((v, i) => (item.size[i] > 1e-9 ? v / item.size[i] : 1)) as Vec3;
-      applyTransient((draft) => scaleGroupDraft(draft, base, item.id, f));
-      return;
-    }
-
-    // Keep the shape's local bottom face anchored, so resizing an object
-    // that rests on the workplane does not push it through the plate.
-    const lift = new THREE.Vector3(0, 0, (size[2] - item.size[2]) / 2).applyEuler(eulerFromDegrees(item.transform.rotation));
-    applyTransient((draft) => {
-      const o = draft.objects[item.id];
-      if (!o || o.kind !== 'shape') return;
-      o.size = size;
-      o.transform.position = [
-        roundTo(item.transform.position[0] + lift.x),
-        roundTo(item.transform.position[1] + lift.y),
-        roundTo(item.transform.position[2] + lift.z),
-      ];
-    });
   };
 
   const onMouseUp = () => {
+    useGuides.setState({ guides: [] });
     drag.current = null;
     viewport.gizmoActive = false;
     viewport.lastGizmoRelease = performance.now();
@@ -248,8 +225,8 @@ export function TransformGizmo() {
   handlers.current = { onMouseDown, onObjectChange, onMouseUp };
 
   useEffect(() => {
-    controls.setMode(mode);
-    controls.setSpace(mode === 'scale' ? 'local' : 'world');
+    controls.setMode(mode === 'scale' ? 'translate' : mode);
+    controls.setSpace('world');
     controls.setSize(0.85);
     controls.setTranslationSnap(snap.enabled ? snap.translate : null);
     controls.setRotationSnap(snap.enabled ? snap.rotate * DEG2RAD : null);

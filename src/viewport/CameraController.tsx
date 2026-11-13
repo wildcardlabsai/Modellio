@@ -38,6 +38,7 @@ export function CameraController() {
     viewport.domElement = gl.domElement;
     viewport.renderer = gl;
     viewport.scene = scene;
+    viewport.orbitControls = controls.current;
 
     const start = (toDir: THREE.Vector3, toTarget: THREE.Vector3, toDist: number) => {
       const c = controls.current;
