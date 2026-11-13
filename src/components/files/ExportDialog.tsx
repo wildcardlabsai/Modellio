@@ -6,12 +6,13 @@ import { useEditor } from '@/store/editorStore';
 import { useProjects } from '@/store/projectStore';
 import { collectExportBodies } from '@/cad/export/collect';
 import { writeAsciiStl, writeBinaryStl, writeObj, type UpAxis } from '@/cad/export/writers';
+import { write3mf } from '@/cad/export/threemf';
 import { topLevel } from '@/cad/hierarchy';
 import { downloadBlob, safeFileName } from '@/utils/download';
 import { formatMm } from '@/utils/math';
 import { useCadReady } from '@/viewport/cadReady';
 
-type Format = 'stl' | 'stl-ascii' | 'obj';
+type Format = 'stl' | 'stl-ascii' | '3mf' | 'obj';
 
 export function ExportDialog() {
   const open = useFileUi((s) => s.exportOpen);
@@ -51,6 +52,8 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
     try {
       if (format === 'stl') downloadBlob(writeBinaryStl(collection.bodies, up), `${base}.stl`, 'model/stl');
       else if (format === 'stl-ascii') downloadBlob(writeAsciiStl(collection.bodies, up), `${base}.stl`, 'model/stl');
+      else if (format === '3mf')
+        downloadBlob(write3mf(collection.bodies, projectName) as Uint8Array<ArrayBuffer>, `${base}.3mf`, 'model/3mf');
       else {
         const { obj, mtl } = writeObj(collection.bodies, up, withMtl ? `${base}.mtl` : undefined);
         downloadBlob(obj, `${base}.obj`, 'model/obj');
@@ -77,7 +80,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
             Cancel
           </button>
           <button type="button" className={primaryBtn} disabled={empty} onClick={doExport}>
-            <Download size={16} /> Download {format === 'obj' ? 'OBJ' : 'STL'}
+            <Download size={16} /> Download {format === 'obj' ? 'OBJ' : format === '3mf' ? '3MF' : 'STL'}
           </button>
         </>
       }
@@ -90,6 +93,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
         options={[
           { value: 'stl', label: 'STL (binary)' },
           { value: 'stl-ascii', label: 'STL (text)' },
+          { value: '3mf', label: '3MF' },
           { value: 'obj', label: 'OBJ' },
         ]}
       />
@@ -113,6 +117,11 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
           { value: 'y', label: 'Y up (3D apps)' },
         ]}
       />
+      {format === '3mf' && (
+        <p className="mt-3 text-[12px] text-muted">
+          3MF keeps millimetres, object names and colours. Preferred by PrusaSlicer, Bambu Studio, OrcaSlicer and Cura.
+        </p>
+      )}
       {format === 'obj' && (
         <label className="mt-3 flex items-center gap-2 text-[13px] text-[#344054]">
           <input type="checkbox" checked={withMtl} onChange={(e) => setWithMtl(e.target.checked)} className="h-4 w-4 accent-[#2463EB]" />

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Axis, ModelDocument, ObjectId, SceneObject, ShapeObject, Vec3 } from '@/types/document';
 import { eulerFromDegrees, localCorners, matrixToTransform, transformToMatrix } from './transforms/transform';
+import { buildGeometryForShape } from './shapeRegistry';
 import { roundTo } from '@/utils/math';
 
 /**
@@ -117,10 +118,38 @@ export function translateWorldDraft(doc: ModelDocument, id: ObjectId, delta: THR
  * parts. The Boolean module registers a resolver returning the result's
  * bounds in the group's local frame (null if not computed yet).
  */
-type CombinedBoundsResolver = (doc: ModelDocument, groupId: ObjectId) => THREE.Box3 | null;
+type CombinedBoundsResolver = (doc: ModelDocument, groupId: ObjectId) => { bounds: THREE.Box3; positions?: Float32Array } | null;
 let combinedBounds: CombinedBoundsResolver | null = null;
 export function setCombinedBoundsResolver(fn: CombinedBoundsResolver | null) {
   combinedBounds = fn;
+}
+
+/**
+ * Is this transform's rotation axis-aligned (multiples of 90°)? Then a
+ * shape's bounding box is exact, because geometry is fitted to `size`.
+ */
+function isAxisAlignedMatrix(m: THREE.Matrix4): boolean {
+  const e = m.elements;
+  for (let c = 0; c < 3; c++) {
+    const col = [Math.abs(e[c * 4]), Math.abs(e[c * 4 + 1]), Math.abs(e[c * 4 + 2])];
+    if (!col.some((v) => Math.abs(v - 1) < 1e-6)) return false;
+  }
+  return true;
+}
+
+/** Local vertex positions of a shape's real geometry (cached by geometry key). */
+const vertexCache = new Map<string, Float32Array | null>();
+function shapeVertices(o: ShapeObject): Float32Array | null {
+  const key = JSON.stringify([o.shape, o.size, o.params, o.mirror, o.text, o.meshId]);
+  if (vertexCache.has(key)) return vertexCache.get(key)!;
+  const geo = buildGeometryForShape(o);
+  const out = geo ? (geo.getAttribute('position').array as Float32Array).slice() : null;
+  geo?.dispose();
+  if (out) {
+    vertexCache.set(key, out);
+    if (vertexCache.size > 256) vertexCache.delete(vertexCache.keys().next().value!);
+  }
+  return out;
 }
 
 function boxCorners(b: THREE.Box3): THREE.Vector3[] {
@@ -148,15 +177,28 @@ export function boundsInFrame(doc: ModelDocument, ids: ObjectId[], frame?: THREE
     if (!o) return;
     if (o.kind === 'shape') {
       const m = toFrame(id);
-      for (const c of localCorners(o.size)) box.expandByPoint(c.applyMatrix4(m));
+      // Rotated at an arbitrary angle, the oriented box over-estimates (a tilted wedge's
+      // empty corner would "touch" the plate), so use the real vertices.
+      const verts = isAxisAlignedMatrix(m) ? null : shapeVertices(o);
+      if (verts) {
+        const v = new THREE.Vector3();
+        for (let i = 0; i < verts.length; i += 3) box.expandByPoint(v.fromArray(verts, i).applyMatrix4(m));
+      } else {
+        for (const c of localCorners(o.size)) box.expandByPoint(c.applyMatrix4(m));
+      }
       return;
     }
     if (o.combine && combinedBounds) {
-      const b = combinedBounds(doc, id);
-      if (b) {
-        if (!b.isEmpty()) {
+      const r = combinedBounds(doc, id);
+      if (r) {
+        if (!r.bounds.isEmpty()) {
           const m = toFrame(id);
-          for (const c of boxCorners(b)) box.expandByPoint(c.applyMatrix4(m));
+          if (r.positions && !isAxisAlignedMatrix(m)) {
+            const v = new THREE.Vector3();
+            for (let i = 0; i < r.positions.length; i += 3) box.expandByPoint(v.fromArray(r.positions, i).applyMatrix4(m));
+          } else {
+            for (const c of boxCorners(r.bounds)) box.expandByPoint(c.applyMatrix4(m));
+          }
         }
         return;
       }

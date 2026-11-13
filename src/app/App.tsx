@@ -4,6 +4,7 @@ import { Toolbar } from '@/components/toolbar/Toolbar';
 import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
 import { WorkplanePanel } from '@/components/layout/WorkplanePanel';
 import { TextPanel } from '@/components/layout/TextPanel';
+import { PrintPanel } from '@/components/print/PrintPanel';
 import { ShapeLibrary } from '@/components/shapes/ShapeLibrary';
 import { Inspector } from '@/components/inspector/Inspector';
 import { Viewport } from '@/viewport/Viewport';
@@ -82,7 +83,7 @@ export function App() {
       <Toolbar />
       <div className="relative flex min-h-0 flex-1">
         <LeftRail panel={panel} onChange={setPanel} />
-        {panel === 'shapes' ? <ShapeLibrary /> : panel === 'text' ? <TextPanel /> : <WorkplanePanel />}
+        {panel === 'shapes' ? <ShapeLibrary /> : panel === 'text' ? <TextPanel /> : panel === 'print' ? <PrintPanel /> : <WorkplanePanel />}
         <main className="relative min-w-0 flex-1">
           <ErrorBoundary
             fallback={(error, reset) => (

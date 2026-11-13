@@ -91,7 +91,7 @@ export function useKeyboardShortcuts() {
           return;
         case 'Escape':
           if (s.transaction) s.cancelTransaction();
-          else if (s.tool === 'measure') s.setTool('select');
+          else if (s.tool !== 'select') s.setTool('select');
           else s.clearSelection();
           return;
         case 'ArrowLeft':
@@ -136,6 +136,9 @@ export function useKeyboardShortcuts() {
         }
         case 'm':
           s.setTool(s.tool === 'measure' ? 'select' : 'measure');
+          break;
+        case 'l':
+          s.setTool(s.tool === 'layflat' ? 'select' : 'layflat');
           break;
       }
     };

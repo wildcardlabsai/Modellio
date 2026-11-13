@@ -63,6 +63,14 @@ export function ViewportOverlay() {
         </IconButton>
       </div>
 
+      {tool === 'layflat' && (
+        <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-navy/95 py-1.5 pl-3 pr-1.5 text-xs font-medium text-white shadow-float">
+          <span>Lay flat: click the face that should rest on the build plate</span>
+          <button type="button" onClick={() => setTool('select')} className="rounded-md bg-white/15 px-2 py-1 hover:bg-white/25">
+            Cancel <kbd className="ml-1 text-white/70">Esc</kbd>
+          </button>
+        </div>
+      )}
       {tool === 'measure' && (
         <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-navy/95 py-1.5 pl-3 pr-1.5 text-xs font-medium text-white shadow-float">
           <span>{measureCount === 1 ? 'Click the second point' : 'Measure: click two points on any surface (snaps to corners)'}</span>

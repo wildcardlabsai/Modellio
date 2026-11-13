@@ -225,3 +225,30 @@ describe('phase 2 commands', () => {
     expect(S().doc.objects[c].parentId).toBeNull();
   });
 });
+
+describe('lay flat', () => {
+  it('puts the clicked face on the plate (box on its +X side)', async () => {
+    const { worldBoundsOf } = await import('@/cad/hierarchy');
+    const id = S().addShape('box');
+    S().setSize(id, [40, 20, 10]);
+    const before = worldBoundsOf(S().doc, [id]).max.z;
+    S().layFlat(id, [1, 0, 0]);
+    const b = worldBoundsOf(S().doc, [id]);
+    expect(b.min.z).toBeCloseTo(0, 4);
+    expect(b.max.z - b.min.z).toBeCloseTo(40, 4); // the 40 mm side now stands up
+    S().undo();
+    expect(worldBoundsOf(S().doc, [id]).max.z).toBeCloseTo(before, 4);
+  });
+
+  it('flips a wedge onto its slope', async () => {
+    const { worldBoundsOf, worldMatrix } = await import('@/cad/hierarchy');
+    const id = S().addShape('wedge');
+    const slopeNormal = [Math.SQRT1_2, 0, Math.SQRT1_2] as [number, number, number];
+    S().layFlat(id, slopeNormal);
+    expect(worldBoundsOf(S().doc, [id]).min.z).toBeCloseTo(0, 4);
+    // the slope's normal now points straight down
+    const m = worldMatrix(S().doc, id);
+    const n = new (await import('three')).Vector3(...slopeNormal).transformDirection(m);
+    expect(n.z).toBeCloseTo(-1, 4);
+  });
+});

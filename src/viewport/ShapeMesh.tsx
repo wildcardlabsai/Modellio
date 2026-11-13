@@ -43,7 +43,7 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
 
   /** Click selects the outermost group; Shift/Ctrl/⌘ toggles it in the selection. */
   const onClick = (e: ThreeEvent<MouseEvent>) => {
-    if (e.delta > 4 || gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
+    if (e.delta > 4 || gizmoRecentlyUsed() || useEditor.getState().tool !== 'select') return;
     e.stopPropagation();
     const s = useEditor.getState();
     const target = ghost ? object.id : rootAncestor(s.doc, object.id);
@@ -52,7 +52,7 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
 
   /** Double-click drills into a group and selects this exact shape. */
   const onDoubleClick = (e: ThreeEvent<MouseEvent>) => {
-    if (gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
+    if (gizmoRecentlyUsed() || useEditor.getState().tool !== 'select') return;
     e.stopPropagation();
     useEditor.getState().select([object.id]);
   };

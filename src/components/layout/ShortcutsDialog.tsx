@@ -20,6 +20,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Drop to workplane', 'D'],
       ['Toggle hole / solid', 'H'],
       ['Measure tool', 'M'],
+      ['Lay flat on a face', 'L'],
     ],
   },
   {

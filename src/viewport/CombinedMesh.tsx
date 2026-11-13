@@ -64,7 +64,7 @@ export const CombinedMesh = memo(function CombinedMesh({
   if (!geometry || !result) return null;
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
-    if (e.delta > 4 || gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
+    if (e.delta > 4 || gizmoRecentlyUsed() || useEditor.getState().tool !== 'select') return;
     e.stopPropagation();
     const s = useEditor.getState();
     s.select([rootAncestor(s.doc, id)], { toggle: e.shiftKey || e.ctrlKey || e.metaKey });
@@ -84,7 +84,7 @@ export const CombinedMesh = memo(function CombinedMesh({
         startSurfaceDrag(e, id);
       }}
       onDoubleClick={(e) => {
-        if (gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
+        if (gizmoRecentlyUsed() || useEditor.getState().tool !== 'select') return;
         e.stopPropagation();
         const s = useEditor.getState();
         s.select([pickPart(s.doc, id, e.ray, e.distance) ?? id]);

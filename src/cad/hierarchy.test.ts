@@ -221,3 +221,20 @@ describe('align, distribute, drop', () => {
     expect(worldBoundsOf(next, ['g']).min.z).toBeCloseTo(0, 3);
   });
 });
+
+describe('exact bounds for rotated shapes', () => {
+  it('a wedge tilted 45° drops so its real geometry (not its bounding box) touches the plate', () => {
+    const { doc, ids } = docWith({ type: 'wedge', pos: [0, 0, 50], rot: [0, 45, 0] });
+    const dropped = produce(doc, (d) => dropToWorkplaneDraft(d, ids));
+    const geo = buildShapeGeometry('wedge', [20, 20, 20], {});
+    geo.applyMatrix4(worldMatrix(dropped, ids[0]));
+    geo.computeBoundingBox();
+    expect(geo.boundingBox!.min.z).toBeCloseTo(0, 4);
+  });
+
+  it('a rotated sphere is bounded by its surface, not its rotated cube', () => {
+    const { doc, ids } = docWith({ type: 'sphere', pos: [0, 0, 10], rot: [0, 0, 45] });
+    const b = worldBoundsOf(doc, ids);
+    expect(b.max.x - b.min.x).toBeLessThan(20.1); // the rotated box would be 28.3 mm wide
+  });
+});

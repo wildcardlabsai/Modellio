@@ -22,6 +22,8 @@ import {
 import { snapTo } from '@/utils/math';
 import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
+import { LayFlatTool } from './LayFlatTool';
+import { PrintOverlay } from './PrintOverlay';
 import { CrashProbe, useDebug } from '@/utils/debug';
 import { SnapGuides } from './guides';
 import { LabelLayer, LabelProjector } from './labels';
@@ -186,7 +188,7 @@ export function Viewport() {
         gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping }}
         camera={{ position: [home.x, home.y, home.z], fov: 40, near: 0.5, far: 20000, up: [0, 0, 1] }}
         onPointerMissed={(e) => {
-          if (e.type !== 'click' || gizmoRecentlyUsed() || useEditor.getState().tool === 'measure') return;
+          if (e.type !== 'click' || gizmoRecentlyUsed() || useEditor.getState().tool !== 'select') return;
           if (!(e.shiftKey || e.ctrlKey || e.metaKey)) useEditor.getState().clearSelection();
         }}
       >
@@ -208,6 +210,8 @@ export function Viewport() {
           <ResizeHandles />
           <ViewCube />
           <MeasureTool />
+          <LayFlatTool />
+          <PrintOverlay />
           <SnapGuides />
           <CrashProbe />
         </ErrorBoundary>

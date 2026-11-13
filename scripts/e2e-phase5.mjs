@@ -327,7 +327,111 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   await reset();
 }
 
-void download; // used by later sections
+// ===================== Printing =====================
+{
+  const { unzipSync, strFromU8 } = require('fflate');
+  await reset();
+  await home();
+  const [box, wedge] = await S(() => {
+    const s = window.modellio.store.getState();
+    const b = s.addShape('box', [-30, 0], { exact: true });
+    s.setColor(b, '#FF0000');
+    const w = s.addShape('wedge', [30, 0], { exact: true });
+    s.clearSelection();
+    return [b, w];
+  });
+
+  // P1: 3MF export.
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('radio', { name: '3MF' }).click();
+  const file = await download(() => page.getByRole('button', { name: /Download 3MF/ }).click());
+  const zip = unzipSync(new Uint8Array(fs.readFileSync(file)));
+  const model = strFromU8(zip['3D/3dmodel.model'] ?? new Uint8Array());
+  check(
+    'P1. 3MF export: valid package with millimetres, both objects and their colours',
+    file.endsWith('.3mf') &&
+      model.includes('unit="millimeter"') &&
+      (model.match(/<object /g) ?? []).length === 2 &&
+      model.includes('#FF0000FF'),
+  );
+
+  // P2: lay flat on the wedge's slope.
+  await page.keyboard.press('l');
+  const slope = await screen([30, 0, 10]); // the slope passes through the wedge's centre
+  await page.mouse.click(slope.x, slope.y);
+  const after = await S((id) => {
+    const { store, hierarchy } = window.modellio;
+    const d = store.getState().doc;
+    const e = hierarchy.worldMatrix(d, id).elements;
+    // the slope's outward normal in local space is (1, 0, 1)/√2
+    const nz = (e[2] + e[10]) * Math.SQRT1_2;
+    return { minZ: hierarchy.worldBoundsOf(d, [id]).min.z, nz, tool: store.getState().tool };
+  }, wedge);
+  check(
+    'P2. Lay flat (L) + click puts the clicked slope face-down on the plate',
+    close(after.minZ, 0, 0.01) && close(after.nz, -1, 0.01) && after.tool === 'select',
+    JSON.stringify(after),
+  );
+
+  // P3: printability check.
+  await S((id) => {
+    const s = window.modellio.store.getState();
+    s.setPosition(id, [-30, 0, 25]); // floating box → overhang + floating
+    const thin = s.addShape('box', [0, 50], { exact: true });
+    s.setSize(thin, [30, 30, 0.5]);
+    s.setPosition(thin, [0, 50, 0.25]);
+    s.clearSelection();
+  }, box);
+  await page.getByRole('button', { name: 'Print', exact: true }).click();
+  await page.getByRole('button', { name: 'Check printability' }).click();
+  await page.getByTestId('print-report').waitFor();
+  const text = await page.getByTestId('print-report').textContent();
+  check(
+    'P3. Print check finds the floating part, its overhang and the thin wall',
+    /does not touch the plate/.test(text) && /overhangs/.test(text) && /thinner than 0.8 mm/.test(text),
+    text.slice(0, 160),
+  );
+  check('P3a. The laid-flat wedge really rests on the plate (not reported as floating)', !/Wedge does not touch/.test(text));
+  check('P3b. Problem areas are highlighted in 3D', await S(() => !!window.modellio.viewport.scene.getObjectByName('print-highlights')));
+  await page.screenshot({ path: `${OUT}/p5-03-print-check.png` });
+  await S((id) => window.modellio.store.getState().dropToWorkplane([id]), box);
+  check('P3c. Results are marked stale after an edit', await page.getByText('The design changed since this check').isVisible());
+  await page.getByRole('button', { name: 'Shapes', exact: true }).first().click();
+
+  // P4: hollow + chamfer via the inspector.
+  await S((id) => window.modellio.store.getState().select([id]), box);
+  const tris = () => S((id) => window.modellio.viewport.scene.getObjectByName(id)?.geometry.getAttribute('position').count ?? 0, box);
+  const solidTris = await tris();
+  const wall = page.getByLabel('Wall thickness');
+  await wall.click();
+  await wall.fill('2');
+  await wall.press('Enter');
+  await waitFor(async () => (await tris()) !== solidTris);
+  check(
+    'P4. Setting a wall thickness hollows the box (real geometry)',
+    (await tris()) > solidTris,
+    `${solidTris} → ${await tris()} vertices`,
+  );
+  await page.getByRole('switch', { name: 'Open top' }).click();
+  check('P4b. Open top is applied', (await S((id) => window.modellio.store.getState().doc.objects[id].params.openTop, box)) === 1);
+  await S((id) => {
+    const s = window.modellio.store.getState();
+    s.setParam(id, 'shell', 0);
+  }, box);
+  const sharp = await tris();
+  const ch = page.getByLabel('Chamfer', { exact: true });
+  await ch.click();
+  await ch.fill('3');
+  await ch.press('Enter');
+  await waitFor(async () => (await tris()) !== sharp);
+  check(
+    'P4c. Chamfer edits the box edges',
+    (await tris()) !== sharp && (await S((id) => window.modellio.store.getState().doc.objects[id].params.chamfer, box)) === 3,
+  );
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/p5-04-hollow-chamfer.png` });
+  await reset();
+}
 
 // @@SECTIONS@@
 

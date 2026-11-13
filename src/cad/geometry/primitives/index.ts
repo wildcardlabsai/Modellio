@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import type { PrimitiveType, ShapeParams, Vec3 } from '@/types/document';
 import { clamp } from '@/utils/math';
 import { fitToSize, flipGeometry, mergeParts, polyhedron, yUpToZUp } from '../geometryUtils';
@@ -19,6 +20,22 @@ const seg = (params: ShapeParams, fallback = 48) => Math.round(clamp(params.segm
 /** Box with an optional fillet radius (mm) on every edge. The radius is absolute, never stretched. */
 const box: Builder = (size, p) => {
   const r = clamp(p.radius ?? 0, 0, Math.min(...size) / 2 - 1e-3);
+  const ch = clamp(p.chamfer ?? 0, 0, Math.min(...size) / 2 - 1e-3);
+  if (r <= 1e-3 && ch > 1e-3) {
+    // Chamfered box = convex hull of three boxes, each inset by the chamfer on two axes.
+    const [hx, hy, hz] = size.map((v) => v / 2);
+    const pts: THREE.Vector3[] = [];
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          pts.push(new THREE.Vector3(sx * hx, sy * (hy - ch), sz * (hz - ch)));
+          pts.push(new THREE.Vector3(sx * (hx - ch), sy * hy, sz * (hz - ch)));
+          pts.push(new THREE.Vector3(sx * (hx - ch), sy * (hy - ch), sz * hz));
+        }
+      }
+    }
+    return fitToSize(new ConvexGeometry(pts), size);
+  }
   if (r <= 1e-3) return fitToSize(new THREE.BoxGeometry(1, 1, 1), size);
   const segs = Math.round(clamp(p.filletSegments ?? 4, 1, 16));
   return fitToSize(new RoundedBoxGeometry(size[0], size[1], size[2], segs, r), size);

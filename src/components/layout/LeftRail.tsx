@@ -1,12 +1,13 @@
-import { Shapes, Type, Ruler, Grid3x3, Package } from 'lucide-react';
+import { Shapes, Type, Ruler, Grid3x3, Package, Printer } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 
-export type LeftPanel = 'shapes' | 'text' | 'workplane';
+export type LeftPanel = 'shapes' | 'text' | 'workplane' | 'print';
 
 const PANELS: { id: LeftPanel; label: string; Icon: typeof Shapes }[] = [
   { id: 'shapes', label: 'Shapes', Icon: Shapes },
   { id: 'text', label: 'Text', Icon: Type },
   { id: 'workplane', label: 'Workplane', Icon: Grid3x3 },
+  { id: 'print', label: 'Print', Icon: Printer },
 ];
 
 const itemCls = (active: boolean, enabled = true) =>

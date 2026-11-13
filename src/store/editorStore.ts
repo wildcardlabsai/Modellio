@@ -36,6 +36,7 @@ import {
   mirrorDraft,
   moveObjectsDraft,
   scaleGroupDraft,
+  setWorldMatrixDraft,
   topLevel,
   ungroupDraft,
   worldBoundsOf,
@@ -80,7 +81,7 @@ export interface EditorState {
   lockProportions: boolean;
   showGrid: boolean;
   /** Active viewport tool. */
-  tool: 'select' | 'measure';
+  tool: 'select' | 'measure' | 'layflat';
   /** Measure tool: up to two picked world points (mm). */
   measurePoints: Vec3[];
   /** Groups collapsed in the object tree (UI state, not part of the document). */
@@ -115,7 +116,7 @@ export interface EditorState {
   setSnap: (snap: Partial<SnapSettings>) => void;
   setLockProportions: (v: boolean) => void;
   setShowGrid: (v: boolean) => void;
-  setTool: (tool: 'select' | 'measure') => void;
+  setTool: (tool: 'select' | 'measure' | 'layflat') => void;
   addMeasurePoint: (p: Vec3) => void;
   toggleCollapsed: (id: ObjectId) => void;
   requestFrame: () => void;
@@ -149,6 +150,8 @@ export interface EditorState {
   setLocked: (id: ObjectId, locked: boolean) => void;
   dropToWorkplane: (ids: ObjectId[]) => void;
   setWorkplaneSize: (size: [number, number]) => void;
+  /** Rotate an object so the face with this world normal rests on the plate. */
+  layFlat: (id: ObjectId, worldNormal: Vec3) => void;
 
   // --- Phase 3: solid modelling ---
   /** Combine 2+ objects. 'subtract' keeps the first-selected object and turns the rest into holes. */
@@ -675,6 +678,22 @@ export const useEditor = create<EditorState>()((set, get) => {
         t.text = text;
         t.params = params;
         t.size = [roundTo(ext.x), roundTo(ext.y), t.size[2]];
+      });
+    },
+
+    layFlat: (id, worldNormal) => {
+      const { doc } = get();
+      if (!doc.objects[id] || isEffectivelyLocked(doc, id)) return;
+      const n = new THREE.Vector3(...worldNormal).normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(n, new THREE.Vector3(0, 0, -1));
+      const pivot = worldBoundsOf(doc, [id]).getCenter(new THREE.Vector3());
+      const rot = new THREE.Matrix4()
+        .makeTranslation(pivot.x, pivot.y, pivot.z)
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
+        .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+      get().apply('Lay flat', (d) => {
+        setWorldMatrixDraft(d, id, rot.clone().multiply(worldMatrix(doc, id)));
+        dropToWorkplaneDraft(d, [id]);
       });
     },
 

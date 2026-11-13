@@ -22,6 +22,7 @@ import {
   SquaresUnite,
   SquaresSubtract,
   SquaresIntersect,
+  BetweenHorizontalEnd,
 } from 'lucide-react';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
@@ -278,16 +279,28 @@ function ObjectInspector({ object }: { object: SceneObject }) {
             <Section
               title="Position (mm)"
               action={
-                <IconButton
-                  label="Drop to workplane"
-                  shortcut="D"
-                  tooltipSide="left"
-                  className="h-7 min-w-7"
-                  disabled={locked}
-                  onClick={() => s.dropToWorkplane([object.id])}
-                >
-                  <ArrowDownToLine size={15} />
-                </IconButton>
+                <span className="flex gap-0.5">
+                  <IconButton
+                    label="Lay flat on a face"
+                    shortcut="L"
+                    tooltipSide="left"
+                    className="h-7 min-w-7"
+                    disabled={locked}
+                    onClick={() => s.setTool('layflat')}
+                  >
+                    <BetweenHorizontalEnd size={15} />
+                  </IconButton>
+                  <IconButton
+                    label="Drop to workplane"
+                    shortcut="D"
+                    tooltipSide="left"
+                    className="h-7 min-w-7"
+                    disabled={locked}
+                    onClick={() => s.dropToWorkplane([object.id])}
+                  >
+                    <ArrowDownToLine size={15} />
+                  </IconButton>
+                </span>
               }
             >
               <Vec3Fields
@@ -309,6 +322,9 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               />
             </Section>
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape !== 'text' && object.shape !== 'mesh' && (
+              <HollowSection object={object} locked={locked} />
+            )}
             {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
@@ -367,6 +383,39 @@ function ObjectInspector({ object }: { object: SceneObject }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Hollow (shell): a wall thickness turns the solid into a container; optionally open at the top. */
+function HollowSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const s = useEditor.getState();
+  const wall = object.params.shell ?? 0;
+  return (
+    <Section title="Hollow">
+      <div className="grid grid-cols-[1fr_120px] items-center gap-3">
+        <span className="text-[13px] text-[#344054]">Wall thickness</span>
+        <NumberField
+          ariaLabel="Wall thickness"
+          value={wall}
+          min={0}
+          max={500}
+          step={0.4}
+          decimals={2}
+          suffix="mm"
+          disabled={locked}
+          onCommit={(v) => s.setParam(object.id, 'shell', roundTo(v, 3))}
+        />
+      </div>
+      <Toggle
+        label="Open top"
+        checked={(object.params.openTop ?? 0) > 0}
+        disabled={locked || wall <= 0}
+        onChange={(v) => s.setParam(object.id, 'openTop', v ? 1 : 0)}
+      />
+      <p className="text-[11px] text-muted">
+        {wall > 0 ? 'Exact on flat sides; approximate on curved or sloped shapes.' : '0 = solid. Try 1.2–2 mm for printable containers.'}
+      </p>
+    </Section>
   );
 }
 

@@ -185,7 +185,10 @@ export function computeCombined(doc: ModelDocument, groupId: ObjectId): CombineR
   return result;
 }
 
-setCombinedBoundsResolver((doc, id) => computeCombined(doc, id)?.bounds ?? null);
+setCombinedBoundsResolver((doc, id) => {
+  const r = computeCombined(doc, id);
+  return r ? { bounds: r.bounds, positions: r.mesh?.positions } : null;
+});
 
 // ---------- destructive operations ----------
 

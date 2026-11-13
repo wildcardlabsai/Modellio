@@ -3,7 +3,7 @@ import type { PrimitiveType, ShapeObject, ShapeParams, Vec3 } from '@/types/docu
 import { PRIMITIVE_BUILDERS, type ParametricType } from './geometry/primitives';
 import { MIN_DIMENSION, fitToSize, mirrorGeometry } from './geometry/geometryUtils';
 import { getKernel } from './kernel/kernel';
-import { meshDataToGeometry, type MeshData } from './kernel/meshData';
+import { geometryToMeshData, manifoldToMeshData, meshDataToGeometry, meshDataToManifold, type MeshData } from './kernel/meshData';
 import { getMeshAsset } from './assets';
 import { getLoadedFont } from './text/fonts';
 import { buildTextMesh } from './text/textGeometry';
@@ -42,6 +42,7 @@ const SEGMENTS: ParamSpec = { key: 'segments', label: 'Smoothness', min: 8, max:
 const FILLET: ParamSpec[] = [
   { key: 'radius', label: 'Fillet radius', min: 0, max: 500, step: 0.5, unit: 'mm' },
   { key: 'filletSegments', label: 'Fillet smoothness', min: 1, max: 16, step: 1, integer: true },
+  { key: 'chamfer', label: 'Chamfer', min: 0, max: 500, step: 0.5, unit: 'mm' },
 ];
 
 export const SHAPES: ShapeDefinition[] = (
@@ -185,6 +186,48 @@ export function buildShapeGeometry(type: ParametricType, size: Vec3, params: Sha
   return mirror ? mirrorGeometry(geometry, mirror) : geometry;
 }
 
+const shellCache = new Map<string, MeshData>();
+
+/**
+ * Hollow version of a primitive: the shape minus an inset copy of itself
+ * (size − 2 × wall), optionally open at the top. Wall thickness is exact on
+ * flat sides (boxes, prisms) and approximate on curved/sloped ones. Needs the
+ * kernel; returns null until it is loaded, and the solid shape if the wall is
+ * too thick to leave a cavity.
+ */
+export function buildShellMesh(type: ParametricType, size: Vec3, params: ShapeParams): MeshData | null | 'solid' {
+  const wall = params.shell ?? 0;
+  const s = safeSize(size);
+  const open = (params.openTop ?? 0) > 0;
+  const inner: Vec3 = [s[0] - 2 * wall, s[1] - 2 * wall, open ? s[2] - wall + 1 : s[2] - 2 * wall];
+  if (wall <= 0 || inner.some((v) => v <= 0.05)) return 'solid';
+  const k = getKernel();
+  if (!k) return null;
+  const key = JSON.stringify([type, s, params]);
+  const hit = shellCache.get(key);
+  if (hit) return hit;
+  const outerGeo = PRIMITIVE_BUILDERS[type](s, params);
+  const innerParams = { ...params, radius: Math.max(0, (params.radius ?? 0) - wall), chamfer: Math.max(0, (params.chamfer ?? 0) - wall) };
+  const innerGeo = PRIMITIVE_BUILDERS[type](inner, innerParams);
+  // Open top: the cavity starts one wall above the bottom and overshoots the top by 1 mm (no coplanar faces).
+  if (open) innerGeo.translate(0, 0, (wall + 1) / 2);
+  const a = meshDataToManifold(k, geometryToMeshData(outerGeo));
+  const b = meshDataToManifold(k, geometryToMeshData(innerGeo));
+  outerGeo.dispose();
+  innerGeo.dispose();
+  const r = a.subtract(b);
+  try {
+    const mesh = manifoldToMeshData(r);
+    shellCache.set(key, mesh);
+    if (shellCache.size > 64) shellCache.delete(shellCache.keys().next().value!);
+    return mesh;
+  } finally {
+    a.delete();
+    b.delete();
+    r.delete();
+  }
+}
+
 // Text meshes are comparatively expensive (kernel extrusion); keep a small cache.
 const textCache = new Map<string, MeshData>();
 const TEXT_CACHE_LIMIT = 48;
@@ -225,6 +268,14 @@ export function buildGeometryForShape(o: ShapeObject): THREE.BufferGeometry | nu
     if (!asset) return null;
     const g = fitToSize(meshDataToGeometry(asset), safeSize(o.size));
     return o.mirror ? mirrorGeometry(g, o.mirror) : g;
+  }
+  if ((o.params.shell ?? 0) > 0) {
+    const shell = buildShellMesh(o.shape, o.size, o.params);
+    if (shell === null) return null; // kernel still loading
+    if (shell !== 'solid') {
+      const g = meshDataToGeometry(shell);
+      return o.mirror ? mirrorGeometry(g, o.mirror) : g;
+    }
   }
   return buildShapeGeometry(o.shape, o.size, o.params, o.mirror);
 }
