@@ -234,12 +234,16 @@ await page.getByTestId('vase-studio').waitFor();
 check('24. The design is remembered after a reload', (await S(() => JSON.stringify(window.modellioVase.store.getState().params))) === kept);
 await settled();
 const rootsBefore = await S(() => window.modellio.store.getState().doc.rootIds.length);
-await page.getByRole('button', { name: 'Customise in Design Studio' }).click();
+await page.getByRole('button', { name: 'Open a copy in Design Studio' }).click();
 await page.getByTestId('left-panel').waitFor();
 check(
-  '25. "Customise in Design Studio" opens it in the editor',
+  '25. "Open a copy in Design Studio" opens it in the editor',
   (await S(() => window.modellio.store.getState().doc.rootIds.length)) === rootsBefore + 1,
 );
+check('25b. A bar in the Design Studio leads back to the Vase Maker', await page.getByTestId('return-bar').isVisible());
+await page.getByRole('button', { name: 'Back to Vase Maker' }).click();
+await page.getByTestId('vase-studio').waitFor();
+check('25c. "Back to Vase Maker" returns to the vase', page.url().includes('studio=vase'));
 await page.getByRole('button', { name: 'Makers' }).click();
 check('26. The Makers menu lists the Vase Maker', await page.getByRole('menuitem', { name: /Vase Maker/ }).isEnabled());
 await page.keyboard.press('Escape');

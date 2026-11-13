@@ -135,7 +135,7 @@ Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
 ## Landing page and studios
 
-`/` is the landing page: product overview, the live studios, the coming-soon studios (Keyring Maker, Sign Generator,
+`/` is the landing page: product overview, the live studios, the coming-soon studios (Sign Generator,
 Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates and FAQ.
 
 | URL | Opens |
@@ -145,6 +145,7 @@ Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates an
 | `/?studio=split` | Split Studio |
 | `/?studio=cookie` | Cookie Cutter & Stamp Maker |
 | `/?studio=vase` | Vase Maker |
+| `/?studio=keyring` | Keyring & Name Tag Maker |
 
 The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
 
@@ -162,18 +163,43 @@ designs as separate single-colour parts: **Import → Split → Connect → Expo
 
 Design notes and limits: [docs/SPLIT_STUDIO.md](docs/SPLIT_STUDIO.md).
 
+## Maker design canvas
+
+The keyring and cookie makers share a 2D design space (`src/makers/canvas`), so a design is edited where it is made:
+
+* **Add** shapes (25+), text in any bundled font, uploads (SVG, or a picture traced automatically) and freehand drawing.
+* **Arrange** on a millimetre grid: drag to move (snaps to 0.5 mm and the centre lines), corner handles resize in
+  proportion (Shift to stretch), the top handle rotates (Shift snaps to 15°); arrow keys nudge, Delete, Ctrl+D duplicates.
+* **Roles** say what each item does in that maker (raised, engraved, a hole, stamp-only detail…), set in the inspector,
+  which also takes exact positions, sizes and angles. Layers, undo/redo per gesture, and the design is remembered.
+* A **live 3D preview** sits beside the canvas (or full size with the 3D view), with the built outline drawn on the canvas.
+* **Open a copy in Design Studio** for anything the maker can't do; a bar there leads back to the maker, design intact.
+
+## Keyring & Name Tag Maker ✅
+
+`/?studio=keyring`. **28 templates** (name tags, pets, bags & keys, badges & gifts) or **start blank**.
+
+* Each item is **raised**, **engraved**, **flush** (a two-colour inlay you can't feel), part of the **plate**, or a **hole**.
+* The tag either follows the content (a rounded bubble with a set margin) or takes the shape of the plate items.
+* A draggable, reinforced **key ring hole** (size and wall), an optional **border**, thickness and heights.
+* **Two colours**: separate base and top parts in the 3MF for an AMS/MMU, plus the exact height for a filament change on
+  one nozzle. Warns about detached rings, thin walls, small holes and lettering too fine to print.
+* Thumbnails: `node scripts/render-keyring-thumbnails.mjs`. Tests: `src/makers/keyring/keyring.test.ts`,
+  `scripts/e2e-keyring.mjs`.
+
 ## Cookie Cutter & Stamp Maker ✅
 
-The first of the **Makers** (top bar → Makers, or `/?studio=cookie`): focused tools that turn a simple input into
-print-ready parts.
+`/?studio=cookie`. **25 templates** (shapes, names & words, seasonal, celebrations) or **start blank**, on the design canvas.
 
-* **Design from** a built-in shape (heart, star, gingerbread person and more), text in any of the bundled fonts, an
-  SVG logo, or a picture (PNG/JPG, traced automatically; dark drawing on a light background, or a transparent PNG).
+* **Design with** built-in shapes (heart, star, gingerbread person and more), names in any bundled font, an SVG logo, or a
+  picture (PNG/JPG, traced automatically) — drop a file anywhere on the maker to add it.
+* **Roles:** "Cookie shape" makes the outline and is stamped; "Outline only" makes the outline (a plain round behind a
+  message); "Stamp detail" is only pressed into the dough. An outline margin joins separate letters into one cookie.
 * **Makes** a cutter (thin blade on a wide flange, printed flange-down), a stamp that fits inside it with the design raised
   as lines or filled shapes (printed face-up, no supports), and a separate handle that press-fits a blind socket.
 * **Mirrored for printing** by default, so the cookie comes out the right way round after you flip the cutter and stamp over.
 * **Warns** about pieces that are narrower than 5 mm, outlines that make several cookies, and cutters too large for a plate.
-* Downloads all parts as one 3MF or each as an STL, or opens them in the Design Studio to customise.
+* Downloads all parts as one 3MF or each as an STL. Thumbnails: `node scripts/render-cookie-thumbnails.mjs`.
 
 Code: `src/makers/cookie` (geometry with Manifold 2D offsets and extrusion; tests in `cookie.test.ts`, browser suite
 `scripts/e2e-cookie.mjs`).
@@ -192,7 +218,7 @@ Code: `src/makers/cookie` (geometry with Manifold 2D offsets and extrusion; test
   wall thickness. Plant pots get 1 or 5 drainage holes and a matching saucer; lampshades a lamp-holder hole.
 * Shows size, **capacity** and the **steepest overhang**, and warns about drooping overhangs, thin walls, narrow
   openings and tippy shapes. Undo/redo, remembered designs, finer mesh for downloads (3MF or STL), and
-  "Customise in Design Studio".
+  "Open a copy in Design Studio".
 * Builds run in a Web Worker so dragging stays smooth. Thumbnails: `node scripts/render-vase-thumbnails.mjs`.
 
 ## Cloud projects (optional)

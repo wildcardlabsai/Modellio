@@ -267,11 +267,13 @@ function MakerBlock({ m, n, flip }: { m: Maker; n: number; flip: boolean }) {
           src={m.image!}
           alt={`${m.name} screenshot`}
           caption={
-            m.id === 'cookie'
-              ? 'gingerbread cutter, stamp and handle'
-              : m.id === 'vase'
-                ? 'a twisted star vase, 180 mm tall'
-                : 'a multi-colour model split into parts'
+            m.id === 'keyring'
+              ? 'a two-colour name tag, 64 × 24 mm'
+              : m.id === 'cookie'
+                ? 'gingerbread cutter, stamp and handle'
+                : m.id === 'vase'
+                  ? 'a twisted star vase, 180 mm tall'
+                  : 'a multi-colour model split into parts'
           }
           n={n}
         />

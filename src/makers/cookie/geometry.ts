@@ -2,6 +2,7 @@ import type { CrossSection, Manifold, ManifoldToplevel, SimplePolygon } from 'ma
 import { manifoldToMeshData, type MeshData } from '@/cad/kernel/meshData';
 import { validatePart } from '@/split/geometry/split';
 import type { Poly } from './shapes';
+import { unionOf, type DesignElement } from '../canvas/model';
 
 /**
  * Cookie cutter and stamp generator.
@@ -74,6 +75,8 @@ export interface CookieResult {
   /** Size of the cookie itself (the cut shape), mm. */
   cookie: { width: number; height: number; area: number };
   pieces: number;
+  /** The cookie's outline as drawn on the design canvas (not mirrored), mm. */
+  outline?: [number, number][][];
   warnings: string[];
   notes: string[];
 }
@@ -103,105 +106,177 @@ export function buildCookie(k: ManifoldToplevel, source: CookieSource, p: Cookie
     const cx = (rb.min[0] + rb.max[0]) / 2;
     const cy = (rb.min[1] + rb.max[1]) / 2;
     const art = own(own(raw.translate([-cx, -cy]).scale([p.mirror ? -s : s, s])).simplify(TOL));
-    // The cut shape: the design's outer silhouette (holes filled), with the bubble margin and smoothing.
-    const outer = art.toPolygons().filter((poly) => polyArea(poly) > 0);
-    let cut = own(new k.CrossSection(outer, 'Positive'));
-    if (p.outline > 0) cut = own(cut.offset(p.outline, 'Round', 2, 64));
-    if (p.smoothing > 0)
-      cut = own(
-        own(
-          own(own(cut.offset(p.smoothing, 'Round', 2, 48)).offset(-p.smoothing, 'Round', 2, 48)).offset(-p.smoothing, 'Round', 2, 48),
-        ).offset(p.smoothing, 'Round', 2, 48),
-      );
-    if (cut.isEmpty()) throw new Error('The design is too thin to make a cookie at this size.');
-    const cb = cut.bounds();
-    const cookie = { width: cb.max[0] - cb.min[0], height: cb.max[1] - cb.min[1], area: cut.area() };
-    const pieces = cut.decompose();
-    pieces.forEach(own);
-    const pieceCount = pieces.length;
-    if (pieceCount > 1)
-      warnings.push(
-        `The outline has ${pieceCount} separate pieces, so the cutter makes ${pieceCount} cookies. Increase "Outline margin" to join them.`,
-      );
-    // Parts narrower than 5 mm break when the dough is lifted.
-    const opened = own(own(cut.offset(-2.5, 'Round', 2, 32)).offset(2.5, 'Round', 2, 32));
-    if (opened.area() < cut.area() * 0.97)
-      warnings.push('Some parts of the cookie are narrower than 5 mm and may break. Try a larger size or more outline margin.');
-    if (Math.max(cookie.width, cookie.height) + 2 * (p.blade + p.rimWidth) > 230)
-      warnings.push('The cutter is larger than many build plates (230 mm).');
-
-    const parts: CookiePart[] = [];
-    let x = 0;
-    const place = (id: CookiePart['id'], name: string, m: Manifold) => {
-      const b = m.boundingBox();
-      const moved = own(m.translate([x - b.min[0], -(b.min[1] + b.max[1]) / 2, -b.min[2]]));
-      const mesh = manifoldToMeshData(moved);
-      const r = validatePart(mesh);
-      parts.push({
-        id,
-        name,
-        mesh,
-        size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]],
-        volume: r.volume,
-        watertight: r.watertight,
-      });
-      x += b.max[0] - b.min[0] + 12;
-    };
-
-    if (p.make !== 'stamp') {
-      const blade = own(own(own(cut.offset(p.blade, 'Round', 2, 32)).simplify(TOL)).subtract(cut));
-      const rim = own(own(own(cut.offset(p.blade + p.rimWidth, 'Round', 2, 32)).simplify(TOL)).subtract(cut));
-      const cutter = own(own(k.Manifold.extrude(blade, p.cutterHeight)).add(own(k.Manifold.extrude(rim, p.rimHeight))));
-      place('cutter', 'Cookie cutter', cutter);
+    const style = p.stampStyle === 'auto' ? (source.kind === 'text' || p.outline > 0 ? 'filled' : 'outline') : p.stampStyle;
+    const empty = own(new k.CrossSection([[]], 'Positive'));
+    return cookieParts(k, own, art, style === 'filled' ? { lines: empty, filled: art } : { lines: art, filled: empty }, p, warnings, notes);
+  } finally {
+    for (const o of owned.reverse()) {
+      try {
+        o.delete();
+      } catch {
+        /* already freed */
+      }
     }
+  }
+}
 
-    if (p.make !== 'cutter') {
-      const plate2d = own(own(cut.offset(-p.gap, 'Round', 2, 32)).simplify(TOL));
-      if (plate2d.isEmpty()) throw new Error('The cookie is too small for a stamp with this gap.');
-      const style = p.stampStyle === 'auto' ? (source.kind === 'text' || p.outline > 0 ? 'filled' : 'outline') : p.stampStyle;
-      const w = p.lineWidth;
-      let relief2d: CrossSection;
-      if (style === 'filled') {
-        relief2d = own(art.intersect(own(plate2d.offset(-0.8, 'Round', 2, 32))));
+/**
+ * The cutter, stamp and handle from a design already in millimetres and mirrored for printing.
+ * `cutArt` gives the cookie's silhouette; the stamp presses `relief.lines` as raised lines along
+ * their edges and `relief.filled` as solid areas.
+ */
+function cookieParts(
+  k: ManifoldToplevel,
+  own: <T extends { delete(): void }>(x: T) => T,
+  cutArt: CrossSection,
+  relief: { lines: CrossSection; filled: CrossSection },
+  p: CookieParams,
+  warnings: string[],
+  notes: string[],
+): CookieResult {
+  // The cut shape: the design's outer silhouette (holes filled), with the bubble margin and smoothing.
+  const outer = cutArt.toPolygons().filter((poly) => polyArea(poly) > 0);
+  let cut = own(new k.CrossSection(outer, 'Positive'));
+  if (p.outline > 0) cut = own(cut.offset(p.outline, 'Round', 2, 64));
+  if (p.smoothing > 0)
+    cut = own(
+      own(
+        own(own(cut.offset(p.smoothing, 'Round', 2, 48)).offset(-p.smoothing, 'Round', 2, 48)).offset(-p.smoothing, 'Round', 2, 48),
+      ).offset(p.smoothing, 'Round', 2, 48),
+    );
+  if (cut.isEmpty()) throw new Error('The design is too thin to make a cookie at this size.');
+  const cb = cut.bounds();
+  const cookie = { width: cb.max[0] - cb.min[0], height: cb.max[1] - cb.min[1], area: cut.area() };
+  const pieces = cut.decompose();
+  pieces.forEach(own);
+  const pieceCount = pieces.length;
+  if (pieceCount > 1)
+    warnings.push(
+      `The outline has ${pieceCount} separate pieces, so the cutter makes ${pieceCount} cookies. Increase "Outline margin" to join them.`,
+    );
+  // Parts narrower than 5 mm break when the dough is lifted.
+  const opened = own(own(cut.offset(-2.5, 'Round', 2, 32)).offset(2.5, 'Round', 2, 32));
+  if (opened.area() < cut.area() * 0.97)
+    warnings.push('Some parts of the cookie are narrower than 5 mm and may break. Try a larger size or more outline margin.');
+  if (Math.max(cookie.width, cookie.height) + 2 * (p.blade + p.rimWidth) > 230)
+    warnings.push('The cutter is larger than many build plates (230 mm).');
+
+  const parts: CookiePart[] = [];
+  let x = 0;
+  const place = (id: CookiePart['id'], name: string, m: Manifold) => {
+    const b = m.boundingBox();
+    const moved = own(m.translate([x - b.min[0], -(b.min[1] + b.max[1]) / 2, -b.min[2]]));
+    const mesh = manifoldToMeshData(moved);
+    const r = validatePart(mesh);
+    parts.push({
+      id,
+      name,
+      mesh,
+      size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]],
+      volume: r.volume,
+      watertight: r.watertight,
+    });
+    x += b.max[0] - b.min[0] + 12;
+  };
+
+  if (p.make !== 'stamp') {
+    const blade = own(own(own(cut.offset(p.blade, 'Round', 2, 32)).simplify(TOL)).subtract(cut));
+    const rim = own(own(own(cut.offset(p.blade + p.rimWidth, 'Round', 2, 32)).simplify(TOL)).subtract(cut));
+    const cutter = own(own(k.Manifold.extrude(blade, p.cutterHeight)).add(own(k.Manifold.extrude(rim, p.rimHeight))));
+    place('cutter', 'Cookie cutter', cutter);
+  }
+
+  if (p.make !== 'cutter') {
+    const plate2d = own(own(cut.offset(-p.gap, 'Round', 2, 32)).simplify(TOL));
+    if (plate2d.isEmpty()) throw new Error('The cookie is too small for a stamp with this gap.');
+    const w = p.lineWidth;
+    let relief2d: CrossSection = own(relief.filled.intersect(own(plate2d.offset(-0.8, 'Round', 2, 32))));
+    if (!relief.lines.isEmpty()) {
+      const lines = own(own(relief.lines.offset(w / 2, 'Round', 2, 32)).subtract(own(relief.lines.offset(-w / 2, 'Round', 2, 32))));
+      const inset = 2.5;
+      const border = own(own(plate2d.offset(-inset, 'Round', 2, 32)).subtract(own(plate2d.offset(-inset - w, 'Round', 2, 32))));
+      relief2d = own(relief2d.add(own(own(lines.add(border)).intersect(own(plate2d.offset(-w, 'Round', 2, 32))))));
+    }
+    // Drop slivers too thin to print.
+    relief2d = own(own(own(relief2d.offset(-0.2, 'Round', 2, 24)).offset(0.2, 'Round', 2, 24)).simplify(TOL));
+    if (relief2d.isEmpty()) notes.push('The design has no inner detail, so the stamp is a plain plate. Try the "Filled" style.');
+    let stamp = own(k.Manifold.extrude(plate2d, p.plateThickness));
+    if (!relief2d.isEmpty())
+      stamp = own(stamp.add(own(own(k.Manifold.extrude(relief2d, p.reliefHeight)).translate([0, 0, p.plateThickness]))));
+    let handle: Manifold | null = null;
+    if (p.handle) {
+      const spot = deepestPoint(plate2d.toPolygons());
+      const socketR = PEG / 2 + PEG_CLEARANCE;
+      const socketDepth = Math.min(2.6, p.plateThickness - 1.2);
+      if (!spot || spot.clearance < socketR + 1.5 || socketDepth < 1.5) {
+        warnings.push('The stamp is too small or thin for a handle, so it has none.');
       } else {
-        const lines = own(own(art.offset(w / 2, 'Round', 2, 32)).subtract(own(art.offset(-w / 2, 'Round', 2, 32))));
-        const inset = 2.5;
-        const border = own(own(plate2d.offset(-inset, 'Round', 2, 32)).subtract(own(plate2d.offset(-inset - w, 'Round', 2, 32))));
-        relief2d = own(own(lines.add(border)).intersect(own(plate2d.offset(-w, 'Round', 2, 32))));
+        const socket = own(own(k.Manifold.cylinder(socketDepth + 0.01, socketR, socketR, 48)).translate([spot.x, spot.y, -0.01]));
+        stamp = own(stamp.subtract(socket));
+        const minSide = Math.min(cookie.width, cookie.height);
+        const d = Math.min(26, Math.max(14, minSide * 0.35));
+        const h = 16;
+        const ch = 1.2;
+        const body = own(own(k.Manifold.cylinder(h - ch, d / 2, d / 2, 64)).translate([0, 0, ch]));
+        const chamfer = own(k.Manifold.cylinder(ch, d / 2 - ch, d / 2, 64));
+        const peg = own(own(k.Manifold.cylinder(socketDepth - 0.3, PEG / 2, PEG / 2 - 0.2, 48)).translate([0, 0, h]));
+        handle = own(own(body.add(chamfer)).add(peg));
+        notes.push(
+          `The handle's peg (Ø${PEG} mm) press-fits a Ø${(socketR * 2).toFixed(1)} mm socket in the back of the stamp. Add a drop of food-safe glue if it is loose.`,
+        );
       }
-      // Drop slivers too thin to print.
-      relief2d = own(own(own(relief2d.offset(-0.2, 'Round', 2, 24)).offset(0.2, 'Round', 2, 24)).simplify(TOL));
-      if (relief2d.isEmpty()) notes.push('The design has no inner detail, so the stamp is a plain plate. Try the "Filled" style.');
-      let stamp = own(k.Manifold.extrude(plate2d, p.plateThickness));
-      if (!relief2d.isEmpty())
-        stamp = own(stamp.add(own(own(k.Manifold.extrude(relief2d, p.reliefHeight)).translate([0, 0, p.plateThickness]))));
-      let handle: Manifold | null = null;
-      if (p.handle) {
-        const spot = deepestPoint(plate2d.toPolygons());
-        const socketR = PEG / 2 + PEG_CLEARANCE;
-        const socketDepth = Math.min(2.6, p.plateThickness - 1.2);
-        if (!spot || spot.clearance < socketR + 1.5 || socketDepth < 1.5) {
-          warnings.push('The stamp is too small or thin for a handle, so it has none.');
-        } else {
-          const socket = own(own(k.Manifold.cylinder(socketDepth + 0.01, socketR, socketR, 48)).translate([spot.x, spot.y, -0.01]));
-          stamp = own(stamp.subtract(socket));
-          const minSide = Math.min(cookie.width, cookie.height);
-          const d = Math.min(26, Math.max(14, minSide * 0.35));
-          const h = 16;
-          const ch = 1.2;
-          const body = own(own(k.Manifold.cylinder(h - ch, d / 2, d / 2, 64)).translate([0, 0, ch]));
-          const chamfer = own(k.Manifold.cylinder(ch, d / 2 - ch, d / 2, 64));
-          const peg = own(own(k.Manifold.cylinder(socketDepth - 0.3, PEG / 2, PEG / 2 - 0.2, 48)).translate([0, 0, h]));
-          handle = own(own(body.add(chamfer)).add(peg));
-          notes.push(
-            `The handle's peg (Ø${PEG} mm) press-fits a Ø${(socketR * 2).toFixed(1)} mm socket in the back of the stamp. Add a drop of food-safe glue if it is loose.`,
-          );
-        }
-      }
-      place('stamp', 'Stamp', stamp);
-      if (handle) place('handle', 'Stamp handle', handle);
     }
-    return { parts, cookie, pieces: pieceCount, warnings, notes };
+    place('stamp', 'Stamp', stamp);
+    if (handle) place('handle', 'Stamp handle', handle);
+  }
+  const outline = cut.toPolygons().map((poly) => poly.map(([x, y]) => [x, y] as [number, number]));
+  return { parts, cookie, pieces: pieceCount, outline, warnings, notes };
+}
+
+/**
+ * Roles on the cookie design canvas:
+ *  - shape:   makes the cookie's outline and is pressed by the stamp
+ *  - outline: makes the outline only (e.g. a plain circle behind a name)
+ *  - detail:  pressed by the stamp only (faces, writing inside the cookie)
+ */
+export type CookieRole = 'shape' | 'outline' | 'detail';
+
+/** Cutter, stamp and handle from canvas elements laid out in millimetres, as seen on the cookie. */
+export function buildCookieDesign(k: ManifoldToplevel, elements: DesignElement[], p: CookieParams): CookieResult {
+  const owned: { delete(): void }[] = [];
+  const own = <T extends { delete(): void }>(x: T): T => {
+    owned.push(x);
+    return x;
+  };
+  try {
+    const flip = (cs: CrossSection) => (p.mirror ? own(cs.scale([-1, 1])) : cs);
+    const union = (els: DesignElement[], roles: string[]) => flip(own(unionOf(k, els, roles)));
+    const cutArt = union(elements, ['shape', 'outline']);
+    if (cutArt.isEmpty())
+      throw new Error('Add a shape or some text for the cookie. Items set to "Stamp detail" only press into the dough.');
+    const shapes = elements.filter((e) => e.role === 'shape');
+    const detail = union(elements, ['detail']);
+    let relief: { lines: CrossSection; filled: CrossSection };
+    if (p.stampStyle === 'filled')
+      relief = { lines: own(new k.CrossSection([[]], 'Positive')), filled: own(union(shapes, ['shape']).add(detail)) };
+    else if (p.stampStyle === 'outline') relief = { lines: union(shapes, ['shape']), filled: detail };
+    else
+      relief = {
+        lines: union(
+          shapes.filter((e) => e.kind !== 'text'),
+          ['shape'],
+        ),
+        filled: own(
+          union(
+            shapes.filter((e) => e.kind === 'text'),
+            ['shape'],
+          ).add(detail),
+        ),
+      };
+    const result = cookieParts(k, own, cutArt, relief, p, [], []);
+    const sx = p.mirror ? -1 : 1;
+    result.outline = result.outline?.map((poly) => poly.map(([x, y]) => [x * sx, y] as [number, number]));
+    return result;
   } finally {
     for (const o of owned.reverse()) {
       try {

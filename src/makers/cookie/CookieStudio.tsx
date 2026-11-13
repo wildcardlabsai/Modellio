@@ -1,17 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import * as THREE from 'three';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { CircleAlert, CircleCheck, Download, FileUp, Info, Loader2, Maximize, PencilRuler, TriangleAlert } from 'lucide-react';
-import { useCookie, readImageFile, type SourceTab } from './store';
-import { SHAPES, type Poly } from './shapes';
-import { svgOutlines } from './svg';
-import type { CookieParams, CookiePart } from './geometry';
-import { meshDataToGeometry } from '@/cad/kernel/meshData';
-import { getKernel, initKernel } from '@/cad/kernel/kernel';
-import { FONTS } from '@/cad/text/fonts';
-import type { FontId } from '@/types/document';
+import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
+import { CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, Redo2, TriangleAlert, Undo2 } from 'lucide-react';
+import { useCookie, openCookieTemplate, startBlankCookie, resizeDesign } from './store';
+import { COOKIE_TEMPLATES, COOKIE_CATEGORIES } from './templates';
+import type { CookieParams, CookiePart, CookieRole } from './geometry';
+import { DesignCanvas, type RoleStyle } from '../canvas/DesignCanvas';
+import { AddBar, Inspector, LayersPanel, fileToElement, type PanelConfig } from '../canvas/DesignPanels';
+import { MakerPreview, downloadBytes, slugify } from '../canvas/MakerPreview';
+import { TemplateGallery } from '../canvas/TemplateGallery';
+import { designBounds, type DesignElement } from '../canvas/model';
 import { NumberField } from '@/components/ui/NumberField';
 import { Toggle } from '@/components/ui/Toggle';
 import { Segmented } from '@/components/ui/Modal';
@@ -20,27 +16,78 @@ import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
 import { useEditor } from '@/store/editorStore';
 import { useStudio } from '@/app/studio';
+import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 
+const MONO = "font-['Space_Mono',ui-monospace,monospace]";
 const PART_COLOURS: Record<CookiePart['id'], string> = { cutter: '#2463EB', stamp: '#EC4899', handle: '#F59E0B' };
 const section = 'border-b border-line p-4';
 const heading = 'mb-2 text-[13px] font-semibold text-ink';
 
+export const COOKIE_PANEL: PanelConfig = {
+  roles: [
+    { value: 'shape', label: 'Cookie shape', colour: '#C98A4B' },
+    { value: 'outline', label: 'Outline only', colour: '#E8C9A0' },
+    { value: 'detail', label: 'Stamp detail', colour: '#EC4899' },
+  ] satisfies { value: CookieRole; label: string; colour: string }[],
+  defaults: { shape: 'shape', text: 'detail', upload: 'shape', draw: 'detail' },
+  // The first thing on an empty canvas makes the cookie; later text and drawings press into it.
+  pickRole: (kind, elements) => {
+    const hasShape = elements.some((e) => e.role === 'shape' || e.role === 'outline');
+    if (!hasShape) return 'shape';
+    return kind === 'text' ? 'detail' : 'shape';
+  },
+  newShapeSize: 50,
+  newTextHeight: 14,
+  defaultText: 'Hello',
+};
+
+const ROLE_STYLE: Record<CookieRole, RoleStyle> = {
+  shape: { fill: '#D9A066', stroke: '#8A5A2B' },
+  outline: { fill: '#EED3AE', stroke: '#B07A45', dashed: true },
+  detail: { fill: '#EC4899', stroke: '#9D174D', opacity: 0.85 },
+};
+const roleStyle = (role: string) => ROLE_STYLE[role as CookieRole] ?? ROLE_STYLE.shape;
+
 /**
- * Cookie Cutter & Stamp Maker: pick a shape, type a name or upload a picture, and get a
- * print-ready cutter, a matching stamp and a handle.
+ * Cookie Cutter & Stamp Maker: lay out the cookie on a canvas (shapes, names, pictures,
+ * drawings), choose what makes the outline and what the stamp presses in, and get a cutter,
+ * a matching stamp and a handle, built live in 3D.
  */
 export default function CookieStudio() {
   const [dragging, setDragging] = useState(false);
+  const [tab, setTab] = useState<'templates' | 'design'>('design');
+  const [view, setView] = useState<'design' | '3d'>('design');
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    (window as unknown as { modellioCookie: unknown }).modellioCookie = { store: useCookie };
-    void initKernel();
+    (window as unknown as { modellioCookie: unknown }).modellioCookie = { store: useCookie, openCookieTemplate, startBlankCookie };
     useCookie.getState().rebuild();
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        useCookie.getState().undo();
+      } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        useCookie.getState().redo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
-  const onDrop = (e: DragEvent) => {
+  const onDrop = async (e: DragEvent) => {
     e.preventDefault();
     setDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f) void openFile(f);
+    if (!f) return;
+    try {
+      const role = COOKIE_PANEL.pickRole!('upload', useCookie.getState().elements);
+      useCookie.getState().add(await fileToElement(f, 60, role));
+      setTab('design');
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   };
   return (
     <div
@@ -54,192 +101,289 @@ export default function CookieStudio() {
       onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
       }}
-      onDrop={onDrop}
+      onDrop={(e) => void onDrop(e)}
     >
-      <Header />
+      <Header view={view} setView={setView} />
       <div className="relative flex min-h-0 flex-1">
-        <LeftPanel />
-        <main className="relative min-w-0 flex-1" aria-label="Preview">
-          <Preview />
+        <aside
+          className="flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px]"
+          aria-label="Cookie design"
+          data-testid="cookie-left"
+        >
+          <div className="border-b border-line p-3">
+            <Segmented<'templates' | 'design'>
+              label="Templates or design"
+              value={tab}
+              options={[
+                { value: 'templates', label: `Templates (${COOKIE_TEMPLATES.length})` },
+                { value: 'design', label: 'Design' },
+              ]}
+              onChange={setTab}
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {tab === 'templates' ? <Gallery onOpen={() => setTab('design')} /> : <DesignTab error={error} setError={setError} />}
+          </div>
+        </aside>
+        <main className="relative min-w-0 flex-1" aria-label="Design">
+          {view === 'design' ? <Canvas2D /> : <Preview3D large />}
+          {view === 'design' && (
+            <button
+              type="button"
+              onClick={() => setView('3d')}
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden rounded-xl border border-line bg-white shadow-panel"
+              aria-label="Show the 3D preview larger"
+              data-testid="cookie-mini-preview"
+            >
+              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-[#344054]">3D preview</span>
+              <span className="pointer-events-none block h-full w-full">
+                <Preview3D />
+              </span>
+            </button>
+          )}
         </main>
         <RightPanel />
       </div>
       {dragging && (
         <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand">
-          Drop an SVG or picture to use it as the cookie shape
+          Drop an SVG or picture to add it to the cookie
         </div>
       )}
     </div>
   );
 }
 
-async function openFile(file: File) {
-  const st = useCookie.getState();
-  try {
-    if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
-      const { polygons } = svgOutlines(await file.text());
-      if (!polygons.length) throw new Error('This SVG has no filled shapes or lines to use.');
-      st.setUpload({ kind: 'svg', name: file.name, polygons });
-    } else if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)) {
-      st.setUpload(await readImageFile(file));
-    } else {
-      throw new Error(`"${file.name}" isn't an SVG or a picture.`);
-    }
-  } catch (e) {
-    useCookie.setState({ error: (e as Error).message });
-  }
-}
-
-function pickFile() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.svg,image/svg+xml,image/png,image/jpeg,image/webp';
-  input.onchange = () => {
-    const f = input.files?.[0];
-    if (f) void openFile(f);
-  };
-  input.click();
-}
-
-function Header() {
+function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design' | '3d') => void }) {
   const make = useCookie((s) => s.params.make);
-  const setParams = useCookie((s) => s.setParams);
+  const canUndo = useCookie((s) => s.past.length > 0);
+  const canRedo = useCookie((s) => s.future.length > 0);
+  const { undo, redo, setParams } = useCookie.getState();
   return (
     <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-white px-3 sm:px-5">
       <h1 className="text-[14px] font-semibold text-ink">Cookie Cutter & Stamp Maker</h1>
-      <div className="flex-1" />
-      <div className="w-[260px]">
+      <div className="w-[390px] shrink-0">
         <Segmented
           label="What to make"
           value={make}
           options={[
+            { value: 'both', label: 'Cutter + stamp' },
             { value: 'cutter', label: 'Cutter' },
             { value: 'stamp', label: 'Stamp' },
-            { value: 'both', label: 'Both' },
           ]}
           onChange={(v) => setParams({ make: v })}
         />
       </div>
+      <div className="w-[150px] shrink-0">
+        <Segmented<'design' | '3d'>
+          label="View"
+          value={view}
+          options={[
+            { value: 'design', label: 'Design' },
+            { value: '3d', label: '3D' },
+          ]}
+          onChange={setView}
+        />
+      </div>
+      <div className="flex-1" />
+      <IconButton label="Undo" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo}>
+        <Undo2 size={17} />
+      </IconButton>
+      <IconButton label="Redo" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={redo}>
+        <Redo2 size={17} />
+      </IconButton>
     </div>
   );
 }
 
-/** Outline thumbnail: the shape's filled outline, rendered from the kernel's cleaned polygons when available. */
-function ShapeIcon({ polygons }: { polygons: Poly[] }) {
-  const d = useMemo(() => {
-    let polys = polygons;
-    const k = getKernel();
-    if (k) {
-      const cs = new k.CrossSection(polygons, 'Positive');
-      polys = cs.toPolygons() as Poly[];
-      cs.delete();
-    }
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const p of polys)
-      for (const [x, y] of p) {
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    const s = 32 / Math.max(maxX - minX, maxY - minY);
-    const ox = (40 - (maxX - minX) * s) / 2;
-    const oy = (40 - (maxY - minY) * s) / 2;
-    return polys
-      .map((p) => 'M' + p.map(([x, y]) => `${(ox + (x - minX) * s).toFixed(1)} ${(40 - oy - (y - minY) * s).toFixed(1)}`).join('L') + 'Z')
-      .join('');
-  }, [polygons]);
+function Gallery({ onOpen }: { onOpen: () => void }) {
+  const templateId = useCookie((s) => s.templateId);
   return (
-    <svg viewBox="0 0 40 40" className="h-9 w-9" aria-hidden>
-      <path d={d} fill="currentColor" fillRule="evenodd" />
-    </svg>
+    <TemplateGallery
+      templates={COOKIE_TEMPLATES}
+      categories={COOKIE_CATEGORIES}
+      selected={templateId}
+      thumbDir="cookie"
+      testPrefix="cookie"
+      blankHint="An empty canvas: add a shape, a name or a picture"
+      onOpen={(id) => {
+        void openCookieTemplate(id);
+        onOpen();
+      }}
+      onBlank={() => {
+        startBlankCookie();
+        onOpen();
+      }}
+    />
   );
 }
 
-function LeftPanel() {
-  const tab = useCookie((s) => s.tab);
-  const setTab = useCookie((s) => s.setTab);
-  const p = useCookie((s) => s.params);
-  const setParams = useCookie((s) => s.setParams);
-  const [kernelReady, setKernelReady] = useState(!!getKernel());
-  useEffect(() => {
-    if (!kernelReady) void initKernel().then(() => setKernelReady(true));
-  }, [kernelReady]);
-  const num = (label: string, key: keyof CookieParams, min: number, max: number, step: number, decimals = 1) => (
-    <label key={key} className="text-[12px] text-muted">
+function DesignTab({ error, setError }: { error: string | null; setError: (m: string | null) => void }) {
+  const count = useCookie((s) => s.elements.length);
+  return (
+    <>
+      <div className={section}>
+        <h2 className={heading}>Add</h2>
+        <AddBar useStore={useCookie} config={COOKIE_PANEL} onError={setError} />
+        {error && (
+          <p role="alert" className="mt-2 rounded-lg bg-red-50 p-2 text-[12px] text-red-800">
+            {error}
+          </p>
+        )}
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">
+          {count === 0
+            ? 'Start with a shape, a name or a picture: it becomes the cookie. Then add text or drawings to press into it.'
+            : '“Cookie shape” cuts and is stamped. “Outline only” cuts. “Stamp detail” only presses into the dough.'}
+        </p>
+      </div>
+      <div className={section}>
+        <Inspector useStore={useCookie} config={COOKIE_PANEL} />
+      </div>
+      <div className={section}>
+        <h2 className={heading}>Layers</h2>
+        <LayersPanel useStore={useCookie} config={COOKIE_PANEL} />
+      </div>
+    </>
+  );
+}
+
+function Canvas2D() {
+  const outline = useCookie((s) => s.result?.outline);
+  const empty = useCookie((s) => s.elements.length === 0);
+  const d = outline?.map((p) => 'M' + p.map(([x, y]) => `${x.toFixed(2)} ${(-y).toFixed(2)}`).join('L') + 'Z').join('') ?? '';
+  return (
+    <DesignCanvas
+      useStore={useCookie}
+      artboard={{ w: 100, h: 100, label: 'Cookie area 100 × 100 mm' }}
+      roleStyle={roleStyle}
+      drawRole="detail"
+      drawWidth={2}
+      underlay={(px) =>
+        d ? <path d={d} fill="#F3E2C7" fillRule="evenodd" stroke="#2463EB" strokeWidth={1.6 * px} data-testid="cookie-outline" /> : null
+      }
+    >
+      {empty && (
+        <div className="pointer-events-none absolute inset-x-0 top-6 text-center text-[13px] text-muted">
+          Add a shape, some text or a picture from the panel on the left, or pick a template.
+        </div>
+      )}
+    </DesignCanvas>
+  );
+}
+
+function Preview3D({ large = false }: { large?: boolean }) {
+  const result = useCookie((s) => s.result);
+  const parts = useMemo(() => (result?.parts ?? []).map((p) => ({ id: p.id, colour: PART_COLOURS[p.id], mesh: p.mesh })), [result]);
+  return (
+    <MakerPreview
+      parts={parts}
+      compact={!large}
+      contentKey={result ? `${result.parts.length}-${result.cookie.width.toFixed(0)}-${result.cookie.height.toFixed(0)}` : ''}
+      label="3D preview of the cutter and stamp"
+      testId={large ? 'cookie-viewport' : undefined}
+    />
+  );
+}
+
+function Num({
+  label,
+  k,
+  min,
+  max,
+  step,
+  decimals = 1,
+}: {
+  label: string;
+  k: keyof CookieParams;
+  min: number;
+  max: number;
+  step: number;
+  decimals?: number;
+}) {
+  const v = useCookie((s) => s.params[k]) as number;
+  return (
+    <label className="text-[12px] text-muted">
       {label}
       <NumberField
         ariaLabel={`${label} (mm)`}
-        value={p[key] as number}
+        value={v}
         min={min}
         max={max}
         step={step}
         decimals={decimals}
         suffix="mm"
-        onCommit={(v) => setParams({ [key]: v })}
+        onCommit={(x) => useCookie.getState().setParams({ [k]: x })}
       />
     </label>
   );
+}
+
+function Grid({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 gap-2">{children}</div>;
+}
+
+/** Longest side of the parts that make the cookie's outline. */
+function cutSize(elements: DesignElement[]) {
+  const b = designBounds(elements.filter((e) => e.role !== 'detail'));
+  return b ? Math.max(b.maxX - b.minX, b.maxY - b.minY) : 0;
+}
+
+function Settings() {
+  const p = useCookie((s) => s.params);
+  const elements = useCookie((s) => s.elements);
+  const size = cutSize(elements);
+  const set = (patch: Partial<CookieParams>) => useCookie.getState().setParams(patch);
   return (
-    <aside
-      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-r border-line bg-white xl:w-[300px]"
-      aria-label="Cookie design"
-      data-testid="cookie-left"
-    >
-      <section className={section} aria-labelledby="cookie-design-heading">
-        <h2 id="cookie-design-heading" className={heading}>
-          Design
-        </h2>
-        <Segmented<SourceTab>
-          label="Design source"
-          value={tab}
-          options={[
-            { value: 'shape', label: 'Shape' },
-            { value: 'text', label: 'Text' },
-            { value: 'picture', label: 'Picture' },
-          ]}
-          onChange={setTab}
-        />
-        <div className="mt-3">
-          {tab === 'shape' ? <ShapePicker key={String(kernelReady)} /> : tab === 'text' ? <TextInput /> : <PictureInput />}
-        </div>
-      </section>
-      <section className={section} aria-labelledby="cookie-size-heading">
+    <>
+      <section className={section} aria-labelledby="cookie-size-heading" data-testid="cookie-settings">
         <h2 id="cookie-size-heading" className={heading}>
           Size and outline
         </h2>
-        <div className="grid grid-cols-2 gap-2">
-          {num('Cookie size', 'size', 20, 220, 5, 0)}
-          {num('Outline margin', 'outline', 0, 20, 0.5)}
-          {num('Smoothing', 'smoothing', 0, 5, 0.1)}
-        </div>
+        <Grid>
+          <label className="text-[12px] text-muted">
+            Design size
+            <NumberField
+              ariaLabel="Design size (mm)"
+              value={Math.round(size * 10) / 10}
+              min={15}
+              max={220}
+              step={5}
+              decimals={0}
+              suffix="mm"
+              disabled={!size}
+              onCommit={(v) => {
+                const st = useCookie.getState();
+                st.beginGesture();
+                useCookie.setState({ elements: resizeDesign(st.elements, v, cutSize(st.elements)) });
+                st.rebuild();
+              }}
+            />
+          </label>
+          <Num label="Outline margin" k="outline" min={0} max={20} step={0.5} />
+          <Num label="Smoothing" k="smoothing" min={0} max={5} step={0.1} />
+        </Grid>
         <p className="mt-1 text-[11px] leading-relaxed text-muted">
-          Size is the cookie's longest side. A margin draws a rounded outline around the design and joins separate letters.
+          Size scales everything on the canvas. A margin draws a rounded outline around the design and joins separate letters.
         </p>
-        <Toggle label="Mirror for printing (recommended)" checked={p.mirror} onChange={(v) => setParams({ mirror: v })} />
+        <Toggle label="Mirror for printing (recommended)" checked={p.mirror} onChange={(v) => set({ mirror: v })} />
       </section>
       {p.make !== 'stamp' && (
         <section className={section} aria-labelledby="cookie-cutter-heading">
           <h2 id="cookie-cutter-heading" className={heading}>
             Cutter
           </h2>
-          <div className="grid grid-cols-2 gap-2">
-            {num('Height', 'cutterHeight', 6, 40, 1, 0)}
-            {num('Blade', 'blade', 0.4, 3, 0.1)}
-            {num('Flange width', 'rimWidth', 0, 10, 0.5)}
-            {num('Flange height', 'rimHeight', 0.6, 6, 0.2)}
-          </div>
+          <Grid>
+            <Num label="Height" k="cutterHeight" min={6} max={40} step={1} decimals={0} />
+            <Num label="Blade" k="blade" min={0.4} max={3} step={0.1} />
+            <Num label="Flange width" k="rimWidth" min={0} max={10} step={0.5} />
+            <Num label="Flange height" k="rimHeight" min={0.6} max={6} step={0.2} />
+          </Grid>
         </section>
       )}
       {p.make !== 'cutter' && (
-        <section className="p-4" aria-labelledby="cookie-stamp-heading">
+        <section className={section} aria-labelledby="cookie-stamp-heading">
           <h2 id="cookie-stamp-heading" className={heading}>
             Stamp
           </h2>
-          <p className="mb-1 text-[12px] text-muted">Pattern</p>
           <Segmented
             label="Stamp pattern"
             value={p.stampStyle}
@@ -248,165 +392,47 @@ function LeftPanel() {
               { value: 'outline', label: 'Lines' },
               { value: 'filled', label: 'Filled' },
             ]}
-            onChange={(v) => setParams({ stampStyle: v })}
+            onChange={(v) => set({ stampStyle: v })}
           />
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {num('Relief', 'reliefHeight', 0.6, 6, 0.2)}
-            {num('Line width', 'lineWidth', 0.6, 5, 0.1)}
-            {num('Plate', 'plateThickness', 2, 10, 0.5)}
-            {num('Gap to cutter', 'gap', 0, 3, 0.1, 2)}
+          <div className="mt-2">
+            <Grid>
+              <Num label="Relief" k="reliefHeight" min={0.6} max={6} step={0.2} />
+              <Num label="Line width" k="lineWidth" min={0.6} max={5} step={0.1} />
+              <Num label="Plate" k="plateThickness" min={2} max={10} step={0.5} />
+              <Num label="Gap to cutter" k="gap" min={0} max={3} step={0.1} decimals={2} />
+            </Grid>
           </div>
-          <Toggle label="Separate handle" checked={p.handle} onChange={(v) => setParams({ handle: v })} />
+          <Toggle label="Separate handle" checked={p.handle} onChange={(v) => set({ handle: v })} />
         </section>
       )}
-    </aside>
+    </>
   );
 }
 
-function ShapePicker() {
-  const shapeId = useCookie((s) => s.shapeId);
-  const setShape = useCookie((s) => s.setShape);
-  const shapes = useMemo(() => SHAPES.map((s) => ({ ...s, polys: s.polygons() })), []);
-  return (
-    <ul className="grid grid-cols-4 gap-1.5" data-testid="cookie-shapes">
-      {shapes.map((s) => (
-        <li key={s.id}>
-          <button
-            type="button"
-            onClick={() => setShape(s.id)}
-            aria-pressed={shapeId === s.id}
-            title={s.label}
-            aria-label={s.label}
-            className={`flex aspect-square w-full items-center justify-center rounded-lg border ${shapeId === s.id ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
-          >
-            <ShapeIcon polygons={s.polys} />
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function TextInput() {
-  const text = useCookie((s) => s.text);
-  const font = useCookie((s) => s.font);
-  const setText = useCookie((s) => s.setText);
-  const setFont = useCookie((s) => s.setFont);
-  const [draft, setDraft] = useState(text);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (draft !== useCookie.getState().text) setText(draft);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [draft, setText]);
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="text-[12px] text-muted" htmlFor="cookie-text">
-        Text
-      </label>
-      <input
-        id="cookie-text"
-        value={draft}
-        maxLength={40}
-        onChange={(e) => setDraft(e.target.value)}
-        className="h-9 rounded-lg border border-line px-2.5 text-[14px] text-ink outline-none focus:border-brand"
-        placeholder="A name or a word"
-      />
-      <label className="text-[12px] text-muted" htmlFor="cookie-font">
-        Font
-      </label>
-      <select
-        id="cookie-font"
-        value={font}
-        onChange={(e) => setFont(e.target.value as FontId)}
-        className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] text-ink"
-      >
-        {FONTS.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function PictureInput() {
-  const upload = useCookie((s) => s.upload);
-  const setImageOptions = useCookie((s) => s.setImageOptions);
-  return (
-    <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={pickFile}
-        className="flex h-10 items-center justify-center gap-2 rounded-lg border border-dashed border-[#c9d1de] text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
-      >
-        <FileUp size={16} /> {upload ? 'Choose another file' : 'Choose an SVG or picture'}
-      </button>
-      {!upload && (
-        <p className="text-[12px] leading-relaxed text-muted">
-          SVG logos work best. Pictures (PNG, JPG) are traced: use a dark drawing on a light background, or a PNG with a transparent
-          background.
-        </p>
-      )}
-      {upload && (
-        <p className="truncate text-[12px] text-[#344054]" title={upload.name}>
-          {upload.kind === 'svg' ? 'SVG' : 'Picture'}: <span className="font-medium">{upload.name}</span>
-        </p>
-      )}
-      {upload?.kind === 'image' && (
-        <>
-          {!upload.usesAlpha && (
-            <label className="text-[12px] text-muted" htmlFor="cookie-threshold">
-              Darkness threshold: {upload.threshold}
-              <input
-                id="cookie-threshold"
-                type="range"
-                min={1}
-                max={254}
-                value={upload.threshold}
-                onChange={(e) => setImageOptions({ threshold: Number(e.target.value) })}
-                className="mt-1 w-full accent-[#2463eb]"
-              />
-            </label>
-          )}
-          <Toggle
-            label={upload.usesAlpha ? 'Use the transparent area' : 'Use the light area'}
-            checked={upload.invert}
-            onChange={(v) => setImageOptions({ invert: v })}
-          />
-        </>
-      )}
-    </div>
-  );
+function designName() {
+  const { templateId, elements } = useCookie.getState();
+  const text = elements.find((e) => e.kind === 'text');
+  if (text && text.kind === 'text' && text.text.trim()) return `${text.text.trim()} cookie`;
+  return `${COOKIE_TEMPLATES.find((t) => t.id === templateId)?.name ?? 'My'} cookie`;
 }
 
 function RightPanel() {
   const result = useCookie((s) => s.result);
   const error = useCookie((s) => s.error);
   const building = useCookie((s) => s.building);
-  const name = useCookie(
-    (s) =>
-      (s.tab === 'shape'
-        ? SHAPES.find((x) => x.id === s.shapeId)?.label
-        : s.tab === 'text'
-          ? s.text.trim()
-          : s.upload?.name.replace(/\.[^.]+$/, '')) || 'cookie',
-  );
-  const slug = name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'cookie';
   const body = (p: CookiePart) => ({ id: p.id, name: p.name, color: PART_COLOURS[p.id], mesh: p.mesh, watertight: p.watertight });
   const customise = () => {
     if (!result) return;
     useEditor.getState().importMeshes(
       result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
-      { groupName: `${name} cookie` },
+      { groupName: designName() },
     );
-    useStudio.getState().setStudio('design');
+    useStudio.getState().openInDesign({ studio: 'cookie', label: 'Cookie Maker' });
   };
   return (
     <aside
       className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px]"
-      aria-label="Result"
+      aria-label="Cookie settings and result"
       data-testid="cookie-right"
     >
       <section className={section} aria-labelledby="cookie-result-heading">
@@ -418,9 +444,9 @@ function RightPanel() {
             <CircleAlert size={14} className="mt-0.5 shrink-0" /> {error}
           </p>
         )}
-        {result && (
+        {result && !error && (
           <>
-            <p className="text-[13px] text-[#344054]" data-testid="cookie-size">
+            <p className={`${MONO} text-[12px] text-ink`} data-testid="cookie-size">
               {result.cookie.width.toFixed(1)} × {result.cookie.height.toFixed(1)} mm
             </p>
             <ul className="mt-3 flex flex-col gap-1.5" data-testid="cookie-parts">
@@ -445,7 +471,9 @@ function RightPanel() {
                     type="button"
                     className="rounded-md px-1.5 py-1 font-medium text-brand hover:bg-brand-50"
                     aria-label={`Download ${p.name} as STL`}
-                    onClick={() => download(new Uint8Array(writeBinaryStl([body(p)])), `${slug}-${p.id}.stl`, 'model/stl')}
+                    onClick={() =>
+                      downloadBytes(new Uint8Array(writeBinaryStl([body(p)])), `${slugify(designName())}-${p.id}.stl`, 'model/stl')
+                    }
                   >
                     STL
                   </button>
@@ -468,121 +496,31 @@ function RightPanel() {
             ))}
           </>
         )}
+        {result && !error && (
+          <div className="mt-3 flex flex-col gap-2">
+            <button
+              type="button"
+              data-testid="cookie-download"
+              onClick={() => downloadBytes(write3mf(result.parts.map(body), designName()), `${slugify(designName())}.3mf`, 'model/3mf')}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600"
+            >
+              <Download size={16} /> Download all parts (3MF)
+            </button>
+            <button
+              type="button"
+              onClick={customise}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+            >
+              <PencilRuler size={16} /> Open a copy in Design Studio
+            </button>
+            <p className="text-[11px] leading-relaxed text-muted">
+              Print the cutter flange-down and the stamp face-up; no supports needed. Printed layers can trap dough: use a filament rated
+              for food contact, hand-wash, and dust the cutter with flour.
+            </p>
+          </div>
+        )}
       </section>
-      {result && (
-        <section className="flex flex-col gap-2 p-4">
-          <button
-            type="button"
-            data-testid="cookie-download"
-            onClick={() => download(write3mf(result.parts.map(body), `${name} cookie`), `${slug}-cookie.3mf`, 'model/3mf')}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600"
-          >
-            <Download size={16} /> Download all parts (3MF)
-          </button>
-          <button
-            type="button"
-            onClick={customise}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
-          >
-            <PencilRuler size={16} /> Customise in Design Studio
-          </button>
-          <p className="text-[11px] leading-relaxed text-muted">
-            Print the cutter flange-down and the stamp face-up; no supports needed. Printed layers can trap dough: use a filament rated for
-            food contact, hand-wash, and dust the cutter with flour.
-          </p>
-        </section>
-      )}
+      <Settings />
     </aside>
   );
-}
-
-function download(bytes: Uint8Array, name: string, type: string) {
-  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-function Preview() {
-  const result = useCookie((s) => s.result);
-  const group = useRef<THREE.Group>(null);
-  const fit = useRef<() => void>(() => {});
-  return (
-    <div className="relative h-full w-full" data-testid="cookie-viewport" role="region" aria-label="3D preview of the cutter and stamp">
-      <Canvas
-        camera={{ position: [80, -140, 120], fov: 40, near: 0.5, far: 10000, up: [0, 0, 1] }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, preserveDrawingBuffer: true }}
-        onCreated={({ gl }) => gl.setClearColor('#f5f7fb')}
-      >
-        <hemisphereLight args={['#ffffff', '#b9c2d0', 1.6]} />
-        <directionalLight position={[80, -120, 200]} intensity={1.6} />
-        <directionalLight position={[-120, 100, 60]} intensity={0.5} />
-        <gridHelper args={[600, 60, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />
-        <group ref={group}>
-          {result?.parts.map((p) => (
-            <PartMesh key={`${p.id}-${p.mesh.indices.length}-${p.volume}`} part={p} />
-          ))}
-        </group>
-        <FitControls
-          target={group}
-          fitRef={fit}
-          contentKey={result ? `${result.parts.length}-${result.cookie.width.toFixed(0)}-${result.cookie.height.toFixed(0)}` : ''}
-        />
-      </Canvas>
-      <div className="absolute right-3 top-3 rounded-xl bg-white/95 p-1 shadow-panel">
-        <IconButton label="Fit in view" tooltipSide="left" onClick={() => fit.current()}>
-          <Maximize size={17} />
-        </IconButton>
-      </div>
-    </div>
-  );
-}
-
-function PartMesh({ part }: { part: CookiePart }) {
-  const geometry = useMemo(() => meshDataToGeometry(part.mesh, (40 * Math.PI) / 180), [part.mesh]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <mesh geometry={geometry} name={part.id}>
-      <meshStandardMaterial color={PART_COLOURS[part.id]} roughness={0.55} metalness={0.02} />
-    </mesh>
-  );
-}
-
-function FitControls({
-  target,
-  fitRef,
-  contentKey,
-}: {
-  target: React.RefObject<THREE.Group | null>;
-  fitRef: React.MutableRefObject<() => void>;
-  contentKey: string;
-}) {
-  const controls = useRef<OrbitControlsImpl>(null);
-  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
-  useEffect(() => {
-    fitRef.current = () => {
-      const c = controls.current;
-      const g = target.current;
-      if (!c || !g) return;
-      g.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(g);
-      if (box.isEmpty()) return;
-      const sphere = box.getBoundingSphere(new THREE.Sphere());
-      const dist = (Math.max(sphere.radius, 1) / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2))) * 0.95;
-      c.target.copy(sphere.center);
-      camera.position.copy(sphere.center).addScaledVector(new THREE.Vector3(0.35, -0.75, 0.75).normalize(), dist);
-      camera.near = Math.max(0.05, dist / 1000);
-      camera.far = dist * 50;
-      camera.updateProjectionMatrix();
-      c.update();
-    };
-    const id = requestAnimationFrame(() => fitRef.current());
-    return () => cancelAnimationFrame(id);
-  }, [contentKey, camera, target, fitRef]);
-  return <OrbitControls ref={controls} makeDefault enableDamping={false} />;
 }

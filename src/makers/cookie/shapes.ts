@@ -22,6 +22,27 @@ export function circle(cx: number, cy: number, r: number, n = 96, cw = false): P
   return p;
 }
 
+/**
+ * A crescent: the unit circle minus a circle of radius r at (cx, cy), as one counter-clockwise
+ * outline (so it draws the same in SVG as it builds).
+ */
+export function crescent(cx: number, cy: number, r: number, n = 256): Poly {
+  const run = (pts: [number, number][], keep: (p: [number, number]) => boolean) => {
+    const k = pts.map(keep);
+    const start = k.findIndex((v, i) => v && !k[(i - 1 + k.length) % k.length]);
+    const out: [number, number][] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const j = (start + i) % pts.length;
+      if (!k[j]) break;
+      out.push(pts[j]);
+    }
+    return out;
+  };
+  const outer = run(circle(0, 0, 1, n) as [number, number][], ([x, y]) => Math.hypot(x - cx, y - cy) > r);
+  const inner = run(circle(cx, cy, r, n, true) as [number, number][], ([x, y]) => Math.hypot(x, y) < 1);
+  return [...outer, ...inner];
+}
+
 /** A segment with round ends (stadium). */
 export function capsule(ax: number, ay: number, bx: number, by: number, r: number, n = 24): Poly {
   const ang = Math.atan2(by - ay, bx - ax);
@@ -182,8 +203,7 @@ export const SHAPES: ShapeDef[] = [
   {
     id: 'moon',
     label: 'Moon',
-    // A clockwise circle subtracts under the positive fill rule.
-    polygons: () => [circle(0, 0, 1, 128), circle(0.45, 0.25, 0.85, 128, true)],
+    polygons: () => [crescent(0.45, 0.25, 0.85)],
   },
 ];
 

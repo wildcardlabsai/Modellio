@@ -641,7 +641,7 @@ function RightPanel() {
       result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
       { groupName: name },
     );
-    useStudio.getState().setStudio('design');
+    useStudio.getState().openInDesign({ studio: 'vase', label: 'Vase Maker' });
   };
   const overhangTone = !result
     ? ''
@@ -747,7 +747,7 @@ function RightPanel() {
             onClick={customise}
             className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
           >
-            <PencilRuler size={16} /> Customise in Design Studio
+            <PencilRuler size={16} /> Open a copy in Design Studio
           </button>
           <p className="text-[11px] leading-relaxed text-muted">
             Downloads use a finer mesh than the preview. Vases for flowers: seal the inside or use a glass insert, as printed walls can

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
+import { ReturnBar } from '@/components/layout/ReturnBar';
 import { TopBar } from '@/components/layout/TopBar';
 import { Toolbar } from '@/components/toolbar/Toolbar';
 import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
@@ -37,6 +38,7 @@ import { LandingPage } from '@/landing/LandingPage';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 const CookieStudio = lazy(() => import('@/makers/cookie/CookieStudio'));
 const VaseStudio = lazy(() => import('@/makers/vase/VaseStudio'));
+const KeyringStudio = lazy(() => import('@/makers/keyring/KeyringStudio'));
 
 export function App() {
   useKeyboardShortcuts();
@@ -115,17 +117,33 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
-      {studio === 'split' || studio === 'cookie' || studio === 'vase' ? (
+      <ReturnBar />
+      {studio === 'split' || studio === 'cookie' || studio === 'vase' || studio === 'keyring' ? (
         <Suspense
           fallback={
             <div className="flex flex-1 items-center justify-center text-[13px] text-muted" role="status">
               <Loader2 size={16} className="mr-2 animate-spin" /> Opening{' '}
-              {studio === 'split' ? 'Split Studio' : studio === 'vase' ? 'the Vase Maker' : 'the cookie maker'}…
+              {studio === 'split'
+                ? 'Split Studio'
+                : studio === 'vase'
+                  ? 'the Vase Maker'
+                  : studio === 'keyring'
+                    ? 'the Keyring Maker'
+                    : 'the cookie maker'}
+              …
             </div>
           }
         >
           <ErrorBoundary fallback={(error, reset) => <ViewportCrash error={error} reset={reset} />}>
-            {studio === 'split' ? <SplitStudio /> : studio === 'vase' ? <VaseStudio /> : <CookieStudio />}
+            {studio === 'split' ? (
+              <SplitStudio />
+            ) : studio === 'vase' ? (
+              <VaseStudio />
+            ) : studio === 'keyring' ? (
+              <KeyringStudio />
+            ) : (
+              <CookieStudio />
+            )}
           </ErrorBoundary>
         </Suspense>
       ) : (

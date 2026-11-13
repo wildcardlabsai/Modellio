@@ -34,9 +34,9 @@ const NAV = [
 
 /** Focused makers. Coming-soon entries are shown, labelled and disabled. */
 export const MAKERS: { id: string; label: string; Icon: LucideIcon; studio?: StudioId }[] = [
+  { id: 'keyring', label: 'Keyring & Name Tag', Icon: KeyRound, studio: 'keyring' },
   { id: 'cookie', label: 'Cookie Cutter & Stamp', Icon: Cookie, studio: 'cookie' },
   { id: 'vase', label: 'Vase Maker', Icon: Flower2, studio: 'vase' },
-  { id: 'keyring', label: 'Keyring Maker', Icon: KeyRound },
   { id: 'sign', label: 'Sign Maker', Icon: Signpost },
   { id: 'organiser', label: 'Organiser Generator', Icon: Grid3x3 },
   { id: 'box', label: 'Box & Lid Maker', Icon: Package },
@@ -138,7 +138,10 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
           );
           // The Makers menu sits right after the studios.
           return targetStudio === 'split'
-            ? [button, <MakersMenu key="makers" active={studio === 'cookie' || studio === 'vase'} onOpen={setStudio} />]
+            ? [
+                button,
+                <MakersMenu key="makers" active={studio === 'cookie' || studio === 'vase' || studio === 'keyring'} onOpen={setStudio} />,
+              ]
             : button;
         })}
       </nav>

@@ -38,6 +38,22 @@ export const DESIGN_STUDIO: Maker = {
 
 export const MAKERS: Maker[] = [
   {
+    id: 'keyring',
+    name: 'Keyring & Name Tag Maker',
+    line: 'Your name, a shape or a drawing in; a two-colour keyring out.',
+    description:
+      'Lay it out on a canvas: type a name, drop in shapes, upload a logo or draw with the pen, then drag, resize and rotate. Each piece can be raised, engraved, flush or a hole, and the tag can follow the lettering or take any shape. Start from one of the templates or a blank canvas.',
+    studio: 'keyring',
+    image: '/landing/keyring-maker.jpg',
+    action: 'Open Keyring Maker',
+    facts: [
+      '28 templates, or start blank',
+      'Raised, engraved or flush',
+      'Drag the key ring hole anywhere',
+      'Two colours, one nozzle or an AMS',
+    ],
+  },
+  {
     id: 'vase',
     name: 'Vase Maker',
     line: '32 templates or a blank profile in; a vase, plant pot or lampshade out.',
@@ -58,11 +74,12 @@ export const MAKERS: Maker[] = [
     name: 'Cookie Cutter & Stamp Maker',
     line: 'A shape, a name or a drawing in; a cutter, a stamp and a handle out.',
     description:
-      'Pick one of the built-in shapes, type a name, or upload a logo or a scan of a child’s drawing. It makes a cutter, a stamp that fits inside it and presses the design into the dough, and a handle for the stamp. Everything prints without supports.',
+      'Start from 25 templates or a blank canvas. Drop in shapes, type a name, upload a logo or a scan of a child’s drawing, and arrange them: some make the cookie’s outline, others are only pressed in by the stamp. You get a cutter, a stamp that fits inside it, and a handle. Everything prints without supports.',
     studio: 'cookie',
     image: '/landing/cookie-maker.jpg',
     action: 'Open Cookie Cutter & Stamp Maker',
     facts: [
+      '25 templates, or start blank',
       'Shapes, text, SVG or a picture',
       'Mirrored so text reads the right way',
       'Stamp fits inside the cutter',
@@ -83,7 +100,6 @@ export const MAKERS: Maker[] = [
 ];
 
 export const COMING_SOON: Maker[] = [
-  { id: 'keyring', name: 'Keyring Maker', line: 'A name and a font in; a keyring with a strong loop out.', description: '', facts: [] },
   { id: 'sign', name: 'Sign Maker', line: 'Desk, door and house-number signs with stands or screw holes.', description: '', facts: [] },
   {
     id: 'organiser',
@@ -109,7 +125,7 @@ export const FAQ = [
   },
   {
     q: 'Design Studio or a maker — which should I use?',
-    a: 'If a maker exists for the thing you want, start there: it asks a few questions and does the fiddly geometry for you. For anything else, or to change what a maker made, use the Design Studio. Makers have a "Customise in Design Studio" button for exactly that.',
+    a: 'If a maker exists for the thing you want, start there: it asks a few questions and does the fiddly geometry for you. For anything else, or to change what a maker made, use the Design Studio. Every maker has an "Open a copy in Design Studio" button for exactly that, and a button there brings you back.',
   },
   {
     q: 'Where are my designs kept?',

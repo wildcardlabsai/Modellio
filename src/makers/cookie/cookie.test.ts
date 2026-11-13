@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initKernel } from '@/cad/kernel/kernel';
-import { buildCookie, DEFAULT_COOKIE_PARAMS, type CookieParams, type CookieSource } from './geometry';
+import { buildCookie, buildCookieDesign, DEFAULT_COOKIE_PARAMS, type CookieParams, type CookieSource } from './geometry';
+import type { DesignElement } from '../canvas/model';
 import { capsule, shapeById, SHAPES } from './shapes';
 import { maskFromRgba, otsu, signedArea, traceMask } from './trace';
 
@@ -181,5 +182,52 @@ describe('bitmap tracing', () => {
     const r = await make({ kind: 'image', fillRule: 'EvenOdd', polygons: traceMask(mask, W, W) }, { size: 60 });
     for (const p of r.parts) expect(p.watertight).toBe(true);
     expect(Math.max(r.cookie.width, r.cookie.height)).toBeCloseTo(60, 0);
+  });
+});
+
+describe('cookie design canvas', () => {
+  const el = (shape: string, role: string, x: number, y: number, w: number, h: number) =>
+    ({ id: `${shape}${x}${role}`, kind: 'shape', shape, role, x, y, w, h, rotation: 0 }) as DesignElement;
+  const build = async (els: DesignElement[], p: Partial<CookieParams> = {}) =>
+    buildCookieDesign(await initKernel(), els, { ...DEFAULT_COOKIE_PARAMS, ...p });
+
+  it('uses the canvas size in millimetres, not a scale-to-fit size', async () => {
+    const r = await build([el('circle', 'shape', 0, 0, 60, 60)], { size: 120 });
+    expect(r.cookie.width).toBeCloseTo(60, 0);
+    expect(r.parts.map((p) => p.id)).toEqual(['cutter', 'stamp', 'handle']);
+    for (const p of r.parts) expect(p.watertight).toBe(true);
+    expect(r.outline?.length).toBe(1);
+  });
+
+  it('stamp details press into the stamp without changing the cutter', async () => {
+    const plain = await build([el('circle', 'outline', 0, 0, 60, 60)]);
+    const withDetail = await build([el('circle', 'outline', 0, 0, 60, 60), el('star', 'detail', 0, 0, 30, 30)]);
+    const vol = (r: typeof plain, id: string) => r.parts.find((p) => p.id === id)!.volume;
+    expect(vol(withDetail, 'cutter')).toBeCloseTo(vol(plain, 'cutter'), 1);
+    expect(vol(withDetail, 'stamp')).toBeGreaterThan(vol(plain, 'stamp') + 100);
+  });
+
+  it('"outline only" items join the cut shape; mirroring keeps the outline as drawn', async () => {
+    const r = await build([el('circle', 'shape', -20, 0, 30, 30), el('rect', 'outline', 0, 0, 60, 30)]);
+    expect(r.pieces).toBe(1);
+    expect(r.cookie.width).toBeCloseTo(65, 0);
+    const xs = r.outline!.flat().map(([x]) => x);
+    expect(Math.min(...xs)).toBeCloseTo(-35, 0);
+  });
+
+  it('needs something to cut', async () => {
+    await expect(build([el('star', 'detail', 0, 0, 30, 30)])).rejects.toThrow(/Add a shape/);
+  });
+
+  it('every template with shapes only builds watertight parts', async () => {
+    const { COOKIE_TEMPLATES } = await import('./templates');
+    const { fitNatural } = await import('../canvas/model');
+    expect(COOKIE_TEMPLATES.length).toBeGreaterThanOrEqual(20);
+    for (const t of COOKIE_TEMPLATES) {
+      const els = fitNatural(t.elements.filter((e) => e.kind !== 'text'));
+      if (!els.some((e) => e.role !== 'detail')) continue;
+      const r = await build(els, t.params);
+      for (const p of r.parts) expect(p.watertight, `${t.id} ${p.id}`).toBe(true);
+    }
   });
 });

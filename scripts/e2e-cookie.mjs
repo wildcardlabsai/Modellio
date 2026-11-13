@@ -24,7 +24,7 @@ await context.addInitScript(() => {
   localStorage.setItem('modellio:onboarded', '1');
   // Start from defaults once; later reloads must keep what the test changed.
   if (!sessionStorage.getItem('cookie-e2e')) {
-    localStorage.removeItem('modellio:cookie');
+    localStorage.removeItem('modellio:cookie-design');
     sessionStorage.setItem('cookie-e2e', '1');
   }
 });
@@ -43,10 +43,14 @@ const state = () =>
       cookie: s.result?.cookie,
       warnings: s.result?.warnings ?? [],
       pieces: s.result?.pieces,
+      elements: s.elements.map((e) => ({ id: e.id, kind: e.kind, role: e.role, x: e.x, y: e.y, w: e.w, h: e.h })),
+      templateId: s.templateId,
+      params: s.params,
     };
   });
 const settled = async (pred = () => true, ms = 30000) => {
   const t = Date.now();
+  await page.waitForTimeout(150);
   while (Date.now() - t < ms) {
     const st = await state();
     if (!st.building && (await pred(st))) return st;
@@ -69,93 +73,103 @@ check(
   st.parts.map((p) => p.id).join(',') === 'cutter,stamp,handle' && st.parts.every((p) => p.ok && p.v > 0),
   JSON.stringify(st.parts.map((p) => p.id)),
 );
-check(
-  '3. The cookie is 70 mm on its longest side',
-  Math.abs(Math.max(st.cookie.width, st.cookie.height) - 70) < 0.5,
-  `${st.cookie.width.toFixed(1)} × ${st.cookie.height.toFixed(1)}`,
-);
-await page.getByRole('button', { name: 'Design', exact: true }).click();
+check('3. The design is on a canvas you can edit directly', (await page.getByTestId('canvas-element').count()) === 1);
+check('4. The cookie outline is drawn on the canvas', await page.getByTestId('cookie-outline').isVisible());
+await page.getByRole('button', { name: 'Design', exact: true }).first().click();
 await page.getByTestId('left-panel').waitFor();
 await page.getByRole('button', { name: 'Makers' }).click();
 check(
-  '4. The Makers menu lists the cookie maker and the coming-soon makers',
+  '5. The Makers menu lists the cookie and keyring makers and the coming-soon makers',
   (await page.getByRole('menuitem', { name: /Cookie Cutter/ }).isEnabled()) &&
-    (await page.getByRole('menuitem', { name: /Keyring Maker/ }).isDisabled()),
+    (await page.getByRole('menuitem', { name: /Keyring/ }).isEnabled()) &&
+    (await page.getByRole('menuitem', { name: /Sign Maker/ }).isDisabled()),
 );
 await page.getByRole('menuitem', { name: /Cookie Cutter/ }).click();
 await page.getByTestId('cookie-studio').waitFor();
 
-// 2. Shapes and settings
-await page.getByRole('button', { name: 'Gingerbread', exact: true }).click();
-st = await settled((s) => s.parts.length === 3);
+// 2. Templates
+await page.getByRole('radio', { name: /Templates/ }).click();
+const tiles = await page.getByTestId('cookie-template').count();
+check('6. At least 20 templates', tiles >= 20, `${tiles}`);
+await page.locator('[data-template="gingerbread"]').click();
+st = await settled((s) => s.templateId === 'gingerbread' && s.parts.length === 3);
 check(
-  '5. Picking a shape rebuilds the parts',
-  st.parts.every((p) => p.ok),
+  '7. A template opens on the canvas at its real size',
+  Math.abs(st.cookie.height - 80) < 1 && st.parts.every((p) => p.ok),
   `${st.cookie.width.toFixed(1)} × ${st.cookie.height.toFixed(1)}`,
 );
-const size = page.getByLabel('Cookie size (mm)');
+const size = page.getByLabel('Design size (mm)');
 await size.fill('90');
 await size.press('Enter');
-st = await settled((s) => Math.abs(Math.max(s.cookie.width, s.cookie.height) - 90) < 0.5);
-check('6. Changing the size resizes the cookie', Math.abs(Math.max(st.cookie.width, st.cookie.height) - 90) < 0.5);
+st = await settled((s) => Math.abs(s.cookie.height - 90) < 0.6);
+check('8. "Design size" scales the whole design', Math.abs(st.cookie.height - 90) < 0.6, `${st.cookie.height.toFixed(1)}`);
 const cutter = st.parts.find((p) => p.id === 'cutter');
 check(
-  '7. The cutter is 14 mm tall with the flange around the cookie',
+  '9. The cutter is 14 mm tall with the flange around the cookie',
   Math.abs(cutter.size[2] - 14) < 0.01 && cutter.size[1] > st.cookie.height + 2 * 3.5,
   cutter.size.map((v) => v.toFixed(1)).join(' × '),
 );
-await page.getByRole('radio', { name: 'Cutter' }).click();
+await page.getByRole('radio', { name: 'Cutter', exact: true }).click();
 st = await settled((s) => s.parts.length === 1);
 check(
-  '8. "Cutter" makes only the cutter, and the stamp settings hide',
+  '10. "Cutter" makes only the cutter, and the stamp settings hide',
   st.parts[0]?.id === 'cutter' && (await page.getByRole('heading', { name: 'Stamp', exact: true }).count()) === 0,
 );
-await page.getByRole('radio', { name: 'Both' }).click();
+await page.getByRole('radio', { name: 'Cutter + stamp' }).click();
 await page.getByRole('switch', { name: 'Separate handle' }).click();
 st = await settled((s) => s.parts.length === 2);
-check('9. The handle can be turned off', st.parts.map((p) => p.id).join(',') === 'cutter,stamp');
+check('11. The handle can be turned off', st.parts.map((p) => p.id).join(',') === 'cutter,stamp');
 await page.getByRole('switch', { name: 'Separate handle' }).click();
 await settled((s) => s.parts.length === 3);
 
-// 3. Text
-await page.getByRole('radio', { name: 'Text' }).click();
-await page.getByLabel('Text', { exact: true }).fill('Mia');
-st = await settled((s) => s.parts.length === 3 && s.pieces === 1, 30000);
+// 3. Detail pressed into the stamp
+const stamp0 = st.parts.find((p) => p.id === 'stamp')?.v ?? (await state()).parts.find((p) => p.id === 'stamp').v;
+const cut0 = (await state()).parts.find((p) => p.id === 'cutter').v;
+await page.getByRole('button', { name: 'Text', exact: true }).click();
+st = await settled((s) => s.elements.length === 2 && s.parts.length === 3);
+check('12. Text added to a cookie becomes stamp detail', st.elements[1].role === 'detail');
+await page.getByLabel('Text', { exact: true }).fill('MAX');
+st = await settled((s) => s.parts.length === 3);
 check(
-  '10. Text makes a single joined cookie (rounded outline margin)',
-  st.pieces === 1 && st.parts.every((p) => p.ok),
-  `pieces ${st.pieces}`,
+  '13. Stamp detail changes the stamp, not the cutter',
+  Math.abs(st.parts.find((p) => p.id === 'cutter').v - cut0) < 1 && st.parts.find((p) => p.id === 'stamp').v !== stamp0,
 );
-const margin = await S(() => window.modellioCookie.store.getState().params.outline);
-check('11. Text mode sets an outline margin automatically', margin >= 2, `${margin} mm`);
-await page.getByLabel('Outline margin (mm)').fill('0');
-await page.getByLabel('Outline margin (mm)').press('Enter');
+
+// 4. A name cookie from scratch
+await page.getByRole('radio', { name: /Templates/ }).click();
+await page.getByTestId('cookie-blank').click();
+st = await settled((s) => s.elements.length === 0);
+check('14. "Start blank" gives an empty canvas and says what to add', /Add a shape/.test(st.error ?? ''), st.error ?? '');
+await page.getByRole('button', { name: 'Text', exact: true }).click();
+st = await settled((s) => s.elements.length === 1);
+check('15. The first thing added makes the cookie shape', st.elements[0].role === 'shape');
+await page.getByLabel('Text', { exact: true }).fill('Mia');
+const margin = page.getByLabel('Outline margin (mm)');
+await margin.fill('0');
+await margin.press('Enter');
 st = await settled((s) => s.pieces > 1);
 check(
-  '12. Without a margin, separate letters are reported',
-  st.pieces > 1 && st.warnings.some((w) => /separate pieces/.test(w)),
+  '16. Without a margin, separate letters are reported',
+  st.warnings.some((w) => /separate pieces/.test(w)),
   st.warnings[0],
 );
-await page.getByLabel('Outline margin (mm)').fill('4');
-await page.getByLabel('Outline margin (mm)').press('Enter');
-await settled((s) => s.pieces === 1);
+await margin.fill('4');
+await margin.press('Enter');
+st = await settled((s) => s.pieces === 1);
+check('17. An outline margin joins the letters into one cookie', st.pieces === 1 && st.parts.every((p) => p.ok));
 
-// 4. SVG upload
+// 5. Uploads: SVG via the button, a picture by drag and drop
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 5 L95 95 L5 95 Z" fill="#000"/><circle cx="50" cy="65" r="12" fill="#fff"/></svg>`;
-await page.getByRole('radio', { name: 'Picture' }).click();
+await page.getByRole('radio', { name: /Templates/ }).click();
+await page.getByTestId('cookie-blank').click();
+await settled((s) => s.elements.length === 0);
 const [svgChooser] = await Promise.all([
   page.waitForEvent('filechooser'),
-  page.getByRole('button', { name: /Choose an SVG or picture/ }).click(),
+  page.getByRole('button', { name: 'Upload', exact: true }).click(),
 ]);
 await svgChooser.setFiles({ name: 'triangle.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
-st = await settled((s) => s.parts.length === 3 && Math.abs(Math.max(s.cookie.width, s.cookie.height) - 90) < 1);
-check(
-  '13. An SVG upload becomes the cookie shape',
-  st.parts.every((p) => p.ok),
-  `${st.cookie.width.toFixed(1)} × ${st.cookie.height.toFixed(1)}`,
-);
-
-// 5. Picture upload (traced)
+st = await settled((s) => s.parts.length === 3);
+check('18. An SVG upload becomes the cookie shape', st.elements[0]?.kind === 'outline' && st.parts.every((p) => p.ok));
 const png = await S(async () => {
   const c = document.createElement('canvas');
   c.width = 200;
@@ -173,26 +187,31 @@ const png = await S(async () => {
   for (const b of buf) s += String.fromCharCode(b);
   return btoa(s);
 });
-const [pngChooser] = await Promise.all([
-  page.waitForEvent('filechooser'),
-  page.getByRole('button', { name: /Choose another file/ }).click(),
-]);
-await pngChooser.setFiles({ name: 'drawing.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
-st = await settled((s) => s.parts.length === 3 && s.cookie && Math.abs(s.cookie.width / s.cookie.height - (180 + 8) / (120 + 8)) < 0.08);
+const dt = await page.evaluateHandle((b64) => {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const d = new DataTransfer();
+  d.items.add(new File([bytes], 'drawing.png', { type: 'image/png' }));
+  return d;
+}, png);
+await page.getByTestId('cookie-studio').dispatchEvent('dragover', { dataTransfer: dt });
+await page.getByTestId('cookie-studio').dispatchEvent('drop', { dataTransfer: dt });
+st = await settled((s) => s.elements.length === 2 && s.parts.length === 3);
+const traced = st.elements[1];
 check(
-  '14. A picture is traced into a cookie with the right proportions',
-  st.parts.every((p) => p.ok),
-  `${st.cookie.width.toFixed(1)} × ${st.cookie.height.toFixed(1)}`,
+  '19. A dropped picture is traced with the right proportions',
+  traced?.kind === 'outline' && Math.abs(traced.w / traced.h - 1.5) < 0.08,
+  traced ? `${traced.w.toFixed(1)} × ${traced.h.toFixed(1)}` : 'none',
 );
-check('15. Picture tracing shows a threshold control', await page.getByLabel(/Darkness threshold/).isVisible());
-await page.screenshot({ path: `${OUT}/cookie-01-picture.png` });
+await page.screenshot({ path: `${OUT}/cookie-01-upload.png` });
 
 // 6. Downloads
 const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('cookie-download').click()]);
 const files = unzipSync(fs.readFileSync(await dl.path()));
 const model = new TextDecoder().decode(files['3D/3dmodel.model']);
 check(
-  '16. "Download all parts" gives a 3MF with three objects',
+  '20. "Download all parts" gives a 3MF with three objects',
   dl.suggestedFilename().endsWith('.3mf') && (model.match(/<object /g) ?? []).length === 3,
   dl.suggestedFilename(),
 );
@@ -203,27 +222,24 @@ const [stl] = await Promise.all([
 const stlBytes = fs.readFileSync(await stl.path());
 const tris = stlBytes.readUInt32LE(80);
 check(
-  '17. Each part downloads as a binary STL',
+  '21. Each part downloads as a binary STL',
   stl.suggestedFilename().endsWith('.stl') && stlBytes.length === 84 + tris * 50 && tris > 0,
   `${tris} triangles`,
 );
 
-// 7. Customise in Design Studio
+// 7. A copy in the Design Studio, and back
+const kept0 = JSON.stringify((await state()).elements);
 const before = await S(() => window.modellio.store.getState().doc.rootIds.length);
-await page.getByRole('button', { name: 'Customise in Design Studio' }).click();
+await page.getByRole('button', { name: 'Open a copy in Design Studio' }).click();
 await page.getByTestId('left-panel').waitFor();
 const after = await S(() => window.modellio.store.getState().doc.rootIds.length);
-check('18. "Customise in Design Studio" opens the parts in the editor', page.url().includes('studio=design') && after === before + 1);
-await page.goBack();
+check('22. "Open a copy in Design Studio" adds the parts to the editor', page.url().includes('studio=design') && after === before + 1);
+await page.getByRole('button', { name: 'Back to Cookie Maker' }).click();
 await page.getByTestId('cookie-studio').waitFor();
+st = await settled((s) => s.parts.length === 3);
+check('23. "Back to Cookie Maker" returns to the same design', JSON.stringify(st.elements) === kept0);
 
-// 8. Errors, accessibility, persistence
-await page.getByRole('radio', { name: 'Text' }).click();
-await page.getByLabel('Text', { exact: true }).fill('');
-await page.getByTestId('cookie-error').waitFor({ timeout: 10000 });
-check('19. An empty design explains what to do', (await page.getByTestId('cookie-error').textContent()).includes('Pick a shape'));
-await page.getByLabel('Text', { exact: true }).fill('Jo');
-await settled((s) => s.parts.length === 3);
+// 8. Accessibility, persistence
 await page.addScriptTag({ content: fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8') });
 const v = await S(async () => {
   const r = await window.axe.run(document, { resultTypes: ['violations'] });
@@ -231,16 +247,14 @@ const v = await S(async () => {
     .filter((x) => x.impact === 'serious' || x.impact === 'critical')
     .map((x) => `${x.id} (${x.nodes.length}): ${x.nodes[0]?.target?.join(' ')}`);
 });
-check('20. No serious accessibility violations', v.length === 0, v.slice(0, 4).join(' | '));
+check('24. No serious accessibility violations', v.length === 0, v.slice(0, 4).join(' | '));
 await page.reload({ waitUntil: 'networkidle' });
 await page.getByTestId('cookie-studio').waitFor();
-await settled((s) => s.parts.length === 3);
-const kept = await S(() => ({
-  text: window.modellioCookie.store.getState().text,
-  size: window.modellioCookie.store.getState().params.size,
-}));
-check('21. Settings are remembered after a reload', kept.text === 'Jo' && kept.size === 90, JSON.stringify(kept));
-await page.screenshot({ path: `${OUT}/cookie-02-text.png` });
+st = await settled((s) => s.parts.length === 3);
+check('25. The design is remembered after a reload', JSON.stringify(st.elements) === kept0);
+await page.getByRole('radio', { name: '3D', exact: true }).click();
+await page.getByTestId('cookie-viewport').waitFor();
+await page.screenshot({ path: `${OUT}/cookie-02-3d.png` });
 
 // 9. Tablet
 const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true });
@@ -251,7 +265,7 @@ const overflow = await tp.evaluate(() => document.documentElement.scrollWidth > 
 const navHeights = await tp.evaluate(() =>
   [...document.querySelectorAll('nav[aria-label="Main"] button')].map((b) => b.getBoundingClientRect().height),
 );
-check('22. Tablet: no horizontal scrolling and a one-line top bar', !overflow && navHeights.every((h) => h <= 40));
+check('26. Tablet: no horizontal scrolling and a one-line top bar', !overflow && navHeights.every((h) => h <= 40));
 await tablet.close();
 
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));

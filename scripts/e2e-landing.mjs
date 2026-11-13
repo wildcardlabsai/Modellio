@@ -46,9 +46,9 @@ const fold = await page.evaluate(() => {
 });
 check('2b. Both paths start above the fold on a laptop screen', fold.scratch < fold.h && fold.makers < fold.h, JSON.stringify(fold));
 check('3. The editor is not mounted on the landing page', (await page.getByTestId('left-panel').count()) === 0);
-for (const id of ['design', 'split', 'cookie'])
+for (const id of ['design', 'keyring', 'split', 'cookie', 'vase'])
   check(`4. Live studio card: ${id}`, await page.getByTestId(`studio-card-${id}`).isVisible());
-const soon = ['keyring', 'sign', 'organiser', 'box', 'lithophane'];
+const soon = ['sign', 'organiser', 'box', 'lithophane'];
 let soonOk = true;
 for (const id of soon) {
   const card = page.getByTestId(`soon-card-${id}`);
