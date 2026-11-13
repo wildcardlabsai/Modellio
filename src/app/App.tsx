@@ -32,6 +32,8 @@ import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
 import { booleanStats, computeCombined } from '@/cad/operations/combine';
+import { useStudio } from './studio';
+const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 
 export function App() {
   useKeyboardShortcuts();
@@ -69,7 +71,8 @@ export function App() {
     };
   }, []);
 
-  useFirstRunTour();
+  const studio = useStudio((s) => s.studio);
+  useFirstRunTour(studio === 'design');
   const view = useProjects((s) => s.view);
   const busy = useFileUi((s) => s.busy);
   const importQueued = useFileUi((s) => s.queue.length > 0);
@@ -98,7 +101,7 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === '?' && !(e.target instanceof HTMLInputElement)) setShowShortcuts((v) => !v);
+      if (e.key === '?' && !(e.target instanceof HTMLInputElement) && useStudio.getState().studio === 'design') setShowShortcuts((v) => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -107,6 +110,62 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
+      {studio === 'split' ? (
+        <Suspense
+          fallback={
+            <div className="flex flex-1 items-center justify-center text-[13px] text-muted" role="status">
+              <Loader2 size={16} className="mr-2 animate-spin" /> Opening Split Studio…
+            </div>
+          }
+        >
+          <ErrorBoundary fallback={(error, reset) => <ViewportCrash error={error} reset={reset} />}>
+            <SplitStudio />
+          </ErrorBoundary>
+        </Suspense>
+      ) : (
+        <DesignStudio
+          panel={panel}
+          choosePanel={choosePanel}
+          compact={compact}
+          leftOpen={leftOpen}
+          inspectorOpen={inspectorOpen}
+          view={view}
+        />
+      )}
+      <CadResources />
+      <Announcer />
+      <Tour />
+      {/* Dialogs are only fetched when first needed. */}
+      <Suspense fallback={null}>
+        {importQueued && <ImportDialog />}
+        {exportOpen && <ExportDialog />}
+        {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
+      </Suspense>
+      {busy && (
+        <div
+          role="status"
+          className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white shadow-float"
+        >
+          <Loader2 size={14} className="animate-spin" /> {busy}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface DesignStudioProps {
+  panel: LeftPanel;
+  choosePanel: (p: LeftPanel) => void;
+  compact: boolean;
+  leftOpen: boolean;
+  inspectorOpen: boolean;
+  view: string;
+}
+
+/** The modelling workspace (the original MODELLIO editor). */
+function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, view }: DesignStudioProps) {
+  return (
+    <>
       <Toolbar />
       <SharedBanner />
       <SmallScreenNotice />
@@ -160,24 +219,7 @@ export function App() {
           </Suspense>
         )}
       </div>
-      <CadResources />
-      <Announcer />
-      <Tour />
-      {/* Dialogs are only fetched when first needed. */}
-      <Suspense fallback={null}>
-        {importQueued && <ImportDialog />}
-        {exportOpen && <ExportDialog />}
-        {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
-      </Suspense>
-      {busy && (
-        <div
-          role="status"
-          className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white shadow-float"
-        >
-          <Loader2 size={14} className="animate-spin" /> {busy}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 

@@ -133,6 +133,21 @@ npm run dev          # http://localhost:5173
 
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
+## Split Studio (phases 1–2) ✅
+
+A second workspace (**Split Studio** in the top bar, or `/?studio=split`) for printing multi-colour designs as separate
+single-colour parts. Phases 1–2 cover integration and import:
+
+* Imports 3MF files using the official 3MF Consortium library (lib3mf, WebAssembly) in a Web Worker, with progress and cancel.
+* Reads objects, nested components, build items, transforms and units (converted to mm), base materials, colour groups and per-triangle
+  colours. Textures, composites and multi-properties are detected and reported.
+* Reads Bambu Studio / OrcaSlicer and PrusaSlicer project data: part and volume extruders, filament colours, painted triangles, and
+  modifier volumes (which are not printed).
+* Colour legend with select / hide / show-only, region dimensions in mm, a 3D preview and an import report that lists everything
+  approximated or skipped.
+
+Design and plan: [docs/SPLIT_STUDIO.md](docs/SPLIT_STUDIO.md). Splitting, explode view, connectors and export are the next phases.
+
 ## Cloud projects (optional)
 
 Without configuration, projects are stored in the browser (IndexedDB). To enable accounts and cloud sync:

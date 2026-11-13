@@ -4,6 +4,7 @@ import type { Vec3 } from '@/types/document';
 import * as THREE from 'three';
 import { useProjects } from '@/store/projectStore';
 import { openMeshPicker, useFileUi } from '@/components/files/fileIntake';
+import { useStudio } from '@/app/studio';
 import { isEffectivelyLocked, topLevel, translateWorldDraft } from '@/cad/hierarchy';
 
 export function isTypingTarget(target: EventTarget | null): boolean {
@@ -20,6 +21,8 @@ export function useKeyboardShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
+      // Editor shortcuts act on the design document, so they only apply in the Design studio.
+      if (useStudio.getState().studio !== 'design') return;
       const s = useEditor.getState();
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();

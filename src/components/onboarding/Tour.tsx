@@ -81,8 +81,9 @@ export const useTour = create<TourState>()((set, get) => ({
 }));
 
 /** Start the tour automatically on a first visit. */
-export function useFirstRunTour() {
+export function useFirstRunTour(enabled = true) {
   useEffect(() => {
+    if (!enabled) return;
     let seen = true;
     try {
       seen = localStorage.getItem(DONE_KEY) === '1';
@@ -92,7 +93,7 @@ export function useFirstRunTour() {
     if (seen) return;
     const t = setTimeout(() => useTour.getState().start(), 900);
     return () => clearTimeout(t);
-  }, []);
+  }, [enabled]);
 }
 
 /** Spotlight + coach mark for the current step. */
