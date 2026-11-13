@@ -85,7 +85,6 @@ export function ProjectsPage() {
               <button
                 type="button"
                 onClick={() => void p.open(m.id)}
-                aria-label={`Open ${m.name}`}
                 className={`block w-full overflow-hidden rounded-2xl border bg-white text-left shadow-panel transition-shadow hover:shadow-float ${
                   current?.id === m.id ? 'border-brand ring-2 ring-brand/20' : 'border-line'
                 }`}
@@ -98,7 +97,10 @@ export function ProjectsPage() {
                   )}
                 </div>
                 <div className="px-4 py-3">
-                  <p className="truncate pr-6 text-[14px] font-semibold text-ink">{m.name}</p>
+                  <p className="truncate pr-6 text-[14px] font-semibold text-ink">
+                    <span className="sr-only">Open </span>
+                    {m.name}
+                  </p>
                   <p className="mt-0.5 text-[12px] text-muted">
                     {ago(m.updatedAt)} · {m.objectCount} object{m.objectCount === 1 ? '' : 's'}
                     {current?.id === m.id && <span className="ml-1 font-medium text-brand">· open</span>}

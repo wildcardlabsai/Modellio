@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import type { Manifold } from 'manifold-3d';
 import type { ModelDocument, ObjectId, SceneObject, ShapeObject, Vec3 } from '@/types/document';
 import { getKernel } from '../kernel/kernel';
 import {
@@ -10,6 +9,7 @@ import {
   meshDataToManifold,
   type MeshData,
 } from '../kernel/meshData';
+import { runBoolean, type BooleanJob, type BooleanOutcome } from '../kernel/booleanCore';
 import { buildGeometryForShape } from '../shapeRegistry';
 import { setCombinedBoundsResolver, siblingsOf, worldMatrix } from '../hierarchy';
 import { addMeshAsset } from '../assets';
@@ -37,6 +37,8 @@ export interface CombineResult {
   /** True when the group contains only holes: the result itself acts as a hole. */
   isHole: boolean;
   triangles: number;
+  /** The previous result, shown while a new one is computed in the background. */
+  stale?: boolean;
 }
 
 class PendingError extends Error {}
@@ -97,17 +99,41 @@ export function computeCombined(doc: ModelDocument, groupId: ObjectId): CombineR
   const key = geometryKey(doc, groupId);
   const color = firstSolidColor(doc, groupId) ?? '#94A3B8';
   const hit = cache.get(key);
-  if (hit) return hit.color === color ? hit : { ...hit, color };
+  if (hit) {
+    lastByGroup.set(groupId, hit);
+    return hit.color === color ? hit : { ...hit, color };
+  }
 
-  const owned: Manifold[] = [];
-  const own = (m: Manifold) => {
-    owned.push(m);
-    return m;
+  // While a new result is being computed in the worker, keep showing the previous one.
+  const stale = () => {
+    const last = lastByGroup.get(groupId);
+    return last ? { ...last, color, stale: true } : null;
   };
-  const frameInv = worldMatrix(doc, groupId).invert();
-  const solids: Manifold[] = [];
-  const holes: Manifold[] = [];
+  if (inflight.has(key)) return stale();
 
+  // Prepare the job on this thread: every visible part as a welded mesh in the group's frame.
+  let job: BooleanJob;
+  try {
+    job = prepareJob(doc, groupId);
+  } catch (e) {
+    if (e instanceof PendingError) return stale();
+    return store(key, groupId, { mesh: null, error: e instanceof Error ? e.message : String(e), isHole: false }, color);
+  }
+
+  const worker = getWorker();
+  if (worker) {
+    inflight.set(key, { groupId, color });
+    const transfer = job.parts.flatMap((p) => [p.mesh.positions.buffer, p.mesh.indices.buffer]);
+    worker.postMessage({ key, job }, transfer);
+    return stale();
+  }
+  return store(key, groupId, runBoolean(k, job), color);
+}
+
+function prepareJob(doc: ModelDocument, groupId: ObjectId): BooleanJob {
+  const group = doc.objects[groupId] as Extract<SceneObject, { kind: 'group' }>;
+  const frameInv = worldMatrix(doc, groupId).invert();
+  const parts: BooleanJob['parts'] = [];
   const collect = (id: ObjectId) => {
     const o: SceneObject | undefined = doc.objects[id];
     if (!o || !o.visible) return;
@@ -115,74 +141,91 @@ export function computeCombined(doc: ModelDocument, groupId: ObjectId): CombineR
     if (o.kind === 'shape') {
       const geo = buildGeometryForShape(o);
       if (!geo) throw new PendingError();
-      const data = geometryToMeshData(geo, rel);
+      parts.push({ name: o.name, mesh: geometryToMeshData(geo, rel), hole: o.isHole });
       geo.dispose();
-      let m: Manifold;
-      try {
-        m = own(meshDataToManifold(k, data));
-      } catch {
-        throw new Error(`“${o.name}” is not a closed solid, so it can't be combined.`);
-      }
-      if (m.status() !== 'NoError') throw new Error(`“${o.name}” is not a closed solid (${m.status()}).`);
-      (o.isHole ? holes : solids).push(m);
       return;
     }
     if (o.combine) {
       const sub = computeCombined(doc, id);
-      if (!sub) throw new PendingError();
+      if (!sub || sub.stale) throw new PendingError();
       if (sub.error) throw new Error(`${o.name}: ${sub.error}`);
       if (!sub.mesh) return;
-      const m = own(meshDataToManifold(k, transformMesh(sub.mesh, rel)));
-      (sub.isHole ? holes : solids).push(m);
+      // Copies: the job's buffers are transferred to the worker.
+      parts.push({
+        name: o.name,
+        mesh: { positions: transformMesh(sub.mesh, rel).positions, indices: sub.mesh.indices.slice() },
+        hole: sub.isHole,
+      });
       return;
     }
     o.children.forEach(collect);
   };
+  group.children.forEach(collect);
+  return { mode: group.combine === 'intersect' ? 'intersect' : 'union', parts };
+}
 
-  let result: CombineResult;
-  try {
-    group.children.forEach(collect);
-    let isHole = false;
-    let base: Manifold | null;
-    if (solids.length) {
-      base = own(group.combine === 'intersect' ? k.Manifold.intersection(solids) : k.Manifold.union(solids));
-      if (holes.length) base = own(base.subtract(own(k.Manifold.union(holes))));
-    } else if (holes.length) {
-      base = own(k.Manifold.union(holes));
-      isHole = true;
-    } else {
-      base = null;
-    }
-    if (!base || base.isEmpty()) {
-      result = {
-        mesh: null,
-        error: solids.length ? 'Nothing is left: the result of this combination is empty.' : 'This group has no visible parts.',
-        bounds: new THREE.Box3(),
-        color,
-        isHole,
-        triangles: 0,
-      };
-    } else {
-      const mesh = manifoldToMeshData(base);
-      result = { mesh, error: null, bounds: meshDataBounds(mesh), color, isHole, triangles: mesh.indices.length / 3 };
-    }
-  } catch (e) {
-    if (e instanceof PendingError) return null;
-    result = {
-      mesh: null,
-      error: e instanceof Error ? e.message : String(e),
-      bounds: new THREE.Box3(),
-      color,
-      isHole: false,
-      triangles: 0,
-    };
-  } finally {
-    owned.forEach((m) => m.delete());
-  }
-
+function store(key: string, groupId: ObjectId, outcome: BooleanOutcome, color: string): CombineResult {
+  const result: CombineResult = {
+    mesh: outcome.mesh,
+    error: outcome.error,
+    bounds: outcome.mesh ? meshDataBounds(outcome.mesh) : new THREE.Box3(),
+    color,
+    isHole: outcome.isHole,
+    triangles: outcome.mesh ? outcome.mesh.indices.length / 3 : 0,
+  };
   cache.set(key, result);
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+  lastByGroup.set(groupId, result);
   return result;
+}
+
+// ---------- background worker ----------
+
+const inflight = new Map<string, { groupId: ObjectId; color: string }>();
+const lastByGroup = new Map<ObjectId, CombineResult>();
+const resultListeners = new Set<() => void>();
+let worker: Worker | null | undefined;
+let forceSync = false;
+
+/** Run Booleans on the calling thread (tests, debugging). */
+export function setBooleanSync(sync: boolean) {
+  forceSync = sync;
+}
+
+/** Notified whenever a background result arrives (the UI re-renders). */
+export function onCombineResult(cb: () => void): () => void {
+  resultListeners.add(cb);
+  return () => resultListeners.delete(cb);
+}
+
+export function booleanStats() {
+  return { inFlight: inflight.size, worker: !!worker, cached: cache.size };
+}
+
+function getWorker(): Worker | null {
+  if (forceSync) return null;
+  if (worker !== undefined) return worker;
+  if (typeof Worker === 'undefined' || typeof window === 'undefined') return (worker = null);
+  try {
+    worker = new Worker(new URL('../kernel/boolean.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<{ key: string; outcome: BooleanOutcome }>) => {
+      const job = inflight.get(e.data.key);
+      inflight.delete(e.data.key);
+      if (job) store(e.data.key, job.groupId, e.data.outcome, job.color);
+      resultListeners.forEach((l) => l());
+    };
+    worker.onerror = () => {
+      // Fall back to the main thread for everything from now on.
+      console.warn('[modellio] Boolean worker failed; computing on the main thread.');
+      worker?.terminate();
+      worker = null;
+      inflight.clear();
+      resultListeners.forEach((l) => l());
+    };
+  } catch {
+    worker = null;
+  }
+  return worker;
 }
 
 setCombinedBoundsResolver((doc, id) => {
@@ -200,7 +243,7 @@ export function bakeGroupDraft(doc: ModelDocument, groupId: ObjectId, name: stri
   const g = doc.objects[groupId];
   if (!g || g.kind !== 'group' || !g.combine) return null;
   const r = computeCombined(doc, groupId);
-  if (!r?.mesh) return null;
+  if (!r?.mesh || r.stale) return null;
   const { mesh, center, size } = centerMeshData(r.mesh);
   const meshId = addMeshAsset(mesh);
   const local = transformToMatrix(g.transform).multiply(new THREE.Matrix4().makeTranslation(center.x, center.y, center.z));

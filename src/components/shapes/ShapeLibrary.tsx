@@ -14,7 +14,7 @@ export function ShapeLibrary() {
   const shapes = LIBRARY_SHAPES.filter((s) => s.label.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Shape library">
+    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Shape library" data-tour="library">
       <div className="px-4 pb-2 pt-4">
         <label className="flex h-9 items-center gap-2 rounded-lg border border-line bg-canvas px-2.5 text-muted focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15">
           <Search size={15} />

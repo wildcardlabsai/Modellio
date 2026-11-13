@@ -25,6 +25,8 @@ const close = (a, b, eps = 0.05) => Math.abs(a - b) <= eps;
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const context = await browser.newContext({ viewport: { width: 1600, height: 900 }, acceptDownloads: true });
 const page = await context.newPage();
+// A returning user: skip the first-run tour (covered by the Phase 5 suite).
+await page.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

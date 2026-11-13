@@ -130,7 +130,9 @@ export function CameraController() {
     const a = anim.current;
     const c = controls.current;
     if (!a || !c) return;
-    a.t = Math.min(1, a.t + delta / DURATION);
+    // Reduced motion: jump straight to the new view.
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    a.t = reduce ? 1 : Math.min(1, a.t + delta / DURATION);
     const k = ease(a.t);
     // Spherical interpolation of the view direction gives a natural orbit arc.
     const q = new THREE.Quaternion().setFromUnitVectors(a.fromDir, a.toDir);

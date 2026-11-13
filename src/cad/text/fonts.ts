@@ -1,4 +1,4 @@
-import opentype from 'opentype.js';
+import type opentype from 'opentype.js';
 import type { FontId } from '@/types/document';
 
 /**
@@ -46,9 +46,14 @@ const loaded = new Map<FontId, opentype.Font>();
 const pending = new Map<FontId, Promise<opentype.Font>>();
 const listeners = new Set<() => void>();
 
-/** Register an already-available font (used by tests and future custom-font upload). */
-export function registerFont(id: FontId, buffer: ArrayBuffer): opentype.Font {
-  const font = opentype.parse(buffer);
+/** Parse a font file. The parser (opentype.js) is loaded on first use. */
+export async function parseFont(buffer: ArrayBuffer): Promise<opentype.Font> {
+  const { default: ot } = await import('opentype.js');
+  return ot.parse(buffer);
+}
+
+/** Register an already-parsed font (used by tests and future custom-font upload). */
+export function registerFont(id: FontId, font: opentype.Font): opentype.Font {
   loaded.set(id, font);
   listeners.forEach((l) => l());
   return font;
@@ -72,7 +77,8 @@ export function loadFont(id: FontId): Promise<opentype.Font> {
         if (!r.ok) throw new Error(`Font download failed (${r.status})`);
         return r.arrayBuffer();
       })
-      .then((buf) => registerFont(id, buf));
+      .then(parseFont)
+      .then((font) => registerFont(id, font));
     pending.set(id, p);
   }
   return p;

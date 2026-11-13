@@ -10,7 +10,7 @@ export function SaveStatus() {
     loading: { Icon: Loader2, text: 'Loading…', cls: 'text-muted', spin: true },
     saving: { Icon: Loader2, text: 'Saving…', cls: 'text-muted', spin: true },
     saved: { Icon: Cloud, text: 'Saved', cls: 'text-muted', spin: false },
-    unsaved: { Icon: CircleDot, text: 'Unsaved changes', cls: 'text-amber-600', spin: false },
+    unsaved: { Icon: CircleDot, text: 'Unsaved changes', cls: 'text-amber-700', spin: false },
     error: { Icon: CloudOff, text: 'Not saved', cls: 'text-red-600', spin: false },
   }[status];
   const { Icon } = map;

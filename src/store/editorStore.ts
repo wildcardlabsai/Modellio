@@ -543,7 +543,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         get().notify('Select a combined group to flatten it into one mesh.');
         return;
       }
-      const failed = groups.filter((id) => !computeCombined(doc, id)?.mesh);
+      const failed = groups.filter((id) => {
+        const r = computeCombined(doc, id);
+        return !r?.mesh || r.stale;
+      });
       if (failed.length) {
         get().notify(computeCombined(doc, failed[0])?.error ?? 'The combined result is not ready yet.');
         return;

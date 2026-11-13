@@ -75,7 +75,7 @@ export function Inspector() {
   const hasSelection = selected.length > 0;
 
   return (
-    <aside className="flex w-[312px] shrink-0 flex-col border-l border-line bg-white" aria-label="Inspector">
+    <aside className="flex w-[312px] shrink-0 flex-col border-l border-line bg-white" aria-label="Inspector" data-tour="inspector">
       {hasSelection && (
         <div className="flex min-h-0 flex-1 flex-col">
           {selected.length === 1 ? (
@@ -586,7 +586,7 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
         })}
       </div>
       {group.combine ? (
-        result ? (
+        result && !result.stale ? (
           result.error ? (
             <p role="alert" className="mt-2 flex items-start gap-1.5 text-[12px] text-red-700">
               <CircleAlert size={14} className="mt-px shrink-0" /> {result.error}

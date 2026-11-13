@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { parseMeshFile, ImportError, type ParsedFile } from '@/cad/import/importMesh';
+import type { ParsedFile } from '@/cad/import/importMesh';
 import { ProjectFormatError } from '@/cad/serialization/project';
 import { useEditor } from '@/store/editorStore';
 import { useProjects } from '@/store/projectStore';
@@ -44,14 +44,14 @@ export async function handleFiles(files: File[], at?: [number, number]) {
       }
       // Yield so the "Reading…" indicator paints before a large parse.
       await new Promise((r) => setTimeout(r, 30));
+      // Parsers (STL/OBJ loaders) are loaded on first import.
+      const { parseMeshFile } = await import('@/cad/import/importMesh');
       const parsed = parseMeshFile(file.name, await file.arrayBuffer());
       useFileUi.setState((s) => ({ queue: [...s.queue, { parsed, at }] }));
     } catch (e) {
-      notify(
-        e instanceof ImportError || e instanceof ProjectFormatError
-          ? e.message
-          : `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`,
-      );
+      // ImportError lives in the lazily loaded parser module, so match it by name.
+      const readable = e instanceof ProjectFormatError || (e instanceof Error && e.name === 'ImportError');
+      notify(readable ? (e as Error).message : `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`);
     } finally {
       useFileUi.setState({ busy: null });
     }

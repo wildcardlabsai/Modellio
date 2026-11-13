@@ -180,7 +180,15 @@ export function Viewport() {
       onDrop={onDrop}
       onContextMenu={(e) => e.preventDefault()}
       data-testid="viewport"
+      data-tour="viewport"
+      role="region"
+      aria-label="3D workspace"
+      aria-describedby="viewport-help"
     >
+      <p id="viewport-help" className="sr-only">
+        Drag to orbit, right-drag to pan, scroll to zoom. Click objects to select them, or use the Objects list. With a selection, arrow
+        keys nudge it, W/E/R switch move, rotate and resize, D drops it onto the workplane. Press question mark for all shortcuts.
+      </p>
       <Canvas
         shadows="percentage"
         frameloop="demand"

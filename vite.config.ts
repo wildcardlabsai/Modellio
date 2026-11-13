@@ -10,7 +10,19 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   build: {
-    chunkSizeWarningLimit: 1600,
+    chunkSizeWarningLimit: 900,
+    rolldownOptions: {
+      output: {
+        // Vendor chunks change rarely, so browsers keep them cached across releases.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'three', test: /node_modules[\\/]three[\\/]/ },
+            { name: 'r3f', test: /node_modules[\\/](@react-three|three-stdlib|zustand|its-fine|suspend-react)[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   test: {
     globals: true,

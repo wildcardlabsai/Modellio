@@ -81,11 +81,13 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
 // ===================== Reliability =====================
 {
   await page.getByRole('button', { name: 'My Projects' }).click();
-  check(
-    'R1. My Projects shows storage usage and protection status',
-    await page.getByTestId('storage-info').isVisible(),
-    await page.getByTestId('storage-info').textContent(),
-  );
+  // The page is lazy-loaded: wait for it rather than sampling visibility immediately.
+  const storageShown = await page
+    .getByTestId('storage-info')
+    .waitFor()
+    .then(() => true)
+    .catch(() => false);
+  check('R1. My Projects shows storage usage and protection status', storageShown, await page.getByTestId('storage-info').textContent());
   await page.getByRole('button', { name: 'Design', exact: true }).click();
 
   inCrashTest = true;
@@ -431,6 +433,142 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/p5-04-hollow-chamfer.png` });
   await reset();
+}
+
+// ===================== Accessibility, onboarding, performance =====================
+{
+  await reset();
+  const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+  const axe = async (label) => {
+    await page.addScriptTag({ content: axeSource });
+    const res = await S(async () => {
+      const r = await window.axe.run(document, { resultTypes: ['violations'] });
+      return r.violations
+        .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+        .map((v) => `${v.id} (${v.nodes.length}): ${v.nodes[0]?.target?.join(' ')}`);
+    });
+    check(`A1. No serious accessibility violations: ${label}`, res.length === 0, res.slice(0, 4).join(' | '));
+  };
+  const [a, b, c] = await S(() => {
+    const s = window.modellio.store.getState();
+    const ids = [s.addShape('box'), s.addShape('sphere'), s.addShape('cylinder')];
+    s.select([ids[0]]);
+    return ids;
+  });
+  await page.waitForTimeout(300);
+  await axe('editor with a selection');
+
+  // A2: keyboard navigation in the object tree.
+  const yBefore = await S((ids) => ids.map((id) => window.modellio.store.getState().doc.objects[id].transform.position[1]), [a, b, c]);
+  await page.locator('[role=treeitem]').first().focus();
+  await page.keyboard.press('ArrowDown');
+  let st = await state();
+  check('A2. ↓ in the object tree moves the selection to the next object', st.selection.length === 1 && st.selection[0] === b);
+  await page.keyboard.press('Shift+ArrowDown');
+  st = await state();
+  check('A2b. Shift+↓ extends the selection', st.selection.length === 2 && st.selection.includes(c));
+  const yAfter = await S((ids) => ids.map((id) => window.modellio.store.getState().doc.objects[id].transform.position[1]), [a, b, c]);
+  check(
+    'A2c. Arrow keys in the tree navigate instead of nudging objects',
+    JSON.stringify(yAfter) === JSON.stringify(yBefore),
+    `${yBefore} → ${yAfter}`,
+  );
+  await page.keyboard.press('Enter');
+  check('A2d. Enter starts renaming the focused object', await page.getByLabel('Rename object').isVisible());
+  await page.keyboard.press('Escape');
+  const announced = await waitFor(async () => /selected/.test((await page.getByTestId('announcer').textContent()) ?? ''), 2000);
+  check('A2e. Screen readers are told what is selected', announced, await page.getByTestId('announcer').textContent());
+
+  // A3: dialogs trap focus and give it back.
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Export for 3D printing' }).waitFor();
+  await axe('export dialog');
+  for (let i = 0; i < 25; i++) await page.keyboard.press('Tab');
+  const inside = await S(() => !!document.activeElement?.closest('[role=dialog]'));
+  check('A3. Tab stays inside an open dialog', inside);
+  await page.keyboard.press('Escape');
+  check(
+    'A3b. Closing a dialog returns focus to the button that opened it',
+    await S(() => document.activeElement?.textContent?.trim() === 'Export'),
+  );
+
+  await page.getByRole('button', { name: 'My Projects' }).click();
+  await page.getByRole('heading', { name: 'My projects' }).waitFor();
+  await axe('My Projects page');
+  await page.getByRole('button', { name: 'Design', exact: true }).click();
+
+  // A4: reduced motion: camera views switch instantly.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: 'Standard views' }).click();
+  await page.getByRole('button', { name: 'Top', exact: true }).click();
+  await page.waitForTimeout(60);
+  const dz = await S(() => {
+    const cam = window.modellio.viewport.camera;
+    const d = cam.getWorldDirection(new cam.position.constructor());
+    return d.z;
+  });
+  check('A4. With reduced motion, camera views change without animation', dz < -0.99, dz.toFixed(3));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // PF: Booleans run in a background worker; heavy modules load on demand.
+  const loadedBefore = await S(() => performance.getEntriesByType('resource').some((r) => /opentype/.test(r.name)));
+  await S(
+    ([a, b]) => {
+      const s = window.modellio.store.getState();
+      s.setHole([b], true);
+      s.select([a, b]);
+      s.combineSelected('union');
+    },
+    [a, b],
+  );
+  await waitFor(() => S(() => window.modellio.booleanStats().cached > 0));
+  check('PF1. Boolean operations run in a background worker', await S(() => window.modellio.booleanStats().worker));
+  check('PF2. The font engine is not downloaded until text is used', loadedBefore === false);
+  await S(() => window.modellio.store.getState().addText('Hi'));
+  check(
+    'PF2b. …and is fetched on demand when it is',
+    await waitFor(() => S(() => performance.getEntriesByType('resource').some((r) => /opentype/.test(r.name)))),
+  );
+  await reset();
+
+  // O: first-run tour on a fresh profile.
+  const fresh = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+  const tp = await fresh.newPage();
+  await tp.goto(URL + '?tour', { waitUntil: 'networkidle' });
+  const tour = tp.getByTestId('tour');
+  check(
+    'O1. A first visit starts the guided tour',
+    await tour
+      .waitFor({ timeout: 5000 })
+      .then(() => true)
+      .catch(() => false),
+  );
+  check('O1b. The first step points at the shape library', (await tp.getByRole('dialog', { name: 'Add shapes' }).count()) === 1);
+  await tp.addScriptTag({ content: axeSource });
+  const tourViolations = await tp.evaluate(
+    async () =>
+      (await window.axe.run(document.querySelector('[data-testid=tour]'))).violations.filter(
+        (v) => v.impact === 'serious' || v.impact === 'critical',
+      ).length,
+  );
+  check('A1. No serious accessibility violations: tour', tourViolations === 0);
+  for (let i = 0; i < 5; i++) await tp.keyboard.press('ArrowRight');
+  check('O2. Arrow keys step through the tour', (await tp.getByRole('dialog', { name: 'Print it' }).count()) === 1);
+  await tp.screenshot({ path: `${OUT}/p5-05-tour.png` });
+  await tp.getByRole('button', { name: 'Start designing' }).click();
+  check(
+    'O3. Finishing the tour closes it and remembers',
+    (await tour.count()) === 0 && (await tp.evaluate(() => localStorage.getItem('modellio:onboarded'))) === '1',
+  );
+  await tp.reload({ waitUntil: 'networkidle' });
+  await tp.waitForTimeout(1500);
+  check('O4. It does not come back on the next visit', (await tour.count()) === 0);
+  await tp.getByRole('button', { name: 'Help' }).click();
+  await tp.getByRole('menuitem', { name: 'Take the tour' }).click();
+  check('O5. Help → Take the tour restarts it', await tour.isVisible());
+  await tp.keyboard.press('Escape');
+  check('O5b. Esc skips the tour', (await tour.count()) === 0);
+  await fresh.close();
 }
 
 // @@SECTIONS@@

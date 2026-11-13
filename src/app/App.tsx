@@ -1,30 +1,32 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { TopBar } from '@/components/layout/TopBar';
 import { Toolbar } from '@/components/toolbar/Toolbar';
 import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
-import { WorkplanePanel } from '@/components/layout/WorkplanePanel';
-import { TextPanel } from '@/components/layout/TextPanel';
-import { PrintPanel } from '@/components/print/PrintPanel';
+const WorkplanePanel = lazy(() => import('@/components/layout/WorkplanePanel').then((m) => ({ default: m.WorkplanePanel })));
+const TextPanel = lazy(() => import('@/components/layout/TextPanel').then((m) => ({ default: m.TextPanel })));
+const PrintPanel = lazy(() => import('@/components/print/PrintPanel').then((m) => ({ default: m.PrintPanel })));
 import { ShapeLibrary } from '@/components/shapes/ShapeLibrary';
 import { Inspector } from '@/components/inspector/Inspector';
 import { Viewport } from '@/viewport/Viewport';
-import { ShortcutsDialog } from '@/components/layout/ShortcutsDialog';
+const ShortcutsDialog = lazy(() => import('@/components/layout/ShortcutsDialog').then((m) => ({ default: m.ShortcutsDialog })));
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { CadResources } from '@/viewport/cadReady';
 import { useProjects } from '@/store/projectStore';
-import { ProjectsPage } from '@/components/projects/ProjectsPage';
-import { ImportDialog } from '@/components/files/ImportDialog';
-import { ExportDialog } from '@/components/files/ExportDialog';
+const ProjectsPage = lazy(() => import('@/components/projects/ProjectsPage').then((m) => ({ default: m.ProjectsPage })));
+const ImportDialog = lazy(() => import('@/components/files/ImportDialog').then((m) => ({ default: m.ImportDialog })));
+const ExportDialog = lazy(() => import('@/components/files/ExportDialog').then((m) => ({ default: m.ExportDialog })));
 import { useFileUi } from '@/components/files/fileIntake';
 import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ViewportCrash } from '@/components/layout/CrashScreens';
 import { useDebug } from '@/utils/debug';
+import { Announcer } from '@/components/ui/Announcer';
+import { Tour, useFirstRunTour } from '@/components/onboarding/Tour';
 import { useGuides } from '@/viewport/guides';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
-import { computeCombined } from '@/cad/operations/combine';
+import { booleanStats, computeCombined } from '@/cad/operations/combine';
 
 export function App() {
   useKeyboardShortcuts();
@@ -42,11 +44,15 @@ export function App() {
       computeCombined,
       debug: useDebug,
       guides: useGuides,
+      booleanStats,
     };
   }, []);
 
+  useFirstRunTour();
   const view = useProjects((s) => s.view);
   const busy = useFileUi((s) => s.busy);
+  const importQueued = useFileUi((s) => s.queue.length > 0);
+  const exportOpen = useFileUi((s) => s.exportOpen);
 
   // Open the last project (or start a new one), and protect unsaved work.
   useEffect(() => {
@@ -83,7 +89,17 @@ export function App() {
       <Toolbar />
       <div className="relative flex min-h-0 flex-1">
         <LeftRail panel={panel} onChange={setPanel} />
-        {panel === 'shapes' ? <ShapeLibrary /> : panel === 'text' ? <TextPanel /> : panel === 'print' ? <PrintPanel /> : <WorkplanePanel />}
+        <Suspense fallback={<PanelLoading />}>
+          {panel === 'shapes' ? (
+            <ShapeLibrary />
+          ) : panel === 'text' ? (
+            <TextPanel />
+          ) : panel === 'print' ? (
+            <PrintPanel />
+          ) : (
+            <WorkplanePanel />
+          )}
+        </Suspense>
         <main className="relative min-w-0 flex-1">
           <ErrorBoundary
             fallback={(error, reset) => (
@@ -101,11 +117,21 @@ export function App() {
         </main>
         <Inspector />
         {/* The editor stays mounted (keeps the WebGL context) while the projects page is shown. */}
-        {view === 'projects' && <ProjectsPage />}
+        {view === 'projects' && (
+          <Suspense fallback={null}>
+            <ProjectsPage />
+          </Suspense>
+        )}
       </div>
       <CadResources />
-      <ImportDialog />
-      <ExportDialog />
+      <Announcer />
+      <Tour />
+      {/* Dialogs are only fetched when first needed. */}
+      <Suspense fallback={null}>
+        {importQueued && <ImportDialog />}
+        {exportOpen && <ExportDialog />}
+        {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
+      </Suspense>
       {busy && (
         <div
           role="status"
@@ -114,7 +140,10 @@ export function App() {
           <Loader2 size={14} className="animate-spin" /> {busy}
         </div>
       )}
-      {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
     </div>
   );
+}
+
+function PanelLoading() {
+  return <aside className="w-[264px] shrink-0 border-r border-line bg-white" aria-busy="true" />;
 }

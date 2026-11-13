@@ -39,6 +39,69 @@ export function ObjectTree() {
   const [renaming, setRenaming] = useState<ObjectId | null>(null);
   const [drop, setDrop] = useState<{ id: ObjectId | null; zone: DropZone } | null>(null);
   const s = useEditor.getState();
+  const treeRef = useRef<HTMLUListElement>(null);
+  const [focusId, setFocusId] = useState<ObjectId | null>(null);
+  const rowIds = rows.map((r) => r.id);
+  // Roving tab stop: the focused row, else the selected one, else the first.
+  const currentFocus = focusId && rowIds.includes(focusId) ? focusId : (selection.find((id) => rowIds.includes(id)) ?? rowIds[0]);
+
+  const focusRow = (id: ObjectId) => {
+    setFocusId(id);
+    requestAnimationFrame(() => treeRef.current?.querySelector<HTMLElement>(`[data-row-id="${id}"]`)?.focus());
+  };
+
+  /** Keyboard navigation (WAI-ARIA tree pattern). */
+  const onTreeKey = (e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).tagName === 'INPUT' || !currentFocus) return;
+    const i = rowIds.indexOf(currentFocus);
+    const o = doc.objects[currentFocus];
+    const go = (j: number, extend: boolean) => {
+      const id = rowIds[Math.max(0, Math.min(rowIds.length - 1, j))];
+      s.select([id], { additive: extend });
+      focusRow(id);
+    };
+    switch (e.key) {
+      case 'ArrowDown':
+        go(i + 1, e.shiftKey);
+        break;
+      case 'ArrowUp':
+        go(i - 1, e.shiftKey);
+        break;
+      case 'Home':
+        go(0, false);
+        break;
+      case 'End':
+        go(rowIds.length - 1, false);
+        break;
+      case 'ArrowRight':
+        if (o?.kind === 'group') {
+          if (collapsed[currentFocus]) s.toggleCollapsed(currentFocus);
+          else if (o.children[0]) go(rowIds.indexOf(o.children[0]), false);
+        }
+        break;
+      case 'ArrowLeft':
+        if (o?.kind === 'group' && !collapsed[currentFocus]) s.toggleCollapsed(currentFocus);
+        else if (o?.parentId) go(rowIds.indexOf(o.parentId), false);
+        break;
+      case 'Enter':
+      case 'F2':
+        setRenaming(currentFocus);
+        break;
+      case ' ':
+        s.select([currentFocus], { toggle: true });
+        break;
+      case 'Delete':
+      case 'Backspace':
+        if (!selection.includes(currentFocus)) s.select([currentFocus]);
+        s.deleteSelected();
+        requestAnimationFrame(() => treeRef.current?.querySelector<HTMLElement>('[role=treeitem]')?.focus());
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    e.stopPropagation(); // arrow keys here navigate the list rather than nudging objects
+  };
 
   if (!rows.length) {
     return <p className="px-5 py-6 text-[13px] text-muted">No objects yet. Add a shape from the library.</p>;
@@ -91,6 +154,8 @@ export function ObjectTree() {
       className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 py-2"
       aria-label="Object tree"
       role="tree"
+      ref={treeRef}
+      onKeyDown={onTreeKey}
       aria-multiselectable="true"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(TREE_MIME)) e.preventDefault();
@@ -110,7 +175,11 @@ export function ObjectTree() {
             aria-selected={active}
             aria-expanded={isGroup ? !collapsed[id] : undefined}
             aria-level={depth + 1}
-            className="relative"
+            aria-label={`${o.name}${isGroup ? (o.combine ? ', combination' : ', group') : o.isHole ? ', hole' : ''}${o.visible ? '' : ', hidden'}${o.locked ? ', locked' : ''}`}
+            data-row-id={id}
+            tabIndex={currentFocus === id ? 0 : -1}
+            onFocus={(e) => e.target === e.currentTarget && setFocusId(id)}
+            className="relative rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
             {dropHere === 'before' && <div className="absolute inset-x-2 top-0 h-0.5 rounded bg-brand" />}
             {dropHere === 'after' && <div className="absolute inset-x-2 bottom-0 h-0.5 rounded bg-brand" />}
@@ -143,6 +212,7 @@ export function ObjectTree() {
               {isGroup ? (
                 <button
                   type="button"
+                  tabIndex={-1}
                   aria-label={collapsed[id] ? `Expand ${o.name}` : `Collapse ${o.name}`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -183,6 +253,7 @@ export function ObjectTree() {
                   onBlur={(e) => {
                     s.rename(id, e.target.value);
                     setRenaming(null);
+                    focusRow(id);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -198,6 +269,7 @@ export function ObjectTree() {
               )}
               <button
                 type="button"
+                tabIndex={-1}
                 aria-label={`Delete ${o.name}`}
                 disabled={isEffectivelyLocked(doc, id)}
                 onClick={(e) => {
@@ -211,6 +283,7 @@ export function ObjectTree() {
               </button>
               <button
                 type="button"
+                tabIndex={-1}
                 aria-label={o.locked ? `Unlock ${o.name}` : `Lock ${o.name}`}
                 title={inheritedLock ? 'Locked by its group' : undefined}
                 onClick={(e) => {
@@ -225,6 +298,7 @@ export function ObjectTree() {
               </button>
               <button
                 type="button"
+                tabIndex={-1}
                 aria-label={o.visible ? `Hide ${o.name}` : `Show ${o.name}`}
                 onClick={(e) => {
                   e.stopPropagation();

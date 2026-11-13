@@ -62,7 +62,7 @@ export function collectExportBodies(doc: ModelDocument, ids?: ObjectId[]): Expor
     }
     if (o.combine) {
       const r = computeCombined(doc, id);
-      if (!r) {
+      if (!r || r.stale) {
         out.failed.push({ name: o.name, reason: 'Still computing' });
         return;
       }

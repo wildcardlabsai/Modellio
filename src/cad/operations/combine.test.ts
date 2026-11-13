@@ -9,16 +9,16 @@ import { meshDataToGeometry } from '../kernel/meshData';
 import { analyzeMesh } from '../geometry/validate';
 import { bakeGroupDraft, computeCombined, separateDraft } from './combine';
 import { buildGeometryForShape } from '../shapeRegistry';
-import { registerFont } from '../text/fonts';
+import { parseFont, registerFont } from '../text/fonts';
 import { buildTextMesh } from '../text/textGeometry';
 import { getKernel } from '../kernel/kernel';
 
 beforeAll(async () => {
   await initKernel();
   const buf = fs.readFileSync('node_modules/@fontsource/inter/files/inter-latin-700-normal.woff');
-  registerFont('inter-bold', buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  registerFont('inter-bold', await parseFont(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)));
   const pac = fs.readFileSync('node_modules/@fontsource/pacifico/files/pacifico-latin-400-normal.woff');
-  registerFont('pacifico', pac.buffer.slice(pac.byteOffset, pac.byteOffset + pac.byteLength));
+  registerFont('pacifico', await parseFont(pac.buffer.slice(pac.byteOffset, pac.byteOffset + pac.byteLength)));
 });
 
 function build(specs: { type?: ShapeObject['shape']; pos: Vec3; size?: Vec3; hole?: boolean; rot?: Vec3 }[]) {

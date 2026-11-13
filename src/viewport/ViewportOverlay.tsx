@@ -43,7 +43,10 @@ export function ViewportOverlay() {
   return (
     <>
       {/* Transform tools */}
-      <div className="absolute left-3 top-3 flex flex-col gap-1 rounded-xl border border-line bg-white/95 p-1 shadow-float backdrop-blur">
+      <div
+        data-tour="tools"
+        className="absolute left-3 top-3 flex flex-col gap-1 rounded-xl border border-line bg-white/95 p-1 shadow-float backdrop-blur"
+      >
         {TOOLS.map(({ mode: m, label, key, Icon }) => (
           <IconButton
             key={m}

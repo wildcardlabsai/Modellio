@@ -23,6 +23,8 @@ const close = (a, b, eps = 0.05) => Math.abs(a - b) <= eps;
 
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+// A returning user: skip the first-run tour (covered by the Phase 5 suite).
+await page.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
@@ -38,7 +40,7 @@ const resultInfo = (gid) =>
   S((gid) => {
     const { store, computeCombined } = window.modellio;
     const r = computeCombined(store.getState().doc, gid);
-    if (!r) return { pending: true };
+    if (!r || r.stale) return { pending: true };
     if (!r.mesh) return { error: r.error };
     const p = r.mesh.positions,
       ix = r.mesh.indices;
@@ -159,14 +161,13 @@ s = await state();
 check('4. Selecting a part in the tree shows it as a ghost', s.selection[0] === cylId && (await inScene(cylId)));
 await setField('Size X', 20);
 await setField('Size Y', 20);
-await page.waitForTimeout(200);
-info = await resultInfo(gid);
+await waitFor(async () => !(info = await resultInfo(gid)).pending);
 const expected2 = 40 * 40 * 20 - Math.PI * 100 * 20;
 check('4b. Widening the hole updates the result live', close(info.volume, expected2, expected2 * 0.003), `${info.volume?.toFixed(1)} mm³`);
 await S(() => document.activeElement instanceof HTMLElement && document.activeElement.blur()); // Ctrl+Z in a field is the field's own undo
 await page.keyboard.press('Control+z');
 await page.keyboard.press('Control+z');
-info = await resultInfo(gid);
+await waitFor(async () => !(info = await resultInfo(gid)).pending);
 check('4c. Undo restores the original result', close(info.volume, expected, expected * 0.003));
 
 // --- 5. Combine mode switch in the inspector

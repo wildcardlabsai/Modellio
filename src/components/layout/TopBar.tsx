@@ -1,4 +1,6 @@
-import { Box, FolderOpen, LayoutGrid, Users, Keyboard } from 'lucide-react';
+import { Box, FolderOpen, LayoutGrid, Users, Keyboard, CircleHelp, Compass } from 'lucide-react';
+import { Popover } from '@/components/ui/Popover';
+import { useTour } from '@/components/onboarding/Tour';
 import { useProjects } from '@/store/projectStore';
 
 const NAV = [
@@ -38,16 +40,44 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
         })}
       </nav>
       <div className="flex-1" />
-      <span className="hidden text-[12px] font-medium tracking-wide text-white/45 lg:block">Make anything. Shape everything.</span>
-      <button
-        type="button"
-        onClick={onShowShortcuts}
-        className="flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] font-medium text-white/80 hover:bg-white/10"
-        aria-label="Keyboard shortcuts"
+      <span className="hidden text-[12px] font-medium tracking-wide text-white/60 lg:block">Make anything. Shape everything.</span>
+      <Popover
+        align="right"
+        trigger={({ open, toggle }) => (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-haspopup="menu"
+            className="flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] font-medium text-white/80 hover:bg-white/10"
+          >
+            <CircleHelp size={17} />
+            <span className="hidden md:inline">Help</span>
+          </button>
+        )}
       >
-        <Keyboard size={17} />
-        <span className="hidden md:inline">Shortcuts</span>
-      </button>
+        {(close) => (
+          <div className="w-52" role="menu" aria-label="Help">
+            {[
+              { label: 'Take the tour', Icon: Compass, run: () => useTour.getState().start() },
+              { label: 'Keyboard shortcuts', Icon: Keyboard, run: onShowShortcuts },
+            ].map(({ label, Icon, run }) => (
+              <button
+                key={label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  close();
+                  run();
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-[#344054] hover:bg-brand-50 hover:text-brand"
+              >
+                <Icon size={16} /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </Popover>
     </header>
   );
 }

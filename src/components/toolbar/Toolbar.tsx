@@ -122,7 +122,7 @@ export function Toolbar() {
       </Popover>
       <Popover
         trigger={({ open, toggle }) => (
-          <IconButton label="Combine (Boolean)" active={open} disabled={!hasSelection} onClick={toggle}>
+          <IconButton label="Combine (Boolean)" active={open} disabled={!hasSelection} onClick={toggle} data-tour="combine">
             <Combine size={17} />
             <span className="hidden xl:inline">Combine</span>
             <ChevronDown size={13} />
@@ -139,6 +139,7 @@ export function Toolbar() {
       <button
         type="button"
         onClick={() => useFileUi.getState().setExportOpen(true)}
+        data-tour="export"
         className="ml-1 inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3.5 text-[13px] font-semibold text-white shadow-sm hover:bg-brand-600"
       >
         <Download size={17} /> Export

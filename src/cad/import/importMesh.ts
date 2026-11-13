@@ -26,7 +26,9 @@ export interface ParsedFile {
   suggestedUp: 'z' | 'y';
 }
 
-export class ImportError extends Error {}
+export class ImportError extends Error {
+  name = 'ImportError';
+}
 
 export const SUPPORTED_IMPORT = ['.stl', '.obj'];
 

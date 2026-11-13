@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -11,15 +11,39 @@ interface Props {
 
 /** Accessible modal dialog: Escape and backdrop close it, focus starts inside. */
 export function Modal({ title, onClose, children, footer, width = 520 }: Props) {
+  const panel = useRef<HTMLDivElement>(null);
+
+  // Focus moves into the dialog, Tab is trapped inside it, and focus returns afterwards.
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      [
+        ...(panel.current?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? []),
+      ].filter((el) => !el.hasAttribute('disabled'));
+    const first = panel.current?.querySelector<HTMLElement>('[autofocus]') ?? focusables()[0];
+    first?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         onClose();
+      } else if (e.key === 'Tab') {
+        const items = focusables();
+        if (!items.length) return;
+        const [a, b] = [items[0], items[items.length - 1]];
+        if (e.shiftKey && document.activeElement === a) {
+          e.preventDefault();
+          b.focus();
+        } else if (!e.shiftKey && document.activeElement === b) {
+          e.preventDefault();
+          a.focus();
+        }
       }
     };
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      previouslyFocused?.focus?.();
+    };
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy/40 p-4 backdrop-blur-sm" onMouseDown={onClose}>
@@ -27,6 +51,7 @@ export function Modal({ title, onClose, children, footer, width = 520 }: Props) 
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        ref={panel}
         className="flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-float"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
