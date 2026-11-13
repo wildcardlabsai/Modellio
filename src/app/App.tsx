@@ -35,6 +35,7 @@ import { booleanStats, computeCombined } from '@/cad/operations/combine';
 import { useStudio } from './studio';
 import { LandingPage } from '@/landing/LandingPage';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
+const CookieStudio = lazy(() => import('@/makers/cookie/CookieStudio'));
 
 export function App() {
   useKeyboardShortcuts();
@@ -113,16 +114,16 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
-      {studio === 'split' ? (
+      {studio === 'split' || studio === 'cookie' ? (
         <Suspense
           fallback={
             <div className="flex flex-1 items-center justify-center text-[13px] text-muted" role="status">
-              <Loader2 size={16} className="mr-2 animate-spin" /> Opening Split Studio…
+              <Loader2 size={16} className="mr-2 animate-spin" /> Opening {studio === 'split' ? 'Split Studio' : 'the cookie maker'}…
             </div>
           }
         >
           <ErrorBoundary fallback={(error, reset) => <ViewportCrash error={error} reset={reset} />}>
-            <SplitStudio />
+            {studio === 'split' ? <SplitStudio /> : <CookieStudio />}
           </ErrorBoundary>
         </Suspense>
       ) : (

@@ -237,7 +237,7 @@ function Studios() {
           title="One home for everything you print"
           body="Each studio is built for one job. Use the Design Studio for anything you can imagine, or a focused studio to get a common job done in minutes."
         />
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
           {LIVE_STUDIOS.map((s) => (
             <article
               key={s.id}
@@ -576,6 +576,11 @@ function Footer() {
             <li>
               <StudioLink to="split" className="text-[#344054] hover:text-brand">
                 Split Studio
+              </StudioLink>
+            </li>
+            <li>
+              <StudioLink to="cookie" className="text-[#344054] hover:text-brand">
+                Cookie Cutter & Stamp Maker
               </StudioLink>
             </li>
             {COMING_SOON.map((s) => (

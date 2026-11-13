@@ -1,9 +1,27 @@
-import { Box, FolderOpen, LayoutGrid, Users, Keyboard, CircleHelp, Compass, Scissors } from 'lucide-react';
+import {
+  Box,
+  FolderOpen,
+  LayoutGrid,
+  Users,
+  Keyboard,
+  CircleHelp,
+  Compass,
+  Scissors,
+  Wand2,
+  Cookie,
+  ChevronDown,
+  KeyRound,
+  Signpost,
+  Grid3x3,
+  Package,
+  Image,
+  type LucideIcon,
+} from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
 import { AccountButton } from './AccountButton';
 import { useTour } from '@/components/onboarding/Tour';
 import { useProjects } from '@/store/projectStore';
-import { useStudio } from '@/app/studio';
+import { useStudio, type StudioId } from '@/app/studio';
 
 const NAV = [
   { label: 'Design', Icon: Box, view: 'editor' as const },
@@ -12,6 +30,63 @@ const NAV = [
   { label: 'Templates', Icon: LayoutGrid, view: 'templates' as const },
   { label: 'Community', Icon: Users, soon: 'Coming soon' },
 ];
+
+/** Focused makers. Coming-soon entries are shown, labelled and disabled. */
+export const MAKERS: { id: string; label: string; Icon: LucideIcon; studio?: StudioId }[] = [
+  { id: 'cookie', label: 'Cookie Cutter & Stamp', Icon: Cookie, studio: 'cookie' },
+  { id: 'keyring', label: 'Keyring Maker', Icon: KeyRound },
+  { id: 'sign', label: 'Sign Maker', Icon: Signpost },
+  { id: 'organiser', label: 'Organiser Generator', Icon: Grid3x3 },
+  { id: 'box', label: 'Box & Lid Maker', Icon: Package },
+  { id: 'lithophane', label: 'Lithophane Studio', Icon: Image },
+];
+
+function MakersMenu({ active, onOpen }: { active: boolean; onOpen: (s: StudioId) => void }) {
+  return (
+    <Popover
+      trigger={({ open, toggle }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label="Makers"
+          aria-current={active ? 'page' : undefined}
+          className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-[14px] font-medium transition-colors lg:px-3 xl:px-3.5 ${
+            active ? 'bg-brand text-white shadow-sm' : 'text-white/80 hover:bg-white/10'
+          }`}
+        >
+          <Wand2 size={17} />
+          <span className="hidden xl:inline">Makers</span>
+          <ChevronDown size={14} className="hidden xl:inline" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div className="w-60" role="menu" aria-label="Makers">
+          {MAKERS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              role="menuitem"
+              disabled={!m.studio}
+              onClick={() => {
+                if (!m.studio) return;
+                close();
+                onOpen(m.studio);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-[#344054] hover:bg-brand-50 hover:text-brand disabled:cursor-default disabled:text-[#667085] disabled:hover:bg-transparent"
+            >
+              <m.Icon size={16} className={m.studio ? '' : 'opacity-40'} />
+              <span className="flex-1">{m.label}</span>
+              {!m.studio && <span className="text-[11px] font-normal">Soon</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </Popover>
+  );
+}
 
 export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const view = useProjects((s) => s.view);
@@ -36,7 +111,7 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
         {NAV.map(({ label, Icon, view: target, studio: targetStudio, soon, hint }) => {
           const enabled = !!(target || targetStudio);
           const active = targetStudio ? studio === targetStudio : studio === 'design' && target === view;
-          return (
+          const button = (
             <button
               key={label}
               type="button"
@@ -56,9 +131,11 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
               } disabled:cursor-default`}
             >
               <Icon size={17} />
-              <span className="hidden lg:inline">{label}</span>
+              <span className="hidden xl:inline">{label}</span>
             </button>
           );
+          // The Makers menu sits right after the studios.
+          return targetStudio === 'split' ? [button, <MakersMenu key="makers" active={studio === 'cookie'} onOpen={setStudio} />] : button;
         })}
       </nav>
       <div className="flex-1" />

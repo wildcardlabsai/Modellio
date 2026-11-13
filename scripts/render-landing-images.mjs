@@ -41,5 +41,16 @@ await page.getByTestId('split-colour').first().waitFor({ timeout: 20000 });
 await page.waitForTimeout(1200);
 await page.screenshot({ path: 'public/landing/split-studio.jpg', type: 'jpeg', quality: 82 });
 
+// Cookie maker with the gingerbread shape (cutter, stamp and handle).
+await page.goto(URL + '/?studio=cookie', { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'Gingerbread' }).click();
+await page.waitForFunction(
+  () => window.modellioCookie.store.getState().result?.parts.length === 3 && !window.modellioCookie.store.getState().building,
+  null,
+  { timeout: 30000 },
+);
+await page.waitForTimeout(1200);
+await page.screenshot({ path: 'public/landing/cookie-maker.jpg', type: 'jpeg', quality: 82 });
+
 await browser.close();
 for (const f of fs.readdirSync('public/landing')) console.log(f, (fs.statSync(`public/landing/${f}`).size / 1024).toFixed(0), 'KB');

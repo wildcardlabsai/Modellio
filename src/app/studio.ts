@@ -6,7 +6,7 @@ import { create } from 'zustand';
  * Back/Forward and never collides with `#share=` links (which use the hash). Share links open the
  * Design studio, including older links that carry no `studio` parameter.
  */
-export type StudioId = 'home' | 'design' | 'split';
+export type StudioId = 'home' | 'design' | 'split' | 'cookie';
 
 export const studioUrl = (id: StudioId) => (id === 'home' ? '/' : `/?studio=${id}`);
 
@@ -14,6 +14,7 @@ const fromUrl = (): StudioId => {
   try {
     const s = new URLSearchParams(window.location.search).get('studio');
     if (s === 'split') return 'split';
+    if (s === 'cookie') return 'cookie';
     if (s === 'design') return 'design';
     if (window.location.hash.startsWith('#share=')) return 'design';
     return 'home';

@@ -6,6 +6,7 @@ import {
   Grid3x3,
   Package,
   Image,
+  Cookie,
   Ruler,
   Combine,
   Type,
@@ -60,6 +61,22 @@ export const LIVE_STUDIOS: StudioCard[] = [
       'Reads slicer filaments and painted areas',
       'Splits each colour into a closed, printable part',
       'Adds pegs and sockets, then exports plates',
+    ],
+  },
+  {
+    id: 'cookie',
+    name: 'Cookie Cutter & Stamp Maker',
+    tagline: 'Any shape, name or drawing as a cookie cutter',
+    description:
+      'Pick a shape, type a name or upload a logo or a child’s drawing. You get a cutter, a matching stamp that presses the design into the dough, and a handle, all ready to print without supports.',
+    Icon: Cookie,
+    studio: 'cookie',
+    image: '/landing/cookie-maker.jpg',
+    badge: 'New',
+    points: [
+      'Shapes, text, SVG logos and traced pictures',
+      'Cutter, stamp and handle that fit together',
+      'Mirrored so the cookie comes out the right way',
     ],
   },
 ];
@@ -174,6 +191,10 @@ export const FAQ = [
   {
     q: 'Does it work on a tablet?',
     a: 'Yes. MODELLIO runs in modern browsers on desktop and on tablets such as the iPad, with touch-friendly controls. Phones are better for viewing than modelling.',
+  },
+  {
+    q: 'Are the cookie cutters food safe?',
+    a: 'The design is, but printed parts have tiny layer lines that can trap dough. Use a filament rated for food contact, hand-wash in warm soapy water, and dust the cutter with flour before use.',
   },
   {
     q: 'When will the new studios arrive?',

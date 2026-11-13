@@ -143,6 +143,7 @@ Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates an
 | `/` | Landing page |
 | `/?studio=design` | Design Studio (the editor). Share links (`#share=…`) open here too |
 | `/?studio=split` | Split Studio |
+| `/?studio=cookie` | Cookie Cutter & Stamp Maker |
 
 The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
 
@@ -159,6 +160,22 @@ designs as separate single-colour parts: **Import → Split → Connect → Expo
 * **Export:** parts laid flat and packed onto plates for your printer; download a 3MF per plate, an STL per part and a README.
 
 Design notes and limits: [docs/SPLIT_STUDIO.md](docs/SPLIT_STUDIO.md).
+
+## Cookie Cutter & Stamp Maker ✅
+
+The first of the **Makers** (top bar → Makers, or `/?studio=cookie`): focused tools that turn a simple input into
+print-ready parts.
+
+* **Design from** a built-in shape (heart, star, gingerbread person and more), text in any of the bundled fonts, an
+  SVG logo, or a picture (PNG/JPG, traced automatically; dark drawing on a light background, or a transparent PNG).
+* **Makes** a cutter (thin blade on a wide flange, printed flange-down), a stamp that fits inside it with the design raised
+  as lines or filled shapes (printed face-up, no supports), and a separate handle that press-fits a blind socket.
+* **Mirrored for printing** by default, so the cookie comes out the right way round after you flip the cutter and stamp over.
+* **Warns** about pieces that are narrower than 5 mm, outlines that make several cookies, and cutters too large for a plate.
+* Downloads all parts as one 3MF or each as an STL, or opens them in the Design Studio to customise.
+
+Code: `src/makers/cookie` (geometry with Manifold 2D offsets and extrusion; tests in `cookie.test.ts`, browser suite
+`scripts/e2e-cookie.mjs`).
 
 ## Cloud projects (optional)
 
