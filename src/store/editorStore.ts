@@ -35,7 +35,8 @@ import { getShapeDefinition, getTextMesh } from '@/cad/shapeRegistry';
 import { bakeGroupDraft, computeCombined, separateDraft } from '@/cad/operations/combine';
 import { initKernel } from '@/cad/kernel/kernel';
 import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
-import { meshDataBounds } from '@/cad/kernel/meshData';
+import { centerMeshData, meshDataBounds, type MeshData } from '@/cad/kernel/meshData';
+import { addMeshAsset } from '@/cad/assets';
 import type { CombineMode, TextContent } from '@/types/document';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
@@ -146,6 +147,11 @@ export interface EditorState {
   /** Split a mesh into its disconnected parts. */
   separateSelected: () => void;
   addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
+  /**
+   * Add imported meshes (already in mm, Z-up) as mesh shapes, resting on the
+   * workplane. Several parts keep their relative placement and are grouped.
+   */
+  importMeshes: (parts: { name: string; mesh: MeshData }[], opts?: { at?: [number, number]; groupName?: string }) => ObjectId[];
   setText: (id: ObjectId, patch: Partial<TextContent> & { fontSize?: number }) => Promise<void>;
 }
 
@@ -526,6 +532,54 @@ export const useEditor = create<EditorState>()((set, get) => {
       });
       if (created.length) set({ selection: created });
       else get().notify('This mesh is already a single connected solid.');
+    },
+
+    importMeshes: (parts, opts) => {
+      if (!parts.length) return [];
+      const doc = get().doc;
+      const all = new THREE.Box3();
+      const centred = parts.map((p) => {
+        const c = centerMeshData(p.mesh);
+        all.expandByPoint(c.center.clone().sub(c.size.clone().multiplyScalar(0.5)));
+        all.expandByPoint(c.center.clone().add(c.size.clone().multiplyScalar(0.5)));
+        return { ...c, name: p.name };
+      });
+      const allSize = all.getSize(new THREE.Vector3());
+      const allCenter = all.getCenter(new THREE.Vector3());
+      const target: Vec3 = opts?.at
+        ? [roundTo(opts.at[0]), roundTo(opts.at[1]), 0]
+        : (() => {
+            const p = findFreePosition(doc, [allSize.x, allSize.y, allSize.z]);
+            return [p[0], p[1], 0] as Vec3;
+          })();
+      // Shift so the combined model is centred on the target and rests on the plate.
+      const shift = new THREE.Vector3(target[0] - allCenter.x, target[1] - allCenter.y, -all.min.z);
+      const colors = ['#64748B', '#2463EB', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
+      const shapes = centred.map((c, i) => {
+        const base = createShape(doc, 'box', [0, 0, 0]);
+        return {
+          ...base,
+          name: uniqueName(doc, c.name.slice(0, 40) || 'Imported'),
+          shape: 'mesh' as const,
+          meshId: addMeshAsset(c.mesh),
+          params: {},
+          size: [roundTo(c.size.x), roundTo(c.size.y), roundTo(c.size.z)] as Vec3,
+          color: colors[i % colors.length],
+          transform: {
+            position: [roundTo(c.center.x + shift.x), roundTo(c.center.y + shift.y), roundTo(c.center.z + shift.z)] as Vec3,
+            rotation: [0, 0, 0] as Vec3,
+          },
+        };
+      });
+      const gid = createId('grp');
+      get().apply(parts.length > 1 ? `Import ${parts.length} parts` : 'Import mesh', (d) => {
+        for (const sh of shapes) addObjectDraft(d, sh);
+        if (shapes.length > 1) groupDraft(d, shapes.map((x) => x.id), { id: gid, name: uniqueName(doc, opts?.groupName ?? 'Imported') });
+      });
+      const sel = shapes.length > 1 ? [gid] : [shapes[0].id];
+      set({ selection: sel });
+      get().requestFrame();
+      return sel;
     },
 
     addText: async (content = 'Text', at) => {

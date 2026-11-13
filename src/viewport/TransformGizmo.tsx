@@ -78,6 +78,7 @@ export function TransformGizmo() {
 
   useEffect(() => {
     const helper = controls.getHelper();
+    helper.userData.noThumbnail = true;
     scene.add(helper);
     const onChange = () => invalidate();
     const onDown = () => handlers.current.onMouseDown();

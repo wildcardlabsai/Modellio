@@ -80,7 +80,7 @@ export function MeasureTool() {
 
   if (tool !== 'measure') return null;
   return (
-    <group>
+    <group userData={{ noThumbnail: true }}>
       {points.map((p, i) => (
         <mesh key={i} position={p as Vec3} renderOrder={20}>
           <sphereGeometry args={[0.9, 16, 12]} />

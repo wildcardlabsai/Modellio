@@ -49,7 +49,7 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
 
   return (
     <>
-      <group matrix={matrix} matrixAutoUpdate={false}>
+      <group matrix={matrix} matrixAutoUpdate={false} userData={{ noThumbnail: true }}>
         <Line
           points={edges}
           segments
@@ -78,7 +78,7 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
         )}
       </group>
       {showDimensions && Math.abs(elevation) > 0.005 && (
-        <group>
+        <group userData={{ noThumbnail: true }}>
           <Line
             points={[
               [world.min.x, world.min.y, 0],

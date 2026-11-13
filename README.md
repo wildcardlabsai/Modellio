@@ -21,7 +21,7 @@ npm run dev          # http://localhost:5173
 | `npm run build` | Type-check and build for production (`dist/`) |
 | `npm run typecheck` | TypeScript only |
 | `npm test` | Unit tests (geometry, transforms, store, undo/redo) |
-| `npm run e2e` | Real-browser workflow tests (Phases 1–3). Start `npm run dev` first. Needs Playwright + Chromium. |
+| `npm run e2e` | Real-browser workflow tests (Phases 1–4). Start `npm run dev` first. Needs Playwright + Chromium. |
 
 ## Phase 1 status: foundation ✅
 
@@ -73,13 +73,34 @@ npm run dev          # http://localhost:5173
 * **New shapes:** star, capsule and paraboloid, plus a **fillet radius** (rounded edges) on the box.
 * **Measure tool** (<kbd>M</kbd>): click two points to read the distance and ΔX/ΔY/ΔZ. Points snap to corners.
 
+## Phase 4 status: file handling ✅
+
+* **Export STL** (binary or text) and **OBJ** (one named object per part, optional `.mtl` colours), in millimetres.
+  - Boolean combinations are exported as their real result, and every transform is applied.
+  - Choose everything or just the selection, and Z-up (slicers) or Y-up (3D apps).
+  - Before you download, a summary shows the object count, triangles and overall size, plus checks for watertightness,
+    loose holes, parts below the workplane and parts beyond the plate.
+* **Import STL / OBJ** with the Import button, <kbd>Ctrl/⌘ O</kbd>, or by dropping files onto the viewport.
+  - Units (mm/cm/inch/m) and up axis are detected: models smaller than 1 unit are assumed to be in metres,
+    and OBJ files are assumed to be Y-up. You can override both.
+  - The dialog previews the final size in mm and reports whether the mesh is watertight.
+  - Multi-object OBJ files come in as a group, or merged if you choose.
+  - Imported meshes are full citizens: you can move, resize, mirror and align them, and combine them if they are watertight.
+* **Projects** saved in this browser (IndexedDB):
+  - Autosave with a *Saved / Unsaved / Saving…* indicator, plus <kbd>Ctrl/⌘ S</kbd>.
+  - Reopens where you left off, and saves when the tab is hidden.
+  - **My Projects:** thumbnails, new, open, rename, duplicate and delete (with confirmation).
+  - **Project files (.modellio):** download a self-contained backup (design and meshes) and open it on any computer.
+    Corrupt or unknown files are rejected with a clear message.
+  - Everything is preserved: geometry, imported meshes, transforms, colours, holes, groups and combinations, text, mirror and plate size.
+
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
 ## Roadmap
 
 | Phase | Scope |
 | --- | --- |
-| 4 – File handling | STL/OBJ import and export, local projects (IndexedDB) |
+| Later | 3MF export (colours, multi-material), STEP via OpenCascade WASM, Supabase accounts and cloud projects |
 | 5 – Refinement | Performance, accessibility, onboarding, polish |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the technical design.

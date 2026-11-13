@@ -40,7 +40,11 @@ or adapters over it, and geometry is always generated from it.
 | `src/cad/operations/combine.ts` | Live Boolean evaluation of combined groups, flatten-to-mesh, separate. |
 | `src/cad/text/` | Font registry (opentype.js) and kernel-based text solids. |
 | `src/cad/assets.ts` | Immutable mesh asset store (referenced by id from documents). |
-| Reserved: `src/cad/export`, `import`, `serialization` | Phase 4 (STL/OBJ, persistence). |
+| `src/cad/export/` | Collects world-space printable bodies; STL (binary/ASCII) and OBJ/MTL writers. |
+| `src/cad/import/` | STL/OBJ parsing, welding, unit + axis normalisation, watertightness check. |
+| `src/cad/serialization/` | Project format, validation/migration, `.modellio` files, `ProjectRepository` (IndexedDB + memory). |
+| `src/store/projectStore.ts` | Current project, autosave, project lifecycle. |
+| `src/components/files`, `components/projects` | Import/export dialogs, file intake (picker + drag & drop), My Projects page. |
 
 ## Coordinate system and units
 
@@ -176,6 +180,63 @@ layout (depth is kept). Resizing afterwards stretches the text, like any other s
 
 Raycasts against pickable meshes (shapes and Boolean results) and falls back to the workplane. The hit snaps to
 the nearest vertex of the hit triangle when it is within 10 px on screen, for exact corner-to-corner readings.
+
+## Files and projects (Phase 4)
+
+### Export
+
+`collectExportBodies(doc, ids?)` walks the scene graph and produces **world-space `MeshData` per printable body**:
+
+* each solid shape, with all ancestor transforms baked in;
+* each combined group's live Boolean result;
+* plain groups are recursed into; hidden objects and loose holes are skipped (holes only cut when combined).
+
+The export dialog reports watertightness, triangles, size, loose holes, and geometry below or beyond the plate.
+The writers are dependency-free:
+
+* **Binary STL:** little-endian, with per-facet normals from the winding.
+* **ASCII STL:** one `solid` per body.
+* **OBJ:** shared welded vertices, `o <name>` per body, `usemtl` with an optional MTL.
+
+STL has no unit field; MODELLIO writes millimetres, which slicers assume. Y-up output is a proper rotation
+`(x, y, z) → (x, z, −y)`, so winding stays outward. Tests parse every format back with three.js's own loaders and
+check exact bounds, triangle counts and watertightness. The e2e test reads the downloaded STL bytes with a separate parser.
+
+### Import
+
+STL (binary/ASCII) and OBJ are parsed with three.js loaders, then welded (`mergeVertices`, 1e-4 mm), validated
+(finite coordinates, non-empty), scaled to mm, and rotated to Z-up. The results are stored as immutable mesh assets and
+added as `shape: 'mesh'` objects resting on the plate, all in one undo step. Watertightness is reported up front,
+because non-watertight meshes can still be displayed and exported but are refused by the Boolean kernel with a clear message.
+
+### Persistence
+
+* **`ProjectData`** = `meta` (id, name, timestamps, object count, thumbnail) + `document` (plain JSON) + `assets`
+  (only the meshes the document references).
+* **`ProjectRepository`** interface with `list / load / save / remove`. The IndexedDB implementation uses two
+  stores written in one transaction: `meta` for fast listing with thumbnails, and `data` for the document plus typed arrays
+  stored natively, without encoding. `MemoryProjectRepository` is the fallback when storage is blocked (the UI says so).
+* **Autosave:** the project store subscribes to document changes and saves 1.2 s after the last change. It waits for
+  gizmo drags to finish and re-schedules if the document changed during a save. It also saves on tab hide and warns
+  on unload if needed. `init()` is idempotent, because StrictMode double-invokes effects.
+* **Thumbnails** are rendered from a dedicated camera that frames the whole model from the standard view, with gizmos and
+  overlays hidden (`userData.noThumbnail`). They are saved as 320×200 JPEG.
+* **`.modellio` files:** JSON with `format`/`version`, the document, and base64 little-endian mesh buffers.
+  `migrateDocument` validates untrusted input (types, transforms, shapes, groups), repairs dangling references
+  rather than losing objects, and refuses newer schema versions. Index buffers are bounds-checked.
+
+### Toward cloud storage (Supabase)
+
+A `SupabaseProjectRepository` can implement the same interface: `meta` as a `projects` table row (RLS by
+`auth.uid()`), `document` as a JSONB column, and assets in a storage bucket keyed by asset id. Assets are immutable and
+content-addressable, so they upload once. The editor and project store need no changes; only `createDefaultRepository`
+and an auth gate would be added.
+
+### Future formats
+
+* **3MF:** a zip of XML. It maps directly onto `ExportBody` (mesh + name + colour), adding colours and multiple objects per file.
+* **STEP:** a B-rep exchange format, which needs a B-rep kernel such as OpenCascade.js (WASM) to tessellate on import.
+  Exporting STEP from meshes is not meaningful, so it would require keeping parametric primitives as B-rep.
 
 ## State, history and transactions
 

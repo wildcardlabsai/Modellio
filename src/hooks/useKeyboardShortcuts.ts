@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useEditor } from '@/store/editorStore';
 import type { Vec3 } from '@/types/document';
 import * as THREE from 'three';
+import { useProjects } from '@/store/projectStore';
+import { openMeshPicker, useFileUi } from '@/components/files/fileIntake';
 import { isEffectivelyLocked, topLevel, translateWorldDraft } from '@/cad/hierarchy';
 
 export function isTypingTarget(target: EventTarget | null): boolean {
@@ -22,6 +24,21 @@ export function useKeyboardShortcuts() {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 
+      if (mod && key === 's') {
+        e.preventDefault();
+        void useProjects.getState().saveNow();
+        return;
+      }
+      if (mod && key === 'e') {
+        e.preventDefault();
+        useFileUi.getState().setExportOpen(true);
+        return;
+      }
+      if (mod && key === 'o') {
+        e.preventDefault();
+        openMeshPicker();
+        return;
+      }
       if (mod && key === 'z') {
         e.preventDefault();
         if (e.shiftKey) s.redo();

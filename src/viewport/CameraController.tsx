@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { viewport } from './viewportBridge';
+import { VIEW_DIRECTIONS, viewport } from './viewportBridge';
 import { useEditor } from '@/store/editorStore';
 import { selectionBounds, sceneBounds } from './bounds';
 
@@ -53,6 +53,49 @@ export function CameraController() {
         t: 0,
       };
       invalidate();
+    };
+
+    viewport.captureThumbnail = () => {
+      try {
+        // Hide gizmos, selection boxes and measurements, render once, read pixels back.
+        const hidden: THREE.Object3D[] = [];
+        scene.traverse((o) => {
+          if (o.userData.noThumbnail && o.visible) {
+            o.visible = false;
+            hidden.push(o);
+          }
+        });
+        // Dedicated camera: the whole model from the standard 3/4 view, whatever the user is looking at.
+        const box = new THREE.Box3();
+        scene.traverseVisible((o) => {
+          if ((o as THREE.Mesh).isMesh && o.userData.pickable) box.expandByObject(o);
+        });
+        if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, 0), new THREE.Vector3(50, 50, 10));
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const src = gl.domElement;
+        const shot = new THREE.PerspectiveCamera(30, src.width / src.height, 0.5, 20000);
+        shot.up.set(0, 0, 1);
+        const fov = THREE.MathUtils.degToRad(shot.fov);
+        const dist = (Math.max(sphere.radius, 8) / Math.sin(fov / 2)) * 1.05;
+        shot.position.copy(sphere.center).addScaledVector(VIEW_DIRECTIONS.home, dist);
+        shot.lookAt(sphere.center);
+        shot.updateMatrixWorld();
+        gl.render(scene, shot);
+        // Centre-crop to the 16:10 card shape.
+        const w = 320;
+        const h = 200;
+        const srcH = Math.min(src.height, (src.width * h) / w);
+        const srcW = (srcH * w) / h;
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        c.getContext('2d')!.drawImage(src, (src.width - srcW) / 2, (src.height - srcH) / 2, srcW, srcH, 0, 0, w, h);
+        hidden.forEach((o) => (o.visible = true));
+        invalidate();
+        return c.toDataURL('image/jpeg', 0.82);
+      } catch {
+        return undefined;
+      }
     };
 
     viewport.setView = (dir) => {

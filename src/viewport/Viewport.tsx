@@ -14,6 +14,7 @@ import { VIEW_DIRECTIONS, gizmoRecentlyUsed, screenToWorkplane } from './viewpor
 import { snapTo } from '@/utils/math';
 import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
+import { handleFiles } from '@/components/files/fileIntake';
 
 export const SHAPE_DRAG_MIME = 'application/x-modellio-shape';
 
@@ -67,7 +68,7 @@ export function Viewport() {
   const home = VIEW_DIRECTIONS.home.clone().multiplyScalar(240);
 
   const onDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer.types.includes(SHAPE_DRAG_MIME)) return;
+    if (!e.dataTransfer.types.includes(SHAPE_DRAG_MIME) && !e.dataTransfer.types.includes('Files')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     setDragOver(true);
@@ -75,6 +76,13 @@ export function Viewport() {
 
   const onDrop = (e: DragEvent) => {
     setDragOver(false);
+    if (e.dataTransfer.files.length) {
+      // STL / OBJ / .modellio files dropped from the desktop.
+      e.preventDefault();
+      const hit = screenToWorkplane(e.clientX, e.clientY);
+      void handleFiles([...e.dataTransfer.files], hit ? [hit.x, hit.y] : undefined);
+      return;
+    }
     const type = e.dataTransfer.getData(SHAPE_DRAG_MIME) as PrimitiveType;
     if (!type) return;
     e.preventDefault();
@@ -127,7 +135,9 @@ export function Viewport() {
       </Canvas>
       <ViewportOverlay />
       {dragOver && (
-        <div className="pointer-events-none absolute inset-3 rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5" />
+        <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5">
+          <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[13px] font-medium text-brand shadow-panel">Drop to add · STL, OBJ or .modellio files</span>
+        </div>
       )}
     </div>
   );

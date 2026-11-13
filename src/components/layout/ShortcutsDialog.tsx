@@ -5,6 +5,9 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
   {
     title: 'Editing',
     items: [
+      ['Save', `${MOD} S`],
+      ['Import STL / OBJ', `${MOD} O`],
+      ['Export', `${MOD} E`],
       ['Undo', `${MOD} Z`],
       ['Redo', `${MOD} ⇧ Z`],
       ['Duplicate', `${MOD} D`],

@@ -20,6 +20,8 @@ interface Bridge {
   camera: THREE.Camera | null;
   renderer: THREE.WebGLRenderer | null;
   scene: THREE.Scene | null;
+  /** Render a small thumbnail of the scene without overlays (data URL). */
+  captureThumbnail?: () => string | undefined;
   domElement: HTMLElement | null;
   setView: (dir: THREE.Vector3) => void;
   frame: (box: THREE.Box3 | null) => void;

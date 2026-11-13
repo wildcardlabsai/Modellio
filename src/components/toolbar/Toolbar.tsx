@@ -1,5 +1,9 @@
-import { useState } from 'react';
-import { Undo2, Redo2, Copy, Trash2, Group, Ungroup, AlignHorizontalJustifyCenter, FlipHorizontal2, Combine, Upload, Download, Pencil, ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useProjects } from '@/store/projectStore';
+import { FileMenu } from './FileMenu';
+import { SaveStatus } from './SaveStatus';
+import { openMeshPicker, useFileUi } from '@/components/files/fileIntake';
+import { Undo2, Redo2, Copy, Trash2, Group, Ungroup, AlignHorizontalJustifyCenter, FlipHorizontal2, Combine, Upload, Download, Pencil, ChevronDown, Menu } from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
 import { AlignMenu, MirrorMenu } from './AlignMenu';
 import { CombineMenu } from './CombineMenu';
@@ -19,23 +23,40 @@ export function Toolbar() {
   const hasGroup = useEditor((s) => s.selection.some((id) => s.doc.objects[id]?.kind === 'group'));
   const objectCount = useEditor((s) => Object.keys(s.doc.objects).length);
   const { undo, redo, duplicateSelected, deleteSelected, groupSelected, ungroupSelected } = useEditor.getState();
-  const [name, setName] = useState('Untitled design');
+  const projectName = useProjects((s) => s.current?.name ?? 'Untitled design');
+  const [name, setName] = useState(projectName);
+  useEffect(() => setName(projectName), [projectName]);
+  const commitName = () => {
+    const p = useProjects.getState();
+    if (!name.trim()) setName(projectName);
+    else if (name.trim() !== projectName && p.current) void p.rename(p.current.id, name);
+  };
 
   return (
     <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-line bg-white px-3">
+      <Popover
+        trigger={({ open, toggle }) => (
+          <IconButton label="File menu" active={open} onClick={toggle}>
+            <Menu size={19} />
+          </IconButton>
+        )}
+      >
+        {(close) => <FileMenu onDone={close} />}
+      </Popover>
       <label className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-canvas">
         <input
           aria-label="Project name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => !name.trim() && setName('Untitled design')}
+          onBlur={commitName}
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
           size={Math.max(8, name.length)}
           className="bg-transparent text-[15px] font-semibold text-ink outline-none"
         />
         <Pencil size={14} className="text-muted" />
       </label>
-      <span className="ml-1 text-[12px] text-muted">
+      <SaveStatus />
+      <span className="ml-2 hidden text-[12px] text-muted md:inline">
         {objectCount} object{objectCount === 1 ? '' : 's'}
       </span>
       <Divider />
@@ -96,14 +117,17 @@ export function Toolbar() {
         {(close) => <CombineMenu onDone={close} />}
       </Popover>
       <div className="flex-1" />
-      <IconButton label="Import STL/OBJ — Phase 4" disabled>
+      <IconButton label="Import STL / OBJ" onClick={openMeshPicker}>
         <Upload size={17} />
         <span className="hidden lg:inline">Import</span>
       </IconButton>
-      <IconButton label="Export STL/OBJ — Phase 4" disabled>
-        <Download size={17} />
-        <span className="hidden lg:inline">Export</span>
-      </IconButton>
+      <button
+        type="button"
+        onClick={() => useFileUi.getState().setExportOpen(true)}
+        className="ml-1 inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3.5 text-[13px] font-semibold text-white shadow-sm hover:bg-brand-600"
+      >
+        <Download size={17} /> Export
+      </button>
     </div>
   );
 }

@@ -10,6 +10,12 @@ import { Viewport } from '@/viewport/Viewport';
 import { ShortcutsDialog } from '@/components/layout/ShortcutsDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { CadResources } from '@/viewport/cadReady';
+import { useProjects } from '@/store/projectStore';
+import { ProjectsPage } from '@/components/projects/ProjectsPage';
+import { ImportDialog } from '@/components/files/ImportDialog';
+import { ExportDialog } from '@/components/files/ExportDialog';
+import { useFileUi } from '@/components/files/fileIntake';
+import { Loader2 } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
@@ -25,6 +31,30 @@ export function App() {
     (window as unknown as { modellio: unknown }).modellio = { store: useEditor, viewport, worldToScreen, hierarchy, computeCombined };
   }, []);
 
+  const view = useProjects((s) => s.view);
+  const busy = useFileUi((s) => s.busy);
+
+  // Open the last project (or start a new one), and protect unsaved work.
+  useEffect(() => {
+    void useProjects.getState().init();
+    const onHide = () => {
+      if (document.visibilityState === 'hidden' && useProjects.getState().status === 'unsaved') void useProjects.getState().saveNow();
+    };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const status = useProjects.getState().status;
+      if (status === 'unsaved' || status === 'saving') {
+        void useProjects.getState().saveNow();
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === '?' && !(e.target instanceof HTMLInputElement)) setShowShortcuts((v) => !v);
@@ -37,15 +67,24 @@ export function App() {
     <div className="flex h-full flex-col">
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <Toolbar />
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <LeftRail panel={panel} onChange={setPanel} />
         {panel === 'shapes' ? <ShapeLibrary /> : panel === 'text' ? <TextPanel /> : <WorkplanePanel />}
         <main className="relative min-w-0 flex-1">
           <Viewport />
         </main>
         <Inspector />
+        {/* The editor stays mounted (keeps the WebGL context) while the projects page is shown. */}
+        {view === 'projects' && <ProjectsPage />}
       </div>
       <CadResources />
+      <ImportDialog />
+      <ExportDialog />
+      {busy && (
+        <div role="status" className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white shadow-float">
+          <Loader2 size={14} className="animate-spin" /> {busy}
+        </div>
+      )}
       {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
     </div>
   );
