@@ -33,6 +33,7 @@ import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
 import { booleanStats, computeCombined } from '@/cad/operations/combine';
 import { useStudio } from './studio';
+import { LandingPage } from '@/landing/LandingPage';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 
 export function App() {
@@ -106,6 +107,8 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  if (studio === 'home') return <LandingPage />;
 
   return (
     <div className="flex h-full flex-col">

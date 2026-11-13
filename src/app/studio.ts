@@ -1,22 +1,24 @@
 import { create } from 'zustand';
 
 /**
- * Studios are separate workspaces in one app. The active studio lives in the URL query
- * (`?studio=split`) so it survives reloads, can be linked to, works with Back/Forward and
- * never collides with `#share=` links (which use the hash).
+ * Where the app is: the landing page (`/`) or one of the studios. The studio lives in the URL
+ * query (`?studio=design`, `?studio=split`) so it survives reloads, can be linked to, works with
+ * Back/Forward and never collides with `#share=` links (which use the hash). Share links open the
+ * Design studio, including older links that carry no `studio` parameter.
  */
-export type StudioId = 'design' | 'split';
+export type StudioId = 'home' | 'design' | 'split';
 
-export const STUDIOS: { id: StudioId; label: string; description: string }[] = [
-  { id: 'design', label: 'Design', description: 'Model with shapes' },
-  { id: 'split', label: 'Split Studio', description: 'Separate a multi-colour 3MF into printable parts' },
-];
+export const studioUrl = (id: StudioId) => (id === 'home' ? '/' : `/?studio=${id}`);
 
 const fromUrl = (): StudioId => {
   try {
-    return new URLSearchParams(window.location.search).get('studio') === 'split' ? 'split' : 'design';
+    const s = new URLSearchParams(window.location.search).get('studio');
+    if (s === 'split') return 'split';
+    if (s === 'design') return 'design';
+    if (window.location.hash.startsWith('#share=')) return 'design';
+    return 'home';
   } catch {
-    return 'design';
+    return 'home';
   }
 };
 
@@ -26,14 +28,17 @@ interface StudioState {
 }
 
 export const useStudio = create<StudioState>((set, get) => ({
-  studio: typeof window === 'undefined' ? 'design' : fromUrl(),
+  studio: typeof window === 'undefined' ? 'home' : fromUrl(),
   setStudio: (id) => {
     if (get().studio === id) return;
     const url = new URL(window.location.href);
-    if (id === 'design') url.searchParams.delete('studio');
+    if (id === 'home') url.searchParams.delete('studio');
     else url.searchParams.set('studio', id);
+    // Section anchors (#faq) belong to the landing page; share links are handled by the Design studio.
+    if (!url.hash.startsWith('#share=')) url.hash = '';
     window.history.pushState({ studio: id }, '', url);
     set({ studio: id });
+    window.scrollTo?.(0, 0);
   },
 }));
 

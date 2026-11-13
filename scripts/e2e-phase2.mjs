@@ -65,7 +65,7 @@ const drag = async (from, to, steps = 20) => {
 };
 const treeRowLoose = (name) => page.locator('[role=treeitem] > div').filter({ hasText: name }).first();
 
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 for (const label of ['Box', 'Cylinder', 'Sphere']) await page.locator(`button[title^="Add ${label} "]`).click();
 let s = await state();

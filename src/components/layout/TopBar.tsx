@@ -20,7 +20,16 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const setStudio = useStudio((s) => s.setStudio);
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 bg-navy px-3 text-white sm:gap-6 sm:px-5">
-      <a href="/" className="flex items-center" aria-label="Modellio home">
+      <a
+        href="/"
+        className="flex items-center"
+        aria-label="Modellio home"
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          setStudio('home');
+        }}
+      >
         <img src="/logo-light.png" alt="modellio" className="h-[26px] w-auto" draggable={false} />
       </a>
       <nav className="flex items-center gap-1" aria-label="Main">

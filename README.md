@@ -133,9 +133,22 @@ npm run dev          # http://localhost:5173
 
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
+## Landing page and studios
+
+`/` is the landing page: product overview, the live studios, the coming-soon studios (Keyring Maker, Sign Generator,
+Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates and FAQ.
+
+| URL | Opens |
+| --- | --- |
+| `/` | Landing page |
+| `/?studio=design` | Design Studio (the editor). Share links (`#share=…`) open here too |
+| `/?studio=split` | Split Studio |
+
+The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
+
 ## Split Studio (phases 1–2) ✅
 
-A second workspace (**Split Studio** in the top bar, or `/?studio=split`) for printing multi-colour designs as separate
+A second workspace (**Split Studio** on the landing page and in the top bar, or `/?studio=split`) for printing multi-colour designs as separate
 single-colour parts. Phases 1–2 cover integration and import:
 
 * Imports 3MF files using the official 3MF Consortium library (lib3mf, WebAssembly) in a Web Worker, with progress and cancel.

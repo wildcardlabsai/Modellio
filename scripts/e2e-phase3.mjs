@@ -74,7 +74,7 @@ const waitFor = async (fn, ms = 4000) => {
   return false;
 };
 
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 check(
   '0. Solid-modelling kernel (WASM) loads in the browser',

@@ -72,7 +72,7 @@ function readBinaryStl(buf) {
   return { n, size: buf.length, min, max };
 }
 
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 check('1. A new project is created and saved on first launch', await waitSaved(), await saveStatus());
 

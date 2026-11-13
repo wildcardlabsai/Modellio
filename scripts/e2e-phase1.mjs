@@ -60,7 +60,7 @@ const drag = async (from, to, steps = 20) => {
 };
 
 // 1. Open the application
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1200);
 check('1. Application opens', await page.locator('canvas').first().isVisible());
 

@@ -316,7 +316,7 @@ export const useProjects = create<ProjectState>()((set, get) => ({
     const fragment = encodeShareFragment(snapshot(meta, false));
     if (fragment.length > MAX_SHARE_CHARS)
       return { error: 'This design is too large for a link (big imported meshes). Download the project file and send that instead.' };
-    return { url: `${location.origin}${location.pathname}${fragment}`, chars: fragment.length };
+    return { url: `${location.origin}${location.pathname}?studio=design${fragment}`, chars: fragment.length };
   },
 
   copyShared: async () => {

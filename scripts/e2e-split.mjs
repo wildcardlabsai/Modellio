@@ -358,8 +358,8 @@ check('33. Editor shortcuts do nothing while in Split Studio', after === before,
 await page.getByRole('button', { name: 'Design' }).click();
 await page.getByTestId('left-panel').waitFor({ timeout: 10000 });
 check(
-  '34. Design returns to the editor and clears ?studio',
-  !page.url().includes('studio=') && (await page.getByTestId('split-studio').count()) === 0,
+  '34. Design returns to the editor at ?studio=design',
+  page.url().includes('studio=design') && (await page.getByTestId('split-studio').count()) === 0,
 );
 await page.goBack();
 await page.getByTestId('split-studio').waitFor({ timeout: 10000 });

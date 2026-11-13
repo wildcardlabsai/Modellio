@@ -75,7 +75,7 @@ const home = async () => {
   await page.waitForTimeout(800);
 };
 
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
 
 // ===================== Reliability =====================
@@ -536,7 +536,7 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   const tp = await fresh.newPage();
   const tourErrors = [];
   tp.on('pageerror', (e) => tourErrors.push(e.message));
-  await tp.goto(URL + '?tour', { waitUntil: 'networkidle' });
+  await tp.goto(URL + '/?studio=design&tour', { waitUntil: 'networkidle' });
   const tour = tp.getByTestId('tour');
   // Generous timeout: CI machines can be slow to load and compile the app on a first visit.
   const tourStarted = await tour
@@ -685,7 +685,7 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   const tablet = await browser.newContext({ ...require('playwright').devices['iPad Pro 11'] });
   await tablet.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
   const tp = await tablet.newPage();
-  await tp.goto(URL, { waitUntil: 'networkidle' });
+  await tp.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
   await tp.waitForTimeout(1200);
   const layout = await tp.evaluate(() => ({
     w: innerWidth,

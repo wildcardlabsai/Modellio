@@ -14,7 +14,7 @@ const URL = process.argv[2] ?? 'http://localhost:5173';
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
 await page.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
 const ids = await page.evaluate(() => window.modellio.templates.map((t) => t.id));
 let failed = 0;
