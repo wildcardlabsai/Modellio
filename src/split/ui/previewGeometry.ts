@@ -1,38 +1,21 @@
 import * as THREE from 'three';
-import { meshDataToGeometry } from '@/cad/kernel/meshData';
-import type { ThreeMFDocument, ThreeMFMesh } from '../model/types';
+import type { PreviewBuffers, ThreeMFDocument, ThreeMFMesh } from '../model/types';
+import { buildPreviewBuffers } from '../model/preview';
 
-/**
- * Preview geometry for one mesh object: triangles are ordered by material (counting sort,
- * stable) and each run becomes a geometry group whose materialIndex is the document's
- * material ID. The source mesh is not modified.
- */
-export function buildPreviewGeometry(mesh: ThreeMFMesh): THREE.BufferGeometry {
-  const ids = mesh.perTriangleMaterialIds;
-  const n = ids.length;
-  let max = 0;
-  for (let t = 0; t < n; t++) if (ids[t] > max) max = ids[t];
-  const counts = new Uint32Array(max + 2);
-  for (let t = 0; t < n; t++) counts[ids[t] + 1]++;
-  for (let m = 1; m < counts.length; m++) counts[m] += counts[m - 1];
-  const starts = counts.slice(0, max + 1);
-  const order = new Uint32Array(n);
-  const cursor = starts.slice();
-  for (let t = 0; t < n; t++) order[cursor[ids[t]]++] = t;
-  const indices = new Uint32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const t = order[i];
-    indices[i * 3] = mesh.triangles[t * 3];
-    indices[i * 3 + 1] = mesh.triangles[t * 3 + 1];
-    indices[i * 3 + 2] = mesh.triangles[t * 3 + 2];
-  }
-  // Creased normals de-index in triangle order, so group ranges stay valid.
-  const g = meshDataToGeometry({ positions: mesh.vertices, indices });
-  for (let m = 0; m <= max; m++) {
-    const count = (m < max ? starts[m + 1] : n) - starts[m];
-    if (count > 0) g.addGroup(starts[m] * 3, count * 3, m);
-  }
+/** Geometry from render-ready buffers; each material run becomes a group (materialIndex = material ID). */
+export function geometryFromPreview(p: PreviewBuffers): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p.positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(p.normals, 3));
+  for (let i = 0; i < p.groups.length; i += 3) g.addGroup(p.groups[i] * 3, p.groups[i + 1] * 3, p.groups[i + 2]);
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
   return g;
+}
+
+/** Preview geometry for a mesh object (buffers built by the import worker when available). */
+export function buildPreviewGeometry(mesh: ThreeMFMesh): THREE.BufferGeometry {
+  return geometryFromPreview(mesh.preview ?? buildPreviewBuffers(mesh.vertices, mesh.triangles, mesh.perTriangleMaterialIds));
 }
 
 /** World-space bounds of every placed triangle (optionally only those of one material). */

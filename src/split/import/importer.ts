@@ -1,7 +1,8 @@
 import { readPackage, getPart, REL_TEXTURE } from './opc';
-import { loadLib3mf, type L3Module } from './lib3mf';
+import type { L3Module } from './lib3mf';
 import { parseWithLib3mf, type RawModel } from './parse3mf';
-import { scanModelParts } from './scan';
+import { objectKey, scanModelParts, type ScanResult } from './scan';
+import { parseModelParts } from './fastParse';
 import { readVendorData } from './vendor';
 import { flattenInstances } from '../model/flatten';
 import { resolveMaterials } from '../model/materialResolver';
@@ -33,28 +34,41 @@ const UNSUPPORTED_LABELS: Record<string, string> = {
   implicitfunction: 'implicit functions',
 };
 
+export interface ImportOptions {
+  /**
+   * The model reader. "fast" (default) is MODELLIO's streaming reader. "lib3mf" uses the
+   * official 3MF Consortium library (WebAssembly); tests run both and compare the results.
+   */
+  reader?: 'fast' | 'lib3mf';
+  lib?: L3Module;
+}
+
 /**
- * Import pipeline: package → lib3mf model → supplementary scan → vendor metadata →
- * instances → material resolution → document. Pure (no DOM), so it runs in a worker
- * and in tests. Throws ThreeMFImportError for problems with the file.
+ * Import pipeline: package → model reader → vendor metadata → instances → material
+ * resolution → document. Pure (no DOM), so it runs in a worker and in tests. Throws
+ * ThreeMFImportError for problems with the file.
  */
 export async function importThreeMF(
   bytes: Uint8Array,
   fileName: string,
   onProgress: ImportProgress = () => {},
-  lib?: L3Module,
+  options: ImportOptions = {},
 ): Promise<ThreeMFDocument> {
   const issues: ImportIssue[] = [];
   onProgress(0.02, 'Opening package');
-  const pkg = readPackage(bytes);
-  onProgress(0.05, 'Loading 3MF reader');
-  const M = lib ?? (await loadLib3mf());
-  onProgress(0.1, 'Reading model');
-  const raw = parseWithLib3mf(M, bytes, { onProgress: (f) => onProgress(0.1 + f * 0.65, 'Reading triangles') });
-
-  onProgress(0.78, 'Reading colour data');
+  const pkg = await readPackage(bytes);
+  onProgress(0.08, 'Reading model');
   const modelParts = pkg.modelParts.map((path) => ({ path, bytes: getPart(pkg.parts, path)! })).filter((p) => p.bytes);
-  const scan = scanModelParts(modelParts, pkg.rootModel);
+  let raw: RawModel;
+  let scan: ScanResult;
+  if (options.reader === 'lib3mf') {
+    if (!options.lib) throw new Error('The lib3mf reader needs a loaded module.');
+    raw = parseWithLib3mf(options.lib, bytes, { onProgress: (f) => onProgress(0.08 + f * 0.7, 'Reading triangles') });
+    scan = scanModelParts(modelParts, pkg.rootModel);
+  } else {
+    ({ raw, scan } = parseModelParts(modelParts, pkg.rootModel, { onProgress: (f) => onProgress(0.08 + f * 0.7, 'Reading triangles') }));
+  }
+  onProgress(0.8, 'Reading colour data');
   const { data: vendor, notes } = readVendorData(pkg.parts);
   for (const n of notes) issues.push({ level: 'warning', code: 'vendor-note', message: n });
   if (vendor) {
@@ -119,7 +133,7 @@ export async function importThreeMF(
   const { materials, perTriangle } = resolveMaterials(raw, scan, vendor, flat, issues);
 
   onProgress(0.92, 'Building document');
-  const doc = buildDocument(raw, flat, materials, perTriangle, issues, vendor?.objects);
+  const doc = buildDocument(raw, flat, materials, perTriangle, issues, vendor?.objects, scan);
   doc.fileName = fileName;
   doc.fileSize = bytes.length;
   doc.extensions = extensions;
@@ -143,6 +157,7 @@ function buildDocument(
   perTriangle: Map<number, Uint32Array>,
   issues: ImportIssue[],
   vendorObjects?: Map<number, { name?: string; extruder?: number }>,
+  scan?: ScanResult,
 ): ThreeMFDocument {
   const objects: ThreeMFObject[] = [];
   const indexOfUid = new Map<number, number>();
@@ -153,6 +168,7 @@ function buildDocument(
       triangles: m.triangles,
       perTriangleMaterialIds: perTriangle.get(m.uid) ?? new Uint32Array(m.triangles.length / 3),
       bounds: bounds(m.vertices),
+      paint: scan?.paint.get(objectKey(m.path, m.id)),
     };
     indexOfUid.set(m.uid, objects.length);
     objects.push({

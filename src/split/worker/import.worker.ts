@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
-import wasmUrl from '@3mfconsortium/lib3mf/wasm?url';
 import { importThreeMF } from '../import/importer';
-import { loadLib3mf } from '../import/lib3mf';
+import { buildPreviewBuffers } from '../model/preview';
 import { ThreeMFImportError } from '../import/xml';
 import { documentTransferables, type ImportRequest, type ImportResponse } from './protocol';
 
@@ -15,18 +14,16 @@ self.onmessage = async (e: MessageEvent<ImportRequest>) => {
   const { bytes, fileName } = e.data;
   let last = 0;
   try {
-    const lib = await loadLib3mf(wasmUrl);
-    const doc = await importThreeMF(
-      bytes,
-      fileName,
-      (fraction, stage) => {
-        const now = performance.now();
-        if (fraction < 1 && now - last < 60) return;
-        last = now;
-        post({ type: 'progress', fraction, stage });
-      },
-      lib,
-    );
+    const doc = await importThreeMF(bytes, fileName, (fraction, stage) => {
+      const now = performance.now();
+      if (fraction < 1 && now - last < 60) return;
+      last = now;
+      post({ type: 'progress', fraction, stage });
+    });
+    post({ type: 'progress', fraction: 0.96, stage: 'Preparing preview' });
+    for (const o of doc.objects)
+      if (o.mesh && o.mesh.triangles.length)
+        o.mesh.preview = buildPreviewBuffers(o.mesh.vertices, o.mesh.triangles, o.mesh.perTriangleMaterialIds);
     post({ type: 'done', doc }, documentTransferables(doc));
   } catch (err) {
     const userError = err instanceof ThreeMFImportError;

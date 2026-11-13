@@ -6,7 +6,61 @@ import { decodePaint, encodeWholeState } from './paint';
 import { write3mf } from '@/cad/export/threemf';
 import type { ThreeMFDocument } from '../model/types';
 
-const run = (pkg: FxPackage | Uint8Array, name = 'test.3mf') => importThreeMF(pkg instanceof Uint8Array ? pkg : build3mf(pkg), name);
+import { loadLib3mf } from './lib3mf';
+
+/**
+ * Every import runs through both readers: MODELLIO's fast reader (what the app uses) and the
+ * official lib3mf library. The documents must agree on geometry, instances and the material of
+ * every triangle, so lib3mf acts as the reference implementation for the fast reader.
+ */
+async function run(pkg: FxPackage | Uint8Array, name = 'test.3mf'): Promise<ThreeMFDocument> {
+  const bytes = pkg instanceof Uint8Array ? pkg : build3mf(pkg);
+  const fast = await importThreeMF(bytes, name).catch((e: Error) => e);
+  const ref = await importThreeMF(bytes, name, undefined, { reader: 'lib3mf', lib: await loadLib3mf() }).catch((e: Error) => e);
+  if (fast instanceof Error || ref instanceof Error) {
+    // Both must reject (messages may differ in detail), or the fast reader must reject what lib3mf only warned about.
+    if (fast instanceof Error && ref instanceof Error) throw fast;
+    if (fast instanceof Error) throw new Error(`fast reader rejected a file lib3mf accepts: ${fast.message}`);
+    throw new Error(`fast reader accepted a file lib3mf rejects: ${(ref as Error).message}`);
+  }
+  expectSameDocument(fast, ref);
+  return fast;
+}
+
+function summary(doc: ThreeMFDocument) {
+  const key = (o: { path: string; objectId: number }) => `${o.path.toLowerCase()}#${o.objectId}`;
+  const objects = [...doc.objects]
+    .sort((a, b) => key(a).localeCompare(key(b)))
+    .map((o) => ({
+      key: key(o),
+      name: o.name,
+      type: o.type,
+      vertices: o.mesh ? Array.from(o.mesh.vertices).map((v) => +v.toFixed(4)) : null,
+      triangles: o.mesh ? Array.from(o.mesh.triangles) : null,
+      materials: o.mesh
+        ? Array.from(o.mesh.perTriangleMaterialIds).map((m) => {
+            const mat = doc.materials[m];
+            return `${mat.key}|${mat.name}|${mat.colour}|${mat.alpha.toFixed(3)}`;
+          })
+        : null,
+      components: o.componentReferences.map((c) => [c.path.toLowerCase(), c.objectId, c.transform.map((v) => +v.toFixed(5))]),
+    }));
+  const instances = doc.instances.map((i) => ({
+    id: i.instanceId,
+    name: i.name,
+    object: key(doc.objects[i.objectIndex]),
+    transform: i.transform.map((v) => +v.toFixed(5)),
+  }));
+  const issues = doc.issues
+    .filter((i) => !['lib3mf-warning', 'vendor-attributes'].includes(i.code))
+    .map((i) => `${i.code}:${i.count ?? ''}`)
+    .sort();
+  return { units: doc.units, metadata: doc.metadata, objects, instances, issues, stats: doc.stats };
+}
+
+function expectSameDocument(fast: ThreeMFDocument, ref: ThreeMFDocument) {
+  expect(summary(fast)).toEqual(summary(ref));
+}
 const comps = (doc: ThreeMFDocument) => computeColourComponents(doc);
 const issue = (doc: ThreeMFDocument, code: string) => doc.issues.find((i) => i.code === code);
 const T = (x: number, y: number, z: number) => `1 0 0 0 1 0 0 0 1 ${x} ${y} ${z}`;
@@ -355,7 +409,7 @@ describe('3MF import — invalid files', () => {
     expect(issue(doc, 'mirrored')?.count).toBe(1);
   });
   it('reports, never hides, an out-of-range material index', async () => {
-    const result = await run({
+    const bytes = build3mf({
       root: {
         resources: `<basematerials id="1"><base name="Red" displaycolor="#FF0000"/></basematerials>`,
         objects: [
@@ -367,12 +421,11 @@ describe('3MF import — invalid files', () => {
         ],
       },
       build: [{ objectid: 2 }],
-    }).catch((e: Error) => e);
-    // The reader may reject the file, drop the property with a warning, or leave it unresolved: each is reported.
-    if (result instanceof Error) expect(result.message).toMatch(/could not be read/);
-    else
-      expect(
-        issue(result, 'missing-material') ?? result.issues.find((i) => i.code === 'lib3mf-warning' && /mesh information/.test(i.message)),
-      ).toBeDefined();
+    });
+    // The fast reader names the exact triangle; lib3mf drops the property with a generic warning.
+    const fast = await importThreeMF(bytes, 'x.3mf');
+    expect(issue(fast, 'missing-material')?.count).toBe(1);
+    const ref = await importThreeMF(bytes, 'x.3mf', undefined, { reader: 'lib3mf', lib: await loadLib3mf() });
+    expect(ref.issues.some((i) => i.code === 'missing-material' || /mesh information/.test(i.message))).toBe(true);
   });
 });

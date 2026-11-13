@@ -14,7 +14,7 @@ import { localName, walkXml } from './xml';
  */
 export interface ScanResult {
   /** "path#objectId" → (triangle index → paint string). */
-  paint: Map<string, Map<number, string>>;
+  paint: Map<string, PaintTable>;
   composites: Map<string, { matid: number; matindices: number[]; values: number[][] }>;
   multis: Map<string, { pids: number[]; pindices: number[][] }>;
   /** Root model element attributes / namespaces. */
@@ -25,6 +25,37 @@ export interface ScanResult {
 }
 
 export const objectKey = (path: string, id: number) => `${path}#${id}`;
+
+/**
+ * Slicer paint per triangle, stored densely: codes[t] = 0 for an unpainted triangle,
+ * otherwise 1 + an index into `strings` (identical paint strings are stored once).
+ */
+export interface PaintTable {
+  codes: Uint32Array;
+  strings: string[];
+}
+
+export class PaintBuilder {
+  private index = new Map<string, number>();
+  readonly strings: string[] = [];
+  private entries: number[] = [];
+  add(triangle: number, value: string) {
+    let k = this.index.get(value);
+    if (k === undefined) {
+      k = this.strings.push(value);
+      this.index.set(value, k);
+    }
+    this.entries.push(triangle, k);
+  }
+  get size() {
+    return this.entries.length / 2;
+  }
+  finish(triangles: number): PaintTable {
+    const codes = new Uint32Array(triangles);
+    for (let i = 0; i < this.entries.length; i += 2) if (this.entries[i] < triangles) codes[this.entries[i]] = this.entries[i + 1];
+    return { codes, strings: this.strings };
+  }
+}
 
 const UNSUPPORTED = new Set(['beamlattice', 'slicestack', 'sliceref', 'levelset', 'volumedata', 'displacementmesh', 'implicitfunction']);
 
@@ -72,7 +103,10 @@ function applyRootAttr(name: string, value: string, result: ScanResult) {
 function scanPart(path: string, xml: string, isRoot: boolean, result: ScanResult) {
   let objectId: number | null = null;
   let triangle = -1;
-  let paint: Map<number, string> | null = null;
+  let paint: PaintBuilder | null = null;
+  const flush = () => {
+    if (paint && objectId !== null) result.paint.set(objectKey(path, objectId), paint.finish(triangle + 1));
+  };
   let composite: { matid: number; matindices: number[]; values: number[][] } | null = null;
   let multi: { pids: number[]; pindices: number[][] } | null = null;
   let first = true;
@@ -95,13 +129,7 @@ function scanPart(path: string, xml: string, isRoot: boolean, result: ScanResult
           case 'triangle': {
             triangle++;
             const p = a.paint_color ?? a['slic3rpe:mmu_segmentation'];
-            if (p && objectId !== null) {
-              if (!paint) {
-                paint = new Map();
-                result.paint.set(objectKey(path, objectId), paint);
-              }
-              paint.set(triangle, p);
-            }
+            if (p && objectId !== null) (paint ??= new PaintBuilder()).add(triangle, p);
             break;
           }
           case 'compositematerials':
@@ -124,8 +152,11 @@ function scanPart(path: string, xml: string, isRoot: boolean, result: ScanResult
       },
       close: (tag) => {
         const n = localName(tag);
-        if (n === 'object') objectId = null;
-        else if (n === 'compositematerials') composite = null;
+        if (n === 'object') {
+          flush();
+          paint = null;
+          objectId = null;
+        } else if (n === 'compositematerials') composite = null;
         else if (n === 'multiproperties') multi = null;
       },
     },

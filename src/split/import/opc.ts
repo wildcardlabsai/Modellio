@@ -1,4 +1,5 @@
-import { strFromU8, unzipSync } from 'fflate';
+import { strFromU8 } from 'fflate';
+import { unzip } from './unzip';
 import { ThreeMFImportError, localName, walkXml } from './xml';
 
 /**
@@ -33,13 +34,14 @@ function resolveTarget(source: string, target: string): string {
   return '/' + out.join('/');
 }
 
-export function readPackage(bytes: Uint8Array): OpcPackage {
+export async function readPackage(bytes: Uint8Array): Promise<OpcPackage> {
   if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
     throw new ThreeMFImportError('This file is not a 3MF package (3MF files are ZIP archives, and this one is not).');
   }
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(bytes);
+    // Thumbnails, textures and embedded G-code are not needed: skip decompressing them.
+    entries = await unzip(bytes, (name) => !/\.(png|jpe?g|bmp|webp|gcode|svg)$/i.test(name));
   } catch (e) {
     throw new ThreeMFImportError(`The 3MF package is damaged and could not be unzipped (${(e as Error).message}).`);
   }

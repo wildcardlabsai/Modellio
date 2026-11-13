@@ -36,6 +36,18 @@ export interface ThreeMFMesh {
    */
   perTriangleMaterialIds: Uint32Array;
   bounds: { min: [number, number, number]; max: [number, number, number] };
+  /** Slicer paint (Bambu `paint_color` / Prusa `mmu_segmentation`), kept for exact splitting. */
+  paint?: { codes: Uint32Array; strings: string[] };
+  /** Render-ready buffers built in the worker (triangles ordered by material). */
+  preview?: PreviewBuffers;
+}
+
+export interface PreviewBuffers {
+  /** Non-indexed positions (9 floats per triangle), ordered by material. */
+  positions: Float32Array;
+  normals: Float32Array;
+  /** [firstTriangle, triangleCount, materialId] per run. */
+  groups: Uint32Array;
 }
 
 export type MaterialKind =

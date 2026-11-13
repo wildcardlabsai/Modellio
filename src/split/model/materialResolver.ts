@@ -254,6 +254,21 @@ export function resolveMaterials(
     return contexts[0] ?? null;
   };
 
+  // Per-triangle lookups are cached: the loop below runs once per triangle (millions on large files).
+  const propCache = new Map<number, { mat: number | null; code?: string; kind?: string }>();
+  const cachedProperty = (uid: number, pid: number) => {
+    const key = uid * 4294967296 + pid;
+    let hit = propCache.get(key);
+    if (!hit) {
+      const d = describe(uid, pid);
+      hit = d ? { mat: add(d.key, d.make), code: d.count, kind: raw.resources.get(uid)?.kind } : { mat: null };
+      propCache.set(key, hit);
+    }
+    return hit;
+  };
+  const filamentCache: number[] = [];
+  const filamentOf = (slot: number) => (filamentCache[slot] ??= filament(slot));
+
   const perTriangle = new Map<number, Uint32Array>();
   for (const mesh of raw.meshes) {
     const n = mesh.triangles.length / 3;
@@ -262,63 +277,86 @@ export function resolveMaterials(
     const ctx = vendorContext(mesh);
     const objectLevel = mesh.objectLevel ? property(mesh.objectLevel.uid, mesh.objectLevel.pid) : null;
     if (mesh.objectLevel && objectLevel === null) count('missing-material');
-    const paintCache = new Map<string, { majority: number; split: boolean; invalid?: boolean }>();
+    // Decoded once per distinct paint string.
+    const paintInfo = paint?.strings.map((str) => {
+      try {
+        const d = decodePaint(str);
+        return { majority: d.majority, split: d.split, invalid: false };
+      } catch (e) {
+        if (!(e instanceof PaintDecodeError)) throw e;
+        return { majority: 0, split: false, invalid: true };
+      }
+    });
+    const codes = paint?.codes;
+    const volumes = ctx?.obj.volumes ?? [];
+    let unassignedId = -1;
+    let nPaint = 0;
+    let nSplit = 0;
+    let nInvalid = 0;
+    let nOverSpec = 0;
+    let nMissing = 0;
+    let nGradient = 0;
+    let nUnassigned = 0;
+    const kindCounts = new Map<string, number>();
     for (let t = 0; t < n; t++) {
-      let mat: number | null = null;
+      let mat = -1;
       // 1–3: slicer assignments.
       if (ctx || paint) {
         let role: PartRole = ctx?.partRole ?? 'part';
         let extruder = ctx?.extruder;
-        const vol = ctx?.obj.volumes.find((v) => t >= v.firstTriangle && t <= v.lastTriangle);
-        if (vol) {
-          role = vol.role;
-          extruder = vol.extruder ?? ctx?.obj.extruder;
+        if (volumes.length) {
+          const vol = volumes.find((v) => t >= v.firstTriangle && t <= v.lastTriangle);
+          if (vol) {
+            role = vol.role;
+            extruder = vol.extruder ?? ctx?.obj.extruder;
+          }
         }
         if (role !== 'part') {
           mat = nonPrinting(role);
         } else {
-          const p = paint?.get(t);
+          const code = codes ? codes[t] : 0;
           let state = 0;
-          if (p) {
-            let info = paintCache.get(p);
-            if (info === undefined) {
-              try {
-                const d = decodePaint(p);
-                info = { majority: d.majority, split: d.split };
-              } catch (e) {
-                if (!(e instanceof PaintDecodeError)) throw e;
-                info = { majority: 0, split: false, invalid: true };
-              }
-              paintCache.set(p, info);
-            }
-            if (info.invalid) count('paint-invalid');
-            if (info.split) count('paint-split');
+          if (code) {
+            const info = paintInfo![code - 1];
+            if (info.invalid) nInvalid++;
+            if (info.split) nSplit++;
             state = info.majority;
-            if (state > 0) count('paint');
+            if (state > 0) nPaint++;
           }
-          if (state > 0) mat = filament(state);
-          else if (ctx) mat = filament(extruder && extruder > 0 ? extruder : 1);
+          if (state > 0) mat = filamentOf(state);
+          else if (ctx) mat = filamentOf(extruder && extruder > 0 ? extruder : 1);
         }
-        if (mat !== null && mesh.triResource[t] !== 0 && ctx) count('vendor-over-spec');
+        if (mat >= 0 && mesh.triResource[t] !== 0 && ctx) nOverSpec++;
       }
       // 4–5: 3MF properties.
-      if (mat === null) {
+      if (mat < 0) {
         const uid = mesh.triResource[t];
         if (uid !== 0) {
           const p1 = mesh.triProps[t * 3];
-          const p2 = mesh.triProps[t * 3 + 1];
-          const p3 = mesh.triProps[t * 3 + 2];
-          mat = property(uid, p1);
-          if (mat === null) count('missing-material');
-          else if ((p1 !== p2 || p1 !== p3) && raw.resources.get(uid)?.kind !== 'texture') count('gradient');
+          const hit = cachedProperty(uid, p1);
+          if (hit.mat === null) nMissing++;
+          else {
+            mat = hit.mat;
+            if (hit.code) kindCounts.set(hit.code, (kindCounts.get(hit.code) ?? 0) + 1);
+            if ((p1 !== mesh.triProps[t * 3 + 1] || p1 !== mesh.triProps[t * 3 + 2]) && hit.kind !== 'texture') nGradient++;
+          }
         } else if (objectLevel !== null) mat = objectLevel;
       }
-      if (mat === null) {
-        mat = unassigned();
-        count('unassigned');
+      if (mat < 0) {
+        if (unassignedId < 0) unassignedId = unassigned();
+        mat = unassignedId;
+        nUnassigned++;
       }
       out[t] = mat;
     }
+    if (nPaint) count('paint', nPaint);
+    if (nSplit) count('paint-split', nSplit);
+    if (nInvalid) count('paint-invalid', nInvalid);
+    if (nOverSpec) count('vendor-over-spec', nOverSpec);
+    if (nMissing) count('missing-material', nMissing);
+    if (nGradient) count('gradient', nGradient);
+    if (nUnassigned) count('unassigned', nUnassigned);
+    for (const [code, k] of kindCounts) count(code, k);
     perTriangle.set(mesh.uid, out);
   }
 
