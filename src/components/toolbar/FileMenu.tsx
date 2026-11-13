@@ -1,4 +1,4 @@
-import { FilePlus2, FolderOpen, Save, CopyPlus, FileDown, FileInput, Upload, Download, type LucideIcon } from 'lucide-react';
+import { FilePlus2, FolderOpen, Save, CopyPlus, FileDown, FileInput, Upload, Download, History, type LucideIcon } from 'lucide-react';
 import { useProjects } from '@/store/projectStore';
 import { useFileUi, openMeshPicker, openProjectPicker } from '@/components/files/fileIntake';
 import { MOD } from '@/utils/platform';
@@ -10,13 +10,14 @@ interface Item {
   shortcut?: string;
 }
 
-export function FileMenu({ onDone }: { onDone: () => void }) {
+export function FileMenu({ onDone, onVersions }: { onDone: () => void; onVersions: () => void }) {
   const p = useProjects.getState();
   const sections: Item[][] = [
     [
       { label: 'New design', Icon: FilePlus2, run: () => void p.newProject() },
       { label: 'My projects…', Icon: FolderOpen, run: () => p.setView('projects') },
-      { label: 'Save now', Icon: Save, run: () => void p.saveNow(), shortcut: `${MOD}+S` },
+      { label: 'Save now', Icon: Save, run: () => void p.saveNow({ manual: true }), shortcut: `${MOD}+S` },
+      { label: 'Version history…', Icon: History, run: onVersions },
       { label: 'Duplicate design', Icon: CopyPlus, run: () => p.current && void p.duplicate(p.current.id) },
     ],
     [

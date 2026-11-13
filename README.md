@@ -21,7 +21,9 @@ npm run dev          # http://localhost:5173
 | `npm run build` | Type-check and build for production (`dist/`) |
 | `npm run typecheck` | TypeScript only |
 | `npm test` | Unit tests (geometry, transforms, store, undo/redo) |
-| `npm run e2e` | Real-browser workflow tests (Phases 1–4). Start `npm run dev` first. Needs Playwright + Chromium. |
+| `npm run lint` / `npm run format` | ESLint (TypeScript + React hooks) / Prettier |
+| `npm run check` | Typecheck, lint, unit tests and build in one go |
+| `npm run e2e` | All real-browser workflow suites against the production build (`npm run build` first; or `E2E_URL=http://localhost:5173 npm run e2e`). Needs Playwright + Chromium. |
 
 ## Phase 1 status: foundation ✅
 
@@ -94,17 +96,63 @@ npm run dev          # http://localhost:5173
     Corrupt or unknown files are rejected with a clear message.
   - Everything is preserved: geometry, imported meshes, transforms, colours, holes, groups and combinations, text, mirror and plate size.
 
+## Refinement round ✅
+
+**Direct manipulation**
+* **Dragging:** drag objects by their body, Tinkercad-style. They slide across the plate and **stack** on whatever
+  is under them. Left-dragging an object no longer orbits the camera.
+* **Dropping:** shapes dropped onto another object **stand on that face**, aligned with it.
+* **Resize handles** (<kbd>R</kbd>): corners, edges and a top height handle. The opposite side stays put,
+  <kbd>Shift</kbd> keeps proportions, and sizes snap to the grid.
+* **Smart snapping** to neighbours' edges and centres, with pink guide lines.
+* **Selection:** <kbd>Shift</kbd>+drag box-selects, and double-click picks a part inside a combination (including holes).
+
+**3D printing**
+* **3MF export**, with millimetres, object names and colours.
+* **Lay flat** (<kbd>L</kbd>): click any face to put it on the plate.
+* **Print panel:** overhang, thin-wall, floating, below-plate and off-plate checks, with 3D highlights.
+* **Hollow (shell)** with a wall thickness and an optional open top, plus **chamfered** box edges.
+
+**Product**
+* **Templates:** six editable starter designs.
+* **Share links:** a view-only copy that lives in the link itself, and recipients can make their own copy.
+* **mm / inch** display units (designs are always stored in mm).
+* **Version history:** automatic snapshots plus every <kbd>Ctrl/⌘ S</kbd>; restoring is undoable.
+* **Tablets:** panels become drawers, and touch works for tap, drag and orbit.
+* **Optional cloud projects with Supabase:** sign in with a magic link. Projects are protected by row-level security,
+  and your browser projects can be copied to your account. See *Cloud projects* below.
+
+**Quality**
+* **Booleans in a Web Worker,** so the UI stays responsive.
+* **Smaller download:** split vendor chunks and lazy-loaded panels, dialogs and font engine (≈398 kB gzip initial).
+* **Error boundaries** with recovery and an emergency backup. Persistent storage is requested, and a full disk is handled.
+* **Accessibility:** keyboard tree navigation, a screen-reader announcer, dialog focus traps, reduced motion and
+  WCAG AA contrast. axe-core reports no serious issues.
+* **First-run guided tour** (Help → Take the tour).
+* **Engineering:** ESLint, Prettier, and GitHub Actions CI running typecheck, lint, format, unit and all browser suites.
+
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
+
+## Cloud projects (optional)
+
+Without configuration, projects are stored in the browser (IndexedDB). To enable accounts and cloud sync:
+
+1. Create a Supabase project and apply `supabase/migrations/0001_projects.sql`. It creates the `projects` table, the
+   row-level security policies and a private `projects` storage bucket.
+2. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+3. Enable email (magic link) sign-in in Supabase Auth, and add your site URL to the redirect URLs.
+
+The Supabase client is only downloaded when this is configured.
 
 ## Roadmap
 
 | Phase | Scope |
 | --- | --- |
-| Later | 3MF export (colours, multi-material), STEP via OpenCascade WASM, Supabase accounts and cloud projects |
+| Later | STEP via OpenCascade WASM, real-time collaboration, community gallery, PWA / offline install |
 | 5 – Refinement | Performance, accessibility, onboarding, polish |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the technical design.
 
 ## Tech stack
 
-React 19 · TypeScript · Vite · Three.js · React Three Fiber · drei · Manifold (WASM) · opentype.js · Zustand + Immer · Tailwind CSS v4 · Lucide · Vitest · Playwright
+React 19 · TypeScript · Vite · Three.js · React Three Fiber · drei · Manifold (WASM) · opentype.js · fflate · Zustand + Immer · Tailwind CSS v4 · Lucide · Supabase (optional) · Vitest · Playwright · axe-core · ESLint · Prettier

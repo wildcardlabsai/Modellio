@@ -4,7 +4,7 @@ import { Modal, Segmented, primaryBtn, secondaryBtn } from '@/components/ui/Moda
 import { useFileUi } from './fileIntake';
 import { useEditor } from '@/store/editorStore';
 import { isWatertight, normalizeMesh, UNIT_SCALE, type ImportUnit } from '@/cad/import/importMesh';
-import { formatMm } from '@/utils/math';
+import { formatLength } from '@/utils/units';
 
 const UNITS: { value: ImportUnit; label: string }[] = [
   { value: 'mm', label: 'mm' },
@@ -26,6 +26,7 @@ function ImportDialogInner({ item, onDone }: { item: ReturnType<typeof useFileUi
   const [unit, setUnit] = useState<ImportUnit>(parsed.suggestedUnit);
   const [up, setUp] = useState<'z' | 'y'>(parsed.suggestedUp);
   const [merge, setMerge] = useState(false);
+  const units = useEditor((st) => st.units);
   const watertight = useMemo(() => parsed.parts.map((p) => isWatertight(p.mesh)), [parsed]);
   const open = watertight.filter((w) => !w).length;
 
@@ -107,7 +108,7 @@ function ImportDialogInner({ item, onDone }: { item: ReturnType<typeof useFileUi
       <div className="mt-4 rounded-xl border border-line p-4">
         <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">Size in MODELLIO</p>
         <p className="mt-1 text-[18px] font-semibold tabular-nums text-ink" data-testid="import-size">
-          {mm.map(formatMm).join(' × ')} <span className="text-[13px] font-medium text-muted">mm</span>
+          {mm.map((v) => formatLength(v, units)).join(' × ')} <span className="text-[13px] font-medium text-muted">{units}</span>
         </p>
         {(tooBig || tooSmall) && (
           <p className="mt-1 flex items-center gap-1.5 text-[12px] text-amber-700">

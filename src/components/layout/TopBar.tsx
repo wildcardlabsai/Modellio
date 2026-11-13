@@ -1,12 +1,13 @@
 import { Box, FolderOpen, LayoutGrid, Users, Keyboard, CircleHelp, Compass } from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
+import { AccountButton } from './AccountButton';
 import { useTour } from '@/components/onboarding/Tour';
 import { useProjects } from '@/store/projectStore';
 
 const NAV = [
   { label: 'Design', Icon: Box, view: 'editor' as const },
   { label: 'My Projects', Icon: FolderOpen, view: 'projects' as const },
-  { label: 'Templates', Icon: LayoutGrid, soon: 'Coming soon' },
+  { label: 'Templates', Icon: LayoutGrid, view: 'templates' as const },
   { label: 'Community', Icon: Users, soon: 'Coming soon' },
 ];
 
@@ -14,7 +15,7 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const view = useProjects((s) => s.view);
   const setView = useProjects((s) => s.setView);
   return (
-    <header className="flex h-14 shrink-0 items-center gap-6 bg-navy px-5 text-white">
+    <header className="flex h-14 shrink-0 items-center gap-3 bg-navy px-3 text-white sm:gap-6 sm:px-5">
       <a href="/" className="flex items-center" aria-label="Modellio home">
         <img src="/logo-light.png" alt="modellio" className="h-[26px] w-auto" draggable={false} />
       </a>
@@ -29,18 +30,20 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
               disabled={!target}
               title={soon}
               aria-current={active ? 'page' : undefined}
-              className={`flex h-9 items-center gap-2 rounded-lg px-3.5 text-[14px] font-medium transition-colors ${
+              aria-label={label}
+              className={`flex h-9 items-center gap-2 rounded-lg px-2.5 text-[14px] font-medium transition-colors lg:px-3.5 ${
                 active ? 'bg-brand text-white shadow-sm' : target ? 'text-white/80 hover:bg-white/10' : 'text-white/40'
               } disabled:cursor-default`}
             >
               <Icon size={17} />
-              {label}
+              <span className="hidden lg:inline">{label}</span>
             </button>
           );
         })}
       </nav>
       <div className="flex-1" />
       <span className="hidden text-[12px] font-medium tracking-wide text-white/60 lg:block">Make anything. Shape everything.</span>
+      <AccountButton />
       <Popover
         align="right"
         trigger={({ open, toggle }) => (

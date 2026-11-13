@@ -92,6 +92,12 @@ export interface EditorState {
   lastAction: string | null;
   /** Increments on every recorded action, undo or redo (for UI feedback). */
   actionSeq: number;
+  /** Display units (documents are always millimetres). Remembered per browser. */
+  units: 'mm' | 'in';
+  setUnits: (u: 'mm' | 'in') => void;
+  /** Viewing a shared design: every edit is refused until the user makes a copy. */
+  readOnly: boolean;
+  setReadOnly: (v: boolean) => void;
   /** Short message for the UI (e.g. why an operation is unavailable). */
   notice: { text: string; seq: number } | null;
 
@@ -106,6 +112,8 @@ export interface EditorState {
   undo: () => void;
   redo: () => void;
   loadDocument: (doc: ModelDocument) => void;
+  /** Replace the whole document as one undoable step (e.g. restoring a version). */
+  replaceDocument: (doc: ModelDocument, label: string) => void;
   notify: (text: string) => void;
 
   // --- selection & modes ---
@@ -177,6 +185,14 @@ const AXIS_NAMES = ['X', 'Y', 'Z'];
 
 const validSelection = (doc: ModelDocument, ids: ObjectId[]) => ids.filter((id) => !!doc.objects[id]);
 
+let lastRefusal = 0;
+function refuseReadOnly() {
+  // At most one notice per second (a drag would otherwise flood it).
+  if (performance.now() - lastRefusal < 1000) return;
+  lastRefusal = performance.now();
+  useEditor.getState().notify('This shared design is view-only. Choose “Make a copy” to edit it.');
+}
+
 export const useEditor = create<EditorState>()((set, get) => {
   /** Shape-only mutation helper for a single object. */
   const editShape = (id: ObjectId, label: string, fn: (o: Draft<ShapeObject>) => void) =>
@@ -208,8 +224,30 @@ export const useEditor = create<EditorState>()((set, get) => {
     lastAction: null,
     actionSeq: 0,
     notice: null,
+    readOnly: false,
+    units: (() => {
+      try {
+        return localStorage.getItem('modellio:units') === 'in' ? 'in' : 'mm';
+      } catch {
+        return 'mm';
+      }
+    })(),
+    setUnits: (units) => {
+      try {
+        localStorage.setItem('modellio:units', units);
+      } catch {
+        /* not critical */
+      }
+      // Snap to a sensible step in the new unit.
+      set({ units, snap: { ...get().snap, translate: units === 'in' ? 1.5875 : 1 } });
+    },
+    setReadOnly: (readOnly) => set({ readOnly }),
 
     apply: (label, recipe) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return;
+      }
       const { doc, history, transaction } = get();
       const next = produce(doc, recipe);
       if (next === doc) return;
@@ -221,11 +259,16 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     beginTransaction: (label) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return;
+      }
       if (get().transaction) get().commitTransaction();
       set({ transaction: { label, base: get().doc } });
     },
 
     applyTransient: (recipe) => {
+      if (get().readOnly) return;
       const { doc } = get();
       const next = produce(doc, recipe);
       if (next !== doc) set({ doc: next });
@@ -280,6 +323,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       });
     },
 
+    replaceDocument: (doc, label) => {
+      if (get().readOnly) return refuseReadOnly();
+      const prev = get().doc;
+      if (prev === doc) return;
+      set({ doc, history: pushHistory(get().history, prev, label), selection: [], lastAction: label, actionSeq: get().actionSeq + 1 });
+    },
+
     loadDocument: (doc) => set({ doc, history: emptyHistory(), transaction: null, selection: [], collapsed: {} }),
     notify: (text) => set({ notice: { text, seq: (get().notice?.seq ?? 0) + 1 } }),
 
@@ -314,6 +364,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     requestFrame: () => set({ frameRequest: get().frameRequest + 1 }),
 
     addShape: (type, at, opts) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return '';
+      }
       const def = getShapeDefinition(type);
       const doc = get().doc;
       const position: Vec3 =
@@ -581,6 +635,10 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     importMeshes: (parts, opts) => {
       if (!parts.length) return [];
+      if (get().readOnly) {
+        refuseReadOnly();
+        return [];
+      }
       const doc = get().doc;
       const all = new THREE.Box3();
       const centred = parts.map((p) => {
@@ -633,6 +691,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     addText: async (content = 'Text', at) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
       try {
         await Promise.all([initKernel(), loadFont(DEFAULT_FONT)]);
       } catch (e) {

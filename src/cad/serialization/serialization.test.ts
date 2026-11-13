@@ -93,3 +93,23 @@ describe('IndexedDB repository', () => {
     expect((await repo.list()).map((m) => m.id)).toEqual(['p2']);
   });
 });
+
+describe('version history', () => {
+  it('keeps the newest versions per project, loads them back, and deletes them with the project', async () => {
+    const { VERSION_LIMIT } = await import('./repository');
+    const repo = new IndexedDbProjectRepository(new IDBFactory(), 'versions-db');
+    const p = sampleProject();
+    await repo.save(p);
+    for (let i = 0; i < VERSION_LIMIT + 5; i++) await repo.versions.save('p1', { ...p, meta: { ...p.meta, objectCount: i } }, `v${i}`);
+    await repo.versions.save('other', p, 'other project');
+    const list = await repo.versions.list('p1');
+    expect(list).toHaveLength(VERSION_LIMIT);
+    expect(list[0].label).toBe(`v${VERSION_LIMIT + 4}`); // newest first
+    const v = await repo.versions.load(list[list.length - 1].key);
+    expect(v?.document).toEqual(p.document);
+    expect(v?.assets.mesh_test.positions).toBeInstanceOf(Float32Array);
+    await repo.remove('p1');
+    expect(await repo.versions.list('p1')).toHaveLength(0);
+    expect(await repo.versions.list('other')).toHaveLength(1);
+  });
+});

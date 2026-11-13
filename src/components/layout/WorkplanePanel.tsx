@@ -2,6 +2,7 @@ import { Grid3x3, Magnet } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { NumberField } from '@/components/ui/NumberField';
 import { Toggle } from '@/components/ui/Toggle';
+import { useUnits } from '@/utils/units';
 
 /** Common build-plate sizes (mm). */
 const PRESETS: { label: string; size: [number, number] }[] = [
@@ -18,6 +19,7 @@ export function WorkplanePanel() {
   const showGrid = useEditor((s) => s.showGrid);
   const snap = useEditor((s) => s.snap);
   const { setWorkplaneSize, setShowGrid, setSnap } = useEditor.getState();
+  const u = useUnits();
 
   return (
     <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Workplane settings">
@@ -25,27 +27,29 @@ export function WorkplanePanel() {
         <h2 className="text-[15px] font-semibold text-ink">Workplane</h2>
         <p className="mt-1 text-[12px] text-muted">Match the plate to your printer's build area.</p>
 
-        <h3 className="mb-2 mt-5 text-[13px] font-semibold text-ink">Plate size (mm)</h3>
+        <h3 className="mb-2 mt-5 text-[13px] font-semibold text-ink">Plate size ({u.label})</h3>
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="W"
             labelClass="text-axis-x"
             ariaLabel="Workplane width"
-            value={size[0]}
-            min={20}
-            max={2000}
-            step={10}
-            onCommit={(v) => setWorkplaneSize([v, size[1]])}
+            value={u.toDisplay(size[0])}
+            min={u.toDisplay(20)}
+            max={u.toDisplay(2000)}
+            step={u.unit === 'in' ? 0.5 : 10}
+            decimals={u.unit === 'in' ? 2 : 0}
+            onCommit={(v) => setWorkplaneSize([u.fromDisplay(v), size[1]])}
           />
           <NumberField
             label="D"
             labelClass="text-axis-y"
             ariaLabel="Workplane depth"
-            value={size[1]}
-            min={20}
-            max={2000}
-            step={10}
-            onCommit={(v) => setWorkplaneSize([size[0], v])}
+            value={u.toDisplay(size[1])}
+            min={u.toDisplay(20)}
+            max={u.toDisplay(2000)}
+            step={u.unit === 'in' ? 0.5 : 10}
+            decimals={u.unit === 'in' ? 2 : 0}
+            onCommit={(v) => setWorkplaneSize([size[0], u.fromDisplay(v)])}
           />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-1.5">

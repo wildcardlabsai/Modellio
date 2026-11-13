@@ -1,4 +1,5 @@
 import type { ProjectData, ProjectMeta } from './project';
+import { SupabaseProjectRepository, cloudConfigured, getSupabase } from './supabaseRepository';
 
 /**
  * Storage backend for projects. The app only talks to this interface, so a
@@ -12,12 +13,31 @@ export interface ProjectRepository {
   load(id: string): Promise<ProjectData | null>;
   save(project: ProjectData): Promise<void>;
   remove(id: string): Promise<void>;
+  /** Optional version history (snapshots of earlier saves). */
+  versions?: VersionStore;
 }
+
+export interface VersionInfo {
+  key: number;
+  projectId: string;
+  savedAt: number;
+  objectCount: number;
+  label: string;
+}
+
+export interface VersionStore {
+  save(projectId: string, data: ProjectData, label: string): Promise<void>;
+  list(projectId: string): Promise<VersionInfo[]>;
+  load(key: number): Promise<ProjectData | null>;
+}
+
+/** Versions kept per project (oldest are pruned). */
+export const VERSION_LIMIT = 20;
 
 // ---------- IndexedDB ----------
 
 const DB_NAME = 'modellio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function req<T>(r: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -50,6 +70,10 @@ export class IndexedDbProjectRepository implements ProjectRepository {
         const db = open.result;
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('data')) db.createObjectStore('data');
+        if (!db.objectStoreNames.contains('versions')) {
+          const v = db.createObjectStore('versions', { keyPath: 'key', autoIncrement: true });
+          v.createIndex('byProject', 'projectId');
+        }
       };
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
@@ -84,11 +108,48 @@ export class IndexedDbProjectRepository implements ProjectRepository {
 
   async remove(id: string): Promise<void> {
     const db = await this.db;
-    const tx = db.transaction(['meta', 'data'], 'readwrite');
+    const tx = db.transaction(['meta', 'data', 'versions'], 'readwrite');
     tx.objectStore('meta').delete(id);
     tx.objectStore('data').delete(id);
+    const keys = await req(tx.objectStore('versions').index('byProject').getAllKeys(id));
+    keys.forEach((k) => tx.objectStore('versions').delete(k));
     await txDone(tx);
   }
+
+  readonly versions: VersionStore = {
+    save: async (projectId, data, label) => {
+      const db = await this.db;
+      const tx = db.transaction('versions', 'readwrite');
+      const store = tx.objectStore('versions');
+      store.add({
+        projectId,
+        savedAt: Date.now(),
+        objectCount: data.meta.objectCount,
+        label,
+        document: data.document,
+        assets: data.assets,
+        meta: data.meta,
+      });
+      // Prune: keep only the newest VERSION_LIMIT for this project.
+      const keys = (await req(store.index('byProject').getAllKeys(projectId))) as number[];
+      keys.sort((a, b) => a - b);
+      for (const k of keys.slice(0, Math.max(0, keys.length - VERSION_LIMIT))) store.delete(k);
+      await txDone(tx);
+    },
+    list: async (projectId) => {
+      const db = await this.db;
+      const all = (await req(db.transaction('versions').objectStore('versions').index('byProject').getAll(projectId))) as (VersionInfo &
+        ProjectData)[];
+      return all
+        .map(({ key, projectId: pid, savedAt, objectCount, label }) => ({ key, projectId: pid, savedAt, objectCount, label }))
+        .sort((a, b) => b.savedAt - a.savedAt || b.key - a.key);
+    },
+    load: async (key) => {
+      const db = await this.db;
+      const v = (await req(db.transaction('versions').objectStore('versions').get(key))) as (ProjectData & { savedAt: number }) | undefined;
+      return v ? { meta: v.meta, document: v.document, assets: v.assets } : null;
+    },
+  };
 }
 
 // ---------- in-memory fallback (private browsing without IndexedDB, tests) ----------
@@ -111,8 +172,17 @@ export class MemoryProjectRepository implements ProjectRepository {
   }
 }
 
-/** Pick the best available backend. */
+/** Pick the best available backend: the cloud when configured and signed in, else this browser. */
 export async function createDefaultRepository(): Promise<ProjectRepository> {
+  if (cloudConfigured()) {
+    try {
+      const sb = await getSupabase();
+      const { data } = await sb.auth.getUser();
+      if (data.user) return new SupabaseProjectRepository(sb);
+    } catch {
+      /* offline or misconfigured: fall back to local storage */
+    }
+  }
   try {
     if (typeof indexedDB === 'undefined') throw new Error('no IndexedDB');
     const repo = new IndexedDbProjectRepository();

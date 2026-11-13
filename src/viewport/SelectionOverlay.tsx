@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { Line } from '@react-three/drei';
 import { usePublishLabels, type Label } from './labels';
 import type { ModelDocument, ObjectId } from '@/types/document';
-import { formatMm } from '@/utils/math';
+import { formatLength } from '@/utils/units';
+import { useEditor } from '@/store/editorStore';
 import { groupLocalBounds, worldBoundsOf, worldMatrix } from '@/cad/hierarchy';
 
 interface Props {
@@ -45,6 +46,7 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
   const world = useMemo(() => worldBoundsOf(doc, [id]), [doc, id]);
   const isGroup = o.kind === 'group';
 
+  const units = useEditor((st) => st.units);
   // Dimension and elevation labels (world positions; offset in pixels off the edges/handles).
   const labels = useMemo<Label[] | null>(() => {
     if (!showDimensions || box.isEmpty()) return null;
@@ -56,30 +58,30 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
         key: `${id}:x`,
         position: at(c.x, box.min.y, box.min.z),
         offset: [0, 18],
-        content: <div className={`${label} bg-axis-x`}>{formatMm(size.x)}</div>,
+        content: <div className={`${label} bg-axis-x`}>{formatLength(size.x, units)}</div>,
       },
       {
         key: `${id}:y`,
         position: at(box.max.x, c.y, box.min.z),
         offset: [30, 0],
-        content: <div className={`${label} bg-axis-y`}>{formatMm(size.y)}</div>,
+        content: <div className={`${label} bg-axis-y`}>{formatLength(size.y, units)}</div>,
       },
       {
         key: `${id}:z`,
         position: at(box.max.x, box.min.y, c.z),
         offset: [30, 0],
-        content: <div className={`${label} bg-axis-z`}>{formatMm(size.z)}</div>,
+        content: <div className={`${label} bg-axis-z`}>{formatLength(size.z, units)}</div>,
       },
     ];
     if (Math.abs(world.min.z) > 0.005) {
       out.push({
         key: `${id}:elev`,
         position: [world.min.x, world.min.y, world.min.z / 2],
-        content: <div className={`${label} bg-navy/85`}>↕ {formatMm(world.min.z)}</div>,
+        content: <div className={`${label} bg-navy/85`}>↕ {formatLength(world.min.z, units)}</div>,
       });
     }
     return out;
-  }, [showDimensions, box, matrix, world, id]);
+  }, [showDimensions, box, matrix, world, id, units]);
   usePublishLabels(`sel:${id}`, labels);
 
   if (box.isEmpty()) return null;

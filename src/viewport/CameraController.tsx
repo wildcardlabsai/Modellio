@@ -76,8 +76,13 @@ export function CameraController() {
         const src = gl.domElement;
         const shot = new THREE.PerspectiveCamera(30, src.width / src.height, 0.5, 20000);
         shot.up.set(0, 0, 1);
-        const fov = THREE.MathUtils.degToRad(shot.fov);
-        const dist = (Math.max(sphere.radius, 8) / Math.sin(fov / 2)) * 1.05;
+        // Fit to the 16:10 region that is cropped out of the canvas below.
+        const cropH = Math.min(src.height, (src.width * 10) / 16);
+        const cropW = (cropH * 16) / 10;
+        const tanHalfV = Math.tan(THREE.MathUtils.degToRad(shot.fov) / 2);
+        const tanV = tanHalfV * (cropH / src.height);
+        const tanH = tanHalfV * shot.aspect * (cropW / src.width);
+        const dist = (Math.max(sphere.radius, 8) / Math.sin(Math.atan(Math.min(tanV, tanH)))) * 1.04;
         shot.position.copy(sphere.center).addScaledVector(VIEW_DIRECTIONS.home, dist);
         shot.lookAt(sphere.center);
         shot.updateMatrixWorld();

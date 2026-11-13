@@ -41,6 +41,7 @@ import { ObjectTree } from '@/components/hierarchy/ObjectTree';
 import { AlignMenu, MirrorMenu } from '@/components/toolbar/AlignMenu';
 import { MOD } from '@/utils/platform';
 import { roundTo } from '@/utils/math';
+import { useUnits } from '@/utils/units';
 
 const AXES = [
   { label: 'X', cls: 'text-axis-x' },
@@ -131,6 +132,7 @@ function Vec3Fields({
   min,
   disabled,
   name,
+  length,
 }: {
   value: Vec3;
   onCommit: (axis: 0 | 1 | 2, v: number) => void;
@@ -139,7 +141,11 @@ function Vec3Fields({
   min?: number;
   disabled?: boolean;
   name: string;
+  /** A length in mm: shown and typed in the current display unit. */
+  length?: boolean;
 }) {
+  const u = useUnits();
+  const conv = length ? u : null;
   return (
     <div className="grid grid-cols-3 gap-2">
       {AXES.map((a, i) => (
@@ -148,12 +154,12 @@ function Vec3Fields({
           label={a.label}
           labelClass={a.cls}
           ariaLabel={`${name} ${a.label}`}
-          value={value[i]}
-          step={step}
-          min={min}
-          decimals={decimals}
+          value={conv ? conv.toDisplay(value[i]) : value[i]}
+          step={conv ? conv.step : step}
+          min={min !== undefined && conv ? conv.toDisplay(min) : min}
+          decimals={conv ? conv.decimals : decimals}
           disabled={disabled}
-          onCommit={(v) => onCommit(i as 0 | 1 | 2, v)}
+          onCommit={(v) => onCommit(i as 0 | 1 | 2, conv ? conv.fromDisplay(v) : v)}
         />
       ))}
     </div>
@@ -164,6 +170,7 @@ function ObjectInspector({ object }: { object: SceneObject }) {
   const s = useEditor.getState();
   const doc = useEditor((st) => st.doc);
   const lockProportions = useEditor((st) => st.lockProportions);
+  const units = useEditor((st) => st.units);
   const [tab, setTab] = useState<'properties' | 'appearance'>('properties');
   const locked = isEffectivelyLocked(doc, object.id);
   const inheritedLock = locked && !object.locked;
@@ -254,7 +261,7 @@ function ObjectInspector({ object }: { object: SceneObject }) {
             {object.kind === 'group' && <CombineSection group={object} locked={locked} />}
             {object.kind === 'shape' && object.shape === 'text' && <TextSection object={object} locked={locked} />}
             <Section
-              title={isGroup ? 'Group size (mm)' : 'Size (mm)'}
+              title={isGroup ? `Group size (${units})` : `Size (${units})`}
               action={
                 <IconButton
                   label={
@@ -274,10 +281,10 @@ function ObjectInspector({ object }: { object: SceneObject }) {
                 </IconButton>
               }
             >
-              <Vec3Fields name="Size" value={size} step={1} min={0.01} disabled={locked} onCommit={setSizeAxis} />
+              <Vec3Fields name="Size" length value={size} step={1} min={0.01} disabled={locked} onCommit={setSizeAxis} />
             </Section>
             <Section
-              title="Position (mm)"
+              title={`Position (${units})`}
               action={
                 <span className="flex gap-0.5">
                   <IconButton
@@ -305,6 +312,7 @@ function ObjectInspector({ object }: { object: SceneObject }) {
             >
               <Vec3Fields
                 name="Position"
+                length
                 value={object.transform.position}
                 step={1}
                 disabled={locked}
@@ -390,20 +398,21 @@ function ObjectInspector({ object }: { object: SceneObject }) {
 function HollowSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
   const s = useEditor.getState();
   const wall = object.params.shell ?? 0;
+  const u = useUnits();
   return (
     <Section title="Hollow">
       <div className="grid grid-cols-[1fr_120px] items-center gap-3">
         <span className="text-[13px] text-[#344054]">Wall thickness</span>
         <NumberField
           ariaLabel="Wall thickness"
-          value={wall}
+          value={u.toDisplay(wall)}
           min={0}
-          max={500}
-          step={0.4}
-          decimals={2}
-          suffix="mm"
+          max={u.toDisplay(500)}
+          step={u.unit === 'in' ? 0.01 : 0.4}
+          decimals={u.decimals}
+          suffix={u.label}
           disabled={locked}
-          onCommit={(v) => s.setParam(object.id, 'shell', roundTo(v, 3))}
+          onCommit={(v) => s.setParam(object.id, 'shell', roundTo(u.fromDisplay(v), 3))}
         />
       </div>
       <Toggle
@@ -422,6 +431,7 @@ function HollowSection({ object, locked }: { object: ShapeObject; locked: boolea
 function ShapeParams({ object, locked }: { object: ShapeObject; locked: boolean }) {
   const def = getShapeDefinition(object.shape);
   const s = useEditor.getState();
+  const u = useUnits();
   if (!def.params.length) return null;
   return (
     <Section title={`${def.label} settings`}>
@@ -429,18 +439,32 @@ function ShapeParams({ object, locked }: { object: ShapeObject; locked: boolean 
         {def.params.map((p) => (
           <div key={p.key} className="grid grid-cols-[1fr_120px] items-center gap-3">
             <span className="text-[13px] text-[#344054]">{p.label}</span>
-            <NumberField
-              ariaLabel={p.label}
-              value={object.params[p.key] ?? def.defaultParams[p.key] ?? p.min}
-              min={p.min}
-              max={p.max}
-              step={p.step}
-              integer={p.integer}
-              decimals={p.step < 0.1 ? 2 : 1}
-              suffix={p.unit}
-              disabled={locked}
-              onCommit={(v) => s.setParam(object.id, p.key, roundTo(v, 4))}
-            />
+            {p.unit === 'mm' ? (
+              <NumberField
+                ariaLabel={p.label}
+                value={u.toDisplay(object.params[p.key] ?? def.defaultParams[p.key] ?? p.min)}
+                min={u.toDisplay(p.min)}
+                max={u.toDisplay(p.max)}
+                step={u.unit === 'in' ? 0.01 : p.step}
+                decimals={u.decimals}
+                suffix={u.label}
+                disabled={locked}
+                onCommit={(v) => s.setParam(object.id, p.key, roundTo(u.fromDisplay(v), 4))}
+              />
+            ) : (
+              <NumberField
+                ariaLabel={p.label}
+                value={object.params[p.key] ?? def.defaultParams[p.key] ?? p.min}
+                min={p.min}
+                max={p.max}
+                step={p.step}
+                integer={p.integer}
+                decimals={p.step < 0.1 ? 2 : 1}
+                suffix={p.unit}
+                disabled={locked}
+                onCommit={(v) => s.setParam(object.id, p.key, roundTo(v, 4))}
+              />
+            )}
           </div>
         ))}
       </div>

@@ -571,6 +571,147 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   await fresh.close();
 }
 
+// ===================== Product: templates, sharing, units, versions, tablets =====================
+{
+  // T: templates
+  await page.getByRole('button', { name: 'Templates' }).click();
+  await page.getByRole('heading', { name: 'Templates' }).waitFor();
+  check('T1. Templates page lists the starter designs with previews', (await page.getByTestId('template-card').count()) === 6);
+  await page.getByRole('button', { name: 'Use hex coaster' }).click();
+  await waitFor(async () => (await page.getByLabel('Project name').inputValue()) === 'Hex coaster', 10000);
+  const tpl = await state();
+  const combined = Object.values(tpl.doc.objects).find((o) => o.kind === 'group' && o.combine);
+  check(
+    'T2. Using a template opens it as a new, editable project',
+    !!combined && Object.keys(tpl.doc.objects).length === 3 && tpl.past === 0,
+  );
+  const tplResult = await waitFor(
+    () =>
+      S((id) => {
+        const r = window.modellio.computeCombined(window.modellio.store.getState().doc, id);
+        return !!r && !r.stale && !!r.mesh;
+      }, combined.id),
+    8000,
+  );
+  check('T3. The template’s combination is a valid solid', tplResult);
+
+  // S: share link → recipient
+  await page.getByRole('button', { name: 'Share' }).click();
+  const url = await page.locator('#share-url').inputValue();
+  check('S1. Share creates a link that contains the design', url.includes('#share='), `${url.length} chars`);
+  await page.keyboard.press('Escape');
+  const recipient = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+  await recipient.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
+  const rp = await recipient.newPage();
+  const rErrors = [];
+  rp.on('pageerror', (e) => rErrors.push(e.message));
+  await rp.goto(url, { waitUntil: 'networkidle' });
+  await rp.getByRole('region', { name: 'Shared design' }).waitFor();
+  const rdoc = await rp.evaluate(() => window.modellio.store.getState().doc);
+  check(
+    'S2. The recipient sees the same design, view-only',
+    JSON.stringify(rdoc) === JSON.stringify(tpl.doc) && (await rp.getByTestId('save-status').textContent()).includes('View only'),
+  );
+  await rp.evaluate(() => window.modellio.store.getState().select(window.modellio.store.getState().doc.rootIds));
+  await rp.keyboard.press('Delete');
+  check('S3. Edits are refused while viewing', (await rp.evaluate(() => window.modellio.store.getState().doc.rootIds.length)) === 1);
+  check(
+    'S3b. Viewing a shared design does not create projects',
+    (await rp.evaluate(() => window.modellio.projects.getState().projects.length)) === 0,
+  );
+  await rp.getByRole('button', { name: 'Make a copy' }).click();
+  await rp.waitForFunction(() => window.modellio.projects.getState().current?.name === 'Hex coaster (copy)');
+  await rp.evaluate(() => window.modellio.store.getState().addShape('box'));
+  check(
+    'S4. Make a copy saves it as the recipient’s own editable project',
+    (await rp.evaluate(() => window.modellio.store.getState().doc.rootIds.length)) === 2 && !rp.url().includes('#share'),
+  );
+  check('S5. No errors on the recipient side', rErrors.length === 0, rErrors.join(' | '));
+  await recipient.close();
+
+  // U: inches
+  await reset();
+  const box = await S(() => window.modellio.store.getState().addShape('box'));
+  await page.getByLabel('Units').selectOption('in');
+  check('U1. In inches, a 20 mm box reads 0.787″', (await page.getByLabel('Size X').inputValue()) === '0.787');
+  const sx = page.getByLabel('Size X');
+  await sx.click();
+  await sx.fill('1');
+  await sx.press('Enter');
+  check(
+    'U2. Typing 1 (inch) stores exactly 25.4 mm',
+    (await S((id) => window.modellio.store.getState().doc.objects[id].size[0], box)) === 25.4,
+  );
+  check('U3. Dimension labels follow the unit', await page.locator('[data-label$=":x"]').filter({ hasText: '1.000' }).isVisible());
+  check(
+    'U4. Snap presets switch to fractions of an inch',
+    (await page.getByLabel('Snap increment').locator('option').allTextContents()).includes('1/16″'),
+  );
+  await S(() => document.activeElement instanceof HTMLElement && document.activeElement.blur()); // a real click on the menu blurs the field
+  await page.getByLabel('Units').selectOption('mm');
+  check('U5. Back to mm', (await page.getByLabel('Size X').inputValue()) === '25.40');
+
+  // V: version history
+  await page.locator('body').click({ position: { x: 900, y: 860 } });
+  await S(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  await page.keyboard.press('Control+s');
+  await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
+  await S(() => window.modellio.store.getState().addShape('sphere'));
+  await page.keyboard.press('Control+s');
+  await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'File menu' }).click();
+  await page.getByRole('menuitem', { name: /Version history/ }).click();
+  await page.getByTestId('versions').waitFor();
+  const versionCount = await page.getByTestId('versions').locator('li').count();
+  check('V1. Saving records versions', versionCount >= 2, `${versionCount} versions`);
+  await page.getByTestId('versions').locator('li').last().getByRole('button', { name: 'Restore' }).click();
+  await waitFor(async () => (await state()).doc.rootIds.length === 1);
+  check('V2. Restoring an earlier version brings it back', (await state()).doc.rootIds.length === 1);
+  await page.keyboard.press('Control+z');
+  check('V3. …and restoring can be undone', (await state()).doc.rootIds.length === 2);
+  await reset();
+
+  // M: tablet (iPad portrait, touch)
+  const tablet = await browser.newContext({ ...require('playwright').devices['iPad Pro 11'] });
+  await tablet.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
+  const tp = await tablet.newPage();
+  await tp.goto(URL, { waitUntil: 'networkidle' });
+  await tp.waitForTimeout(1200);
+  const layout = await tp.evaluate(() => ({
+    w: innerWidth,
+    sw: document.documentElement.scrollWidth,
+    vp: document.querySelector('[data-testid=viewport]').getBoundingClientRect().width,
+  }));
+  check(
+    'M1. Tablet: no horizontal overflow and the 3D view gets most of the screen',
+    layout.sw <= layout.w && layout.vp > layout.w * 0.8,
+    JSON.stringify(layout),
+  );
+  await tp.getByRole('button', { name: 'Shapes' }).first().tap();
+  check('M2. Tapping the rail opens the shape drawer', await tp.getByTestId('left-panel').isVisible());
+  await tp.locator('button[title^="Add Box "]').tap();
+  await tp.waitForTimeout(400);
+  check(
+    'M3. Tapping a shape adds it and closes the drawer',
+    (await tp.evaluate(() => window.modellio.store.getState().doc.rootIds.length)) === 1 &&
+      (await tp.getByTestId('left-panel').count()) === 0,
+  );
+  await tp.evaluate(() => window.modellio.store.getState().clearSelection());
+  const p = await tp.evaluate(() => {
+    const s = window.modellio.store.getState();
+    const o = s.doc.objects[s.doc.rootIds[0]];
+    return window.modellio.worldToScreen(o.transform.position[0], o.transform.position[1] - 9, o.transform.position[2]);
+  });
+  await tp.touchscreen.tap(p.x, p.y);
+  await tp.waitForTimeout(300);
+  check('M4. Tapping an object selects it', (await tp.evaluate(() => window.modellio.store.getState().selection.length)) === 1);
+  await tp.getByRole('button', { name: 'Properties panel' }).tap();
+  check('M5. The properties drawer opens on demand', await tp.getByTestId('inspector-panel').isVisible());
+  await tp.screenshot({ path: `${OUT}/p5-06-tablet.png` });
+  await tablet.close();
+}
+
 // @@SECTIONS@@
 
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));

@@ -24,6 +24,19 @@ export function ProjectsPage() {
   const current = useProjects((s) => s.current);
   const error = useProjects((s) => s.error);
   const storage = useProjects((s) => s.storage);
+  const repoKind = useProjects((s) => s.repo?.kind);
+  /** One-off upload of the projects stored in this browser into the signed-in account. */
+  const copyLocalToCloud = async () => {
+    const { IndexedDbProjectRepository } = await import('@/cad/serialization/repository');
+    const local = new IndexedDbProjectRepository();
+    const repo = useProjects.getState().repo;
+    if (!repo) return;
+    for (const m of await local.list()) {
+      const data = await local.load(m.id);
+      if (data) await repo.save(data);
+    }
+    await useProjects.getState().refresh();
+  };
   const p = useProjects.getState();
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
@@ -54,7 +67,15 @@ export function ProjectsPage() {
             </button>
           </div>
         </div>
-        {storage && (
+        {repoKind === 'cloud' && (
+          <p className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-muted">
+            Projects are saved to your account.
+            <button type="button" onClick={() => void copyLocalToCloud()} className="font-semibold text-brand hover:underline">
+              Copy projects from this browser
+            </button>
+          </p>
+        )}
+        {storage && repoKind !== 'cloud' && (
           <p className="mt-3 text-[12px] text-muted" data-testid="storage-info">
             Using {(storage.usage / 1048576).toFixed(1)} MB of browser storage
             {storage.quota ? ` (of ${(storage.quota / 1073741824).toFixed(1)} GB available)` : ''} ·{' '}

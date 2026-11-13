@@ -9,7 +9,7 @@ import { writeAsciiStl, writeBinaryStl, writeObj, type UpAxis } from '@/cad/expo
 import { write3mf } from '@/cad/export/threemf';
 import { topLevel } from '@/cad/hierarchy';
 import { downloadBlob, safeFileName } from '@/utils/download';
-import { formatMm } from '@/utils/math';
+import { formatLength } from '@/utils/units';
 import { useCadReady } from '@/viewport/cadReady';
 
 type Format = 'stl' | 'stl-ascii' | '3mf' | 'obj';
@@ -26,6 +26,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
   const version = useCadReady((s) => s.version);
   const projectName = useProjects((s) => s.current?.name ?? 'modellio');
   const [format, setFormat] = useState<Format>('stl');
+  const units = useEditor((s) => s.units);
   const [scope, setScope] = useState<'all' | 'selection'>(selection.length ? 'selection' : 'all');
   const [up, setUp] = useState<UpAxis>('z');
   const [withMtl, setWithMtl] = useState(false);
@@ -142,7 +143,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
             </p>
             {size && (
               <p className="mt-1 text-[13px] tabular-nums text-muted">
-                Overall size {formatMm(size.x)} × {formatMm(size.y)} × {formatMm(size.z)} mm
+                Overall size {formatLength(size.x, units)} × {formatLength(size.y, units)} × {formatLength(size.z, units)} {units}
               </p>
             )}
             <p className={`mt-2 flex items-start gap-1.5 text-[12px] ${leaky.length ? 'text-amber-700' : 'text-emerald-700'}`}>
@@ -178,7 +179,8 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
         )}
       </div>
       <p className="mt-3 text-[11px] text-muted">
-        Units: millimetres. Positions are exported as placed; your slicer will centre the model on its bed.
+        Files are written in millimetres (the standard for 3D printing), whatever the display unit. Positions are exported as placed; your
+        slicer will centre the model on its bed.
       </p>
     </Modal>
   );

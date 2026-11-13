@@ -2,7 +2,7 @@
   "name": "modellio",
   "private": true,
   "version": "0.1.0",
-  "description": "MODELLIO \u2014 Make anything. Shape everything. A browser-based 3D CAD modeller.",
+  "description": "MODELLIO — Make anything. Shape everything. A browser-based 3D CAD modeller.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,6 +26,7 @@
     "@fontsource/space-mono": "^5.3.0",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
+    "@supabase/supabase-js": "^2.119.0",
     "fflate": "^0.8.3",
     "immer": "^11.2.10",
     "lucide-react": "^1.72.0",

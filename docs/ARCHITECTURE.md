@@ -238,6 +238,73 @@ and an auth gate would be added.
 * **STEP:** a B-rep exchange format, which needs a B-rep kernel such as OpenCascade.js (WASM) to tessellate on import.
   Exporting STEP from meshes is not meaningful, so it would require keeping parametric primitives as B-rep.
 
+## Refinement round
+
+### Interaction
+
+* **Surface drag** (`viewport/surfaceDrag.ts`): pressing an object disables orbiting. Movement is 1:1 on a horizontal
+  plane at the grab height. Z is the highest surface under the object's footprint, found by casting rays straight down
+  at its centre and four inset points. X/Y snap to the grid and then to neighbours (`cad/snapping.ts`, pure and tested).
+  The whole drag is one transaction.
+* **Resize handles** (`viewport/ResizeHandles.tsx`): `resizeBox()` is pure and tested. Shapes get a new `size` plus a
+  centre shift. Groups go through `scaleGroupDraft`, then the pivot is placed at the new centre. Handles are
+  screen-constant in size and share one edges geometry.
+* **Labels** (`viewport/labels.tsx`): one DOM layer in the main React tree, positioned each frame by a projector inside
+  the canvas that writes transforms directly. This replaced drei `<Html>`, whose per-label React roots raced under
+  React 19 (`removeChild` errors) and blocked pointer events.
+* **Exact bounds:** shapes and Boolean results at non-axis-aligned rotations are bounded by their real vertices (cached),
+  not their rotated boxes. Otherwise drop, lay-flat, align and stacking would land on an empty bounding-box corner.
+
+### Printing
+
+* `export/threemf.ts`: a 3MF package (zip via fflate) with `unit="millimeter"`, names and `basematerials` colours.
+* `analysis/printability.ts`: overhangs (face normals beyond the angle, excluding bed contact), thin walls (inward
+  ray casts from sampled triangles), and floating, below-plate or off-plate checks. Pure and tested; results are highlighted by `PrintOverlay`.
+* **Shell** (`buildShellMesh`): the primitive minus an inset copy, through the kernel. An open top overshoots by 1 mm to avoid
+  coplanar faces. The wall is exact on flat sides and approximate on curved or sloped shapes, and the UI says so.
+* **Chamfer:** the convex hull of three boxes, each inset on two axes.
+
+### Performance
+
+* **Boolean worker:** `kernel/booleanCore.ts` is shared by the main thread and `boolean.worker.ts`. The main thread
+  prepares a self-contained job (parts in the group frame, with buffers transferred), the worker evaluates it, and results
+  go into the same cache. While a result is pending the previous one stays visible (`stale`). Flatten and export never
+  use stale results. If the worker fails, evaluation falls back to the main thread.
+* **Code splitting:** vendor groups (react / three / r3f) through rolldown `codeSplitting`. Dialogs, the projects and
+  templates pages, secondary panels, STL/OBJ parsers, opentype.js and supabase-js are lazy-loaded.
+
+### Accessibility
+
+The object tree follows the WAI-ARIA tree pattern with a roving tab stop. Other measures:
+* an always-mounted live region (`Announcer`);
+* modal focus traps that restore focus when closed;
+* a described 3D region;
+* `prefers-reduced-motion` support;
+* axis colours darkened for text to meet AA contrast.
+
+The e2e suite runs axe-core on the editor, dialogs, projects page and tour.
+
+### Sharing, units, versions, cloud
+
+* **Share links** (`serialization/share.ts`): the `.modellio` JSON is deflated and base64url-encoded into `#share=…`.
+  Fragments never reach a server. Opening a link shows the design read-only (`readOnly` refuses every `apply`, and
+  autosave is off) until "Make a copy" imports it as a project.
+* **Units** (`utils/units.ts`): display-only conversion. Documents and exported files are always in mm.
+* **Versions:** the IndexedDB repository has a `versions` store (DB v2, indexed by project). A version is recorded
+  on Ctrl+S and at most every 5 minutes during autosave; each project keeps its newest 20, and they're deleted with
+  the project. Restoring goes through `replaceDocument`, so it is undoable, and the current state is versioned first.
+* **Cloud:** `SupabaseProjectRepository` implements `ProjectRepository`. It stores the metadata row and the project
+  file at `<uid>/<id>.modellio`. It is chosen when configured and signed in, and tested against a fake client.
+  **Not yet exercised against a live Supabase project.** Version history is local-only for now.
+
+### Reliability and process
+
+* **Error boundaries:** inside the canvas, scene crashes keep the WebGL context and show "Restart 3D view".
+  An app-level fallback offers an emergency `.modellio` backup and a reload.
+* **Storage:** `navigator.storage.persist()` is requested, and a `QuotaExceededError` gives clear guidance.
+* **CI** (`.github/workflows/ci.yml`): typecheck, ESLint, Prettier, Vitest, build, and every `scripts/e2e-*.mjs`
+  suite against `vite preview` (`scripts/run-e2e.mjs`).
+
 ## State, history and transactions
 
 * Documents are immutable (Immer, auto-frozen) and **structurally shared**.
@@ -290,6 +357,3 @@ and an auth gate would be added.
 * **Persistence (Phase 4):** the document is plain JSON with `schemaVersion`. A
   `ProjectRepository` interface (IndexedDB now, Supabase later) will sit in
   `src/cad/serialization`.
-* **Performance (Phase 5):** Boolean evaluation runs on the main thread. It is cached and typically takes milliseconds,
-  but very large text or imported meshes would benefit from moving `computeCombined` to a Web Worker; the
-  function is already pure (document in, `MeshData` out).

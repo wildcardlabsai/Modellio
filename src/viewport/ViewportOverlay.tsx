@@ -4,6 +4,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { VIEW_DIRECTIONS, viewport, type ViewName } from './viewportBridge';
 import type { TransformMode } from '@/types/document';
 import { useEffect, useState } from 'react';
+import { SNAP_PRESETS, formatLength } from '@/utils/units';
 
 const TOOLS: { mode: TransformMode; label: string; key: string; Icon: typeof Move }[] = [
   { mode: 'translate', label: 'Move', key: 'W', Icon: Move },
@@ -20,8 +21,6 @@ const VIEWS: { view: ViewName; label: string }[] = [
   { view: 'bottom', label: 'Bottom' },
 ];
 
-const SNAP_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
-
 /** DOM controls floating over the 3D canvas. */
 export function ViewportOverlay() {
   const mode = useEditor((s) => s.mode);
@@ -34,6 +33,14 @@ export function ViewportOverlay() {
   const actionSeq = useEditor((s) => s.actionSeq);
   const isEmpty = useEditor((s) => s.doc.rootIds.length === 0);
   const [viewsOpen, setViewsOpen] = useState(false);
+  const units = useEditor((s) => s.units);
+  const setUnits = useEditor((s) => s.setUnits);
+  // Presets for the current unit, plus the current value if it isn't one of them (set in the Workplane panel).
+  const snapOptions = SNAP_PRESETS[units].some((o) => Math.abs(o.mm - snap.translate) < 1e-6)
+    ? SNAP_PRESETS[units]
+    : [...SNAP_PRESETS[units], { label: `${formatLength(snap.translate, units)} ${units}`, mm: snap.translate }].sort(
+        (a, b) => a.mm - b.mm,
+      );
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
   const measureCount = useEditor((s) => s.measurePoints.length);
@@ -92,12 +99,18 @@ export function ViewportOverlay() {
 
       {/* Units + snapping */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2">
-        <div
-          className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold text-ink shadow-panel"
-          title="Units: millimetres"
-        >
-          mm
-        </div>
+        <label className="flex h-9 items-center rounded-lg border border-line bg-white px-2 text-[13px] font-semibold text-ink shadow-panel">
+          <span className="sr-only">Units</span>
+          <select
+            aria-label="Units"
+            value={units}
+            onChange={(e) => setUnits(e.target.value as 'mm' | 'in')}
+            className="bg-transparent outline-none"
+          >
+            <option value="mm">mm</option>
+            <option value="in">inch</option>
+          </select>
+        </label>
         <div className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white pl-1 pr-2 text-[13px] text-ink shadow-panel">
           <IconButton
             label={snap.enabled ? 'Snapping on' : 'Snapping off'}
@@ -116,13 +129,11 @@ export function ViewportOverlay() {
             onChange={(e) => setSnap({ translate: Number(e.target.value) })}
             className="bg-transparent font-medium tabular-nums outline-none disabled:opacity-40"
           >
-            {[...new Set([...SNAP_STEPS, snap.translate])]
-              .sort((a, b) => a - b)
-              .map((s) => (
-                <option key={s} value={s}>
-                  {s} mm
-                </option>
-              ))}
+            {snapOptions.map((o) => (
+              <option key={o.mm} value={o.mm}>
+                {o.label}
+              </option>
+            ))}
           </select>
           <span className="ml-1 text-muted">·</span>
           <select

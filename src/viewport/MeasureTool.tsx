@@ -5,7 +5,8 @@ import { Line } from '@react-three/drei';
 import { usePublishLabels, type Label } from './labels';
 import { useEditor } from '@/store/editorStore';
 import type { Vec3 } from '@/types/document';
-import { formatMm, roundTo } from '@/utils/math';
+import { roundTo } from '@/utils/math';
+import { formatLength } from '@/utils/units';
 
 const SNAP_PX = 10;
 
@@ -17,6 +18,7 @@ const SNAP_PX = 10;
 export function MeasureTool() {
   const tool = useEditor((s) => s.tool);
   const points = useEditor((s) => s.measurePoints);
+  const units = useEditor((s) => s.units);
   const { camera, gl, scene, invalidate } = useThree();
 
   useEffect(() => {
@@ -88,18 +90,20 @@ export function MeasureTool() {
               position: info.mid.toArray() as [number, number, number],
               content: (
                 <div className="rounded-lg bg-navy px-2.5 py-1.5 text-center text-white shadow-float" data-testid="measure-label">
-                  <div className="text-[14px] font-bold tabular-nums">{formatMm(info.d.length())} mm</div>
+                  <div className="text-[14px] font-bold tabular-nums">
+                    {formatLength(info.d.length(), units)} {units}
+                  </div>
                   <div className="mt-0.5 flex gap-2 text-[11px] font-medium tabular-nums">
-                    <span className="text-[#ff8a8d]">ΔX {formatMm(Math.abs(info.d.x))}</span>
-                    <span className="text-[#6ee7a8]">ΔY {formatMm(Math.abs(info.d.y))}</span>
-                    <span className="text-[#93b4ff]">ΔZ {formatMm(Math.abs(info.d.z))}</span>
+                    <span className="text-[#ff8a8d]">ΔX {formatLength(Math.abs(info.d.x), units)}</span>
+                    <span className="text-[#6ee7a8]">ΔY {formatLength(Math.abs(info.d.y), units)}</span>
+                    <span className="text-[#93b4ff]">ΔZ {formatLength(Math.abs(info.d.z), units)}</span>
                   </div>
                 </div>
               ),
             },
           ]
         : null,
-    [tool, info],
+    [tool, info, units],
   );
   usePublishLabels('measure', labels);
 

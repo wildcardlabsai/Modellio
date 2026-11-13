@@ -12,6 +12,7 @@ const ShortcutsDialog = lazy(() => import('@/components/layout/ShortcutsDialog')
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { CadResources } from '@/viewport/cadReady';
 import { useProjects } from '@/store/projectStore';
+const TemplatesPage = lazy(() => import('@/components/projects/TemplatesPage').then((m) => ({ default: m.TemplatesPage })));
 const ProjectsPage = lazy(() => import('@/components/projects/ProjectsPage').then((m) => ({ default: m.ProjectsPage })));
 const ImportDialog = lazy(() => import('@/components/files/ImportDialog').then((m) => ({ default: m.ImportDialog })));
 const ExportDialog = lazy(() => import('@/components/files/ExportDialog').then((m) => ({ default: m.ExportDialog })));
@@ -21,6 +22,10 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ViewportCrash } from '@/components/layout/CrashScreens';
 import { useDebug } from '@/utils/debug';
 import { Announcer } from '@/components/ui/Announcer';
+import { useLayout, useResponsiveLayout } from '@/hooks/useLayout';
+import { SmallScreenNotice } from '@/components/layout/SmallScreenNotice';
+import { SharedBanner } from '@/components/layout/SharedBanner';
+import { TEMPLATES } from '@/templates/templates';
 import { Tour, useFirstRunTour } from '@/components/onboarding/Tour';
 import { useGuides } from '@/viewport/guides';
 import { useEditor } from '@/store/editorStore';
@@ -32,6 +37,21 @@ export function App() {
   useKeyboardShortcuts();
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [panel, setPanel] = useState<LeftPanel>('shapes');
+  useResponsiveLayout();
+  const compact = useLayout((st) => st.compact);
+  const leftOpen = useLayout((st) => st.leftOpen);
+  const inspectorOpen = useLayout((st) => st.inspectorOpen);
+  /** Rail click: switch panel; on compact screens it also opens/closes the drawer. */
+  const choosePanel = (p: LeftPanel) => {
+    const { compact: c, leftOpen: open, setLeftOpen } = useLayout.getState();
+    if (c) setLeftOpen(!(open && p === panel));
+    setPanel(p);
+  };
+  // On compact screens, close the shape drawer once something is added so the result is visible.
+  const objectCount = useEditor((st) => st.doc.rootIds.length);
+  useEffect(() => {
+    if (useLayout.getState().compact) useLayout.getState().setLeftOpen(false);
+  }, [objectCount]);
 
   // Expose the store for debugging and automated workflow tests.
   useEffect(() => {
@@ -45,6 +65,7 @@ export function App() {
       debug: useDebug,
       guides: useGuides,
       booleanStats,
+      templates: TEMPLATES,
     };
   }, []);
 
@@ -87,19 +108,26 @@ export function App() {
     <div className="flex h-full flex-col">
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <Toolbar />
+      <SharedBanner />
+      <SmallScreenNotice />
       <div className="relative flex min-h-0 flex-1">
-        <LeftRail panel={panel} onChange={setPanel} />
-        <Suspense fallback={<PanelLoading />}>
-          {panel === 'shapes' ? (
-            <ShapeLibrary />
-          ) : panel === 'text' ? (
-            <TextPanel />
-          ) : panel === 'print' ? (
-            <PrintPanel />
-          ) : (
-            <WorkplanePanel />
-          )}
-        </Suspense>
+        <LeftRail panel={panel} onChange={choosePanel} />
+        {/* On compact screens the panel is a drawer over the 3D view. */}
+        {(!compact || leftOpen) && (
+          <div className={compact ? 'absolute bottom-0 left-[76px] top-0 z-30 flex shadow-float' : 'contents'} data-testid="left-panel">
+            <Suspense fallback={<PanelLoading />}>
+              {panel === 'shapes' ? (
+                <ShapeLibrary />
+              ) : panel === 'text' ? (
+                <TextPanel />
+              ) : panel === 'print' ? (
+                <PrintPanel />
+              ) : (
+                <WorkplanePanel />
+              )}
+            </Suspense>
+          </div>
+        )}
         <main className="relative min-w-0 flex-1">
           <ErrorBoundary
             fallback={(error, reset) => (
@@ -115,11 +143,20 @@ export function App() {
             <Viewport />
           </ErrorBoundary>
         </main>
-        <Inspector />
+        {(!compact || inspectorOpen) && (
+          <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">
+            <Inspector />
+          </div>
+        )}
         {/* The editor stays mounted (keeps the WebGL context) while the projects page is shown. */}
         {view === 'projects' && (
           <Suspense fallback={null}>
             <ProjectsPage />
+          </Suspense>
+        )}
+        {view === 'templates' && (
+          <Suspense fallback={null}>
+            <TemplatesPage />
           </Suspense>
         )}
       </div>

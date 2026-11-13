@@ -19,6 +19,10 @@ import {
   ChevronDown,
   Menu,
 } from 'lucide-react';
+import { Share2, PanelRight } from 'lucide-react';
+import { useLayout } from '@/hooks/useLayout';
+import { ShareDialog } from '@/components/files/ShareDialog';
+import { VersionsDialog } from '@/components/projects/VersionsDialog';
 import { Popover } from '@/components/ui/Popover';
 import { AlignMenu, MirrorMenu } from './AlignMenu';
 import { CombineMenu } from './CombineMenu';
@@ -38,7 +42,11 @@ export function Toolbar() {
   const hasGroup = useEditor((s) => s.selection.some((id) => s.doc.objects[id]?.kind === 'group'));
   const objectCount = useEditor((s) => Object.keys(s.doc.objects).length);
   const { undo, redo, duplicateSelected, deleteSelected, groupSelected, ungroupSelected } = useEditor.getState();
-  const projectName = useProjects((s) => s.current?.name ?? 'Untitled design');
+  const projectName = useProjects((s) => s.current?.name ?? s.shared?.meta.name ?? 'Untitled design');
+  const [shareOpen, setShareOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const compact = useLayout((st) => st.compact);
+  const inspectorOpen = useLayout((st) => st.inspectorOpen);
   const [name, setName] = useState(projectName);
   useEffect(() => setName(projectName), [projectName]);
   const commitName = () => {
@@ -48,7 +56,7 @@ export function Toolbar() {
   };
 
   return (
-    <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-line bg-white px-3">
+    <div className="scrollbar-thin flex h-[52px] shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line bg-white px-3">
       <Popover
         trigger={({ open, toggle }) => (
           <IconButton label="File menu" active={open} onClick={toggle}>
@@ -56,7 +64,7 @@ export function Toolbar() {
           </IconButton>
         )}
       >
-        {(close) => <FileMenu onDone={close} />}
+        {(close) => <FileMenu onDone={close} onVersions={() => setVersionsOpen(true)} />}
       </Popover>
       <label className="group flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-canvas">
         <input
@@ -71,7 +79,7 @@ export function Toolbar() {
         <Pencil size={14} className="text-muted" />
       </label>
       <SaveStatus />
-      <span className="ml-2 hidden text-[12px] text-muted md:inline">
+      <span className="ml-2 hidden whitespace-nowrap text-[12px] text-muted md:inline">
         {objectCount} object{objectCount === 1 ? '' : 's'}
       </span>
       <Divider />
@@ -136,6 +144,20 @@ export function Toolbar() {
         <Upload size={17} />
         <span className="hidden lg:inline">Import</span>
       </IconButton>
+      {compact && (
+        <IconButton label="Properties panel" active={inspectorOpen} onClick={() => useLayout.getState().setInspectorOpen(!inspectorOpen)}>
+          <PanelRight size={18} />
+        </IconButton>
+      )}
+      <button
+        type="button"
+        onClick={() => setShareOpen(true)}
+        className="ml-1 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-[#344054] hover:bg-canvas"
+      >
+        <Share2 size={16} /> <span className="hidden lg:inline">Share</span>
+      </button>
+      {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
+      {versionsOpen && <VersionsDialog onClose={() => setVersionsOpen(false)} />}
       <button
         type="button"
         onClick={() => useFileUi.getState().setExportOpen(true)}

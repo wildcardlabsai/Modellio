@@ -26,7 +26,7 @@ export function useKeyboardShortcuts() {
 
       if (mod && key === 's') {
         e.preventDefault();
-        void useProjects.getState().saveNow();
+        void useProjects.getState().saveNow({ manual: true });
         return;
       }
       if (mod && key === 'e') {
