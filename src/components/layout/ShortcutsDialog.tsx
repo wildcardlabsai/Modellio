@@ -70,7 +70,9 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
                 {g.items.map(([label, keys]) => (
                   <li key={label} className="flex items-center justify-between gap-2 text-[13px] text-[#344054]">
                     {label}
-                    <kbd className="whitespace-nowrap rounded-md border border-line bg-canvas px-1.5 py-0.5 font-sans text-[11px] font-medium text-ink">{keys}</kbd>
+                    <kbd className="whitespace-nowrap rounded-md border border-line bg-canvas px-1.5 py-0.5 font-sans text-[11px] font-medium text-ink">
+                      {keys}
+                    </kbd>
                   </li>
                 ))}
               </ul>

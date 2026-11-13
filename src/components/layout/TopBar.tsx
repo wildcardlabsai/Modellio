@@ -20,20 +20,20 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
         {NAV.map(({ label, Icon, view: target, soon }) => {
           const active = target === view;
           return (
-          <button
-            key={label}
-            type="button"
-            onClick={() => target && setView(target)}
-            disabled={!target}
-            title={soon}
-            aria-current={active ? 'page' : undefined}
-            className={`flex h-9 items-center gap-2 rounded-lg px-3.5 text-[14px] font-medium transition-colors ${
-              active ? 'bg-brand text-white shadow-sm' : target ? 'text-white/80 hover:bg-white/10' : 'text-white/40'
-            } disabled:cursor-default`}
-          >
-            <Icon size={17} />
-            {label}
-          </button>
+            <button
+              key={label}
+              type="button"
+              onClick={() => target && setView(target)}
+              disabled={!target}
+              title={soon}
+              aria-current={active ? 'page' : undefined}
+              className={`flex h-9 items-center gap-2 rounded-lg px-3.5 text-[14px] font-medium transition-colors ${
+                active ? 'bg-brand text-white shadow-sm' : target ? 'text-white/80 hover:bg-white/10' : 'text-white/40'
+              } disabled:cursor-default`}
+            >
+              <Icon size={17} />
+              {label}
+            </button>
           );
         })}
       </nav>

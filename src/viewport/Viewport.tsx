@@ -1,4 +1,4 @@
-import { Suspense, useState, type DragEvent } from 'react';
+import { Suspense, useEffect, useState, type DragEvent } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useEditor } from '@/store/editorStore';
@@ -14,6 +14,15 @@ import { VIEW_DIRECTIONS, gizmoRecentlyUsed, screenToWorkplane } from './viewpor
 import { snapTo } from '@/utils/math';
 import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
+import { CrashProbe, useDebug } from '@/utils/debug';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { ViewportCrash } from '@/components/layout/CrashScreens';
+
+/** Renders nothing in the scene; reports the crash to the DOM layer. */
+function ReportCrash({ error, onCrash }: { error: Error; onCrash: (e: Error) => void }) {
+  useEffect(() => onCrash(error), [error, onCrash]);
+  return null;
+}
 import { handleFiles } from '@/components/files/fileIntake';
 
 export const SHAPE_DRAG_MIME = 'application/x-modellio-shape';
@@ -65,6 +74,8 @@ export function Viewport() {
   const workplane = useEditor((s) => s.doc.settings.workplane);
   const showGrid = useEditor((s) => s.showGrid);
   const [dragOver, setDragOver] = useState(false);
+  const [sceneError, setSceneError] = useState<Error | null>(null);
+  const [sceneKey, setSceneKey] = useState(0);
   const home = VIEW_DIRECTIONS.home.clone().multiplyScalar(240);
 
   const onDragOver = (e: DragEvent) => {
@@ -124,19 +135,40 @@ export function Viewport() {
         <color attach="background" args={['#f5f7fb']} />
         <fog attach="fog" args={['#f5f7fb', 1200, 4000]} />
         <Lights />
-        <Workplane size={workplane} showGrid={showGrid} />
-        <Suspense fallback={null}>
-          <SceneObjects />
-        </Suspense>
-        <TransformGizmo />
         <CameraController />
-        <ViewCube />
-        <MeasureTool />
+        {/*
+          Scene crashes are caught INSIDE the canvas, so the WebGL context and the
+          canvas element survive; a DOM panel is shown over it until "Restart".
+        */}
+        <ErrorBoundary key={sceneKey} fallback={(error) => <ReportCrash error={error} onCrash={setSceneError} />}>
+          <Workplane size={workplane} showGrid={showGrid} />
+          <Suspense fallback={null}>
+            <SceneObjects />
+          </Suspense>
+          <TransformGizmo />
+          <ViewCube />
+          <MeasureTool />
+          <CrashProbe />
+        </ErrorBoundary>
       </Canvas>
       <ViewportOverlay />
+      {sceneError && (
+        <div className="absolute inset-0 z-10">
+          <ViewportCrash
+            error={sceneError}
+            reset={() => {
+              useDebug.setState({ crashViewport: false });
+              setSceneError(null);
+              setSceneKey((k) => k + 1);
+            }}
+          />
+        </div>
+      )}
       {dragOver && (
         <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5">
-          <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[13px] font-medium text-brand shadow-panel">Drop to add · STL, OBJ or .modellio files</span>
+          <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[13px] font-medium text-brand shadow-panel">
+            Drop to add · STL, OBJ or .modellio files
+          </span>
         </div>
       )}
     </div>

@@ -27,8 +27,26 @@ export function WorkplanePanel() {
 
         <h3 className="mb-2 mt-5 text-[13px] font-semibold text-ink">Plate size (mm)</h3>
         <div className="grid grid-cols-2 gap-2">
-          <NumberField label="W" labelClass="text-axis-x" ariaLabel="Workplane width" value={size[0]} min={20} max={2000} step={10} onCommit={(v) => setWorkplaneSize([v, size[1]])} />
-          <NumberField label="D" labelClass="text-axis-y" ariaLabel="Workplane depth" value={size[1]} min={20} max={2000} step={10} onCommit={(v) => setWorkplaneSize([size[0], v])} />
+          <NumberField
+            label="W"
+            labelClass="text-axis-x"
+            ariaLabel="Workplane width"
+            value={size[0]}
+            min={20}
+            max={2000}
+            step={10}
+            onCommit={(v) => setWorkplaneSize([v, size[1]])}
+          />
+          <NumberField
+            label="D"
+            labelClass="text-axis-y"
+            ariaLabel="Workplane depth"
+            value={size[1]}
+            min={20}
+            max={2000}
+            step={10}
+            onCommit={(v) => setWorkplaneSize([size[0], v])}
+          />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-1.5">
           {PRESETS.map((p) => {
@@ -52,12 +70,36 @@ export function WorkplanePanel() {
         <Toggle label="Show grid" icon={<Grid3x3 size={15} className="text-muted" />} checked={showGrid} onChange={setShowGrid} />
 
         <h3 className="mb-1 mt-4 text-[13px] font-semibold text-ink">Snapping</h3>
-        <Toggle label="Snap to grid" icon={<Magnet size={15} className="text-muted" />} checked={snap.enabled} onChange={(v) => setSnap({ enabled: v })} />
+        <Toggle
+          label="Snap to grid"
+          icon={<Magnet size={15} className="text-muted" />}
+          checked={snap.enabled}
+          onChange={(v) => setSnap({ enabled: v })}
+        />
         <div className="mt-2 grid grid-cols-[1fr_110px] items-center gap-2">
           <span className="text-[13px] text-[#344054]">Move step</span>
-          <NumberField ariaLabel="Move snap step" value={snap.translate} min={0.01} max={100} step={0.5} suffix="mm" disabled={!snap.enabled} onCommit={(v) => setSnap({ translate: v })} />
+          <NumberField
+            ariaLabel="Move snap step"
+            value={snap.translate}
+            min={0.01}
+            max={100}
+            step={0.5}
+            suffix="mm"
+            disabled={!snap.enabled}
+            onCommit={(v) => setSnap({ translate: v })}
+          />
           <span className="text-[13px] text-[#344054]">Rotate step</span>
-          <NumberField ariaLabel="Rotate snap step" value={snap.rotate} min={0.1} max={180} step={5} decimals={1} suffix="°" disabled={!snap.enabled} onCommit={(v) => setSnap({ rotate: v })} />
+          <NumberField
+            ariaLabel="Rotate snap step"
+            value={snap.rotate}
+            min={0.1}
+            max={180}
+            step={5}
+            decimals={1}
+            suffix="°"
+            disabled={!snap.enabled}
+            onCommit={(v) => setSnap({ rotate: v })}
+          />
         </div>
       </div>
     </aside>

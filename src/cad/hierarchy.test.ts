@@ -34,8 +34,7 @@ function docWith(...specs: { type?: ShapeObject['shape']; pos: Vec3; rot?: Vec3;
 }
 
 const worldPos = (doc: ModelDocument, id: ObjectId) => new THREE.Vector3().setFromMatrixPosition(worldMatrix(doc, id));
-const expectMatrixClose = (a: THREE.Matrix4, b: THREE.Matrix4) =>
-  a.elements.forEach((v, i) => expect(v).toBeCloseTo(b.elements[i], 3));
+const expectMatrixClose = (a: THREE.Matrix4, b: THREE.Matrix4) => a.elements.forEach((v, i) => expect(v).toBeCloseTo(b.elements[i], 3));
 
 describe('grouping', () => {
   it('groups objects at their bounds centre without moving anything', () => {

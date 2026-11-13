@@ -61,7 +61,8 @@ export function parseMeshFile(fileName: string, data: ArrayBuffer): ParsedFile {
   parts = parts.filter((p) => p.mesh.indices.length >= 3);
   if (!parts.length) throw new ImportError(`${fileName} contains no triangles.`);
   for (const p of parts) {
-    for (const v of p.mesh.positions) if (!Number.isFinite(v)) throw new ImportError(`${fileName} contains invalid (non-finite) coordinates.`);
+    for (const v of p.mesh.positions)
+      if (!Number.isFinite(v)) throw new ImportError(`${fileName} contains invalid (non-finite) coordinates.`);
   }
 
   const bounds = new THREE.Box3();
@@ -85,7 +86,9 @@ export function normalizeMesh(mesh: MeshData, unit: ImportUnit, up: 'z' | 'y'): 
   const s = UNIT_SCALE[unit];
   const positions = new Float32Array(mesh.positions.length);
   for (let i = 0; i < positions.length; i += 3) {
-    const x = mesh.positions[i] * s, y = mesh.positions[i + 1] * s, z = mesh.positions[i + 2] * s;
+    const x = mesh.positions[i] * s,
+      y = mesh.positions[i + 1] * s,
+      z = mesh.positions[i + 2] * s;
     if (up === 'z') {
       positions[i] = x;
       positions[i + 1] = y;

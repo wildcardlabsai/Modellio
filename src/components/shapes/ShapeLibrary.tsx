@@ -53,7 +53,12 @@ export function ShapeLibrary() {
                 className="group flex aspect-[0.92] flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-canvas p-1.5 transition-all hover:border-brand/30 hover:bg-brand-50 hover:shadow-sm active:scale-[0.97]"
               >
                 {thumbs[s.type] ? (
-                  <img src={thumbs[s.type]} alt="" draggable={false} className="h-12 w-12 object-contain transition-transform group-hover:scale-105" />
+                  <img
+                    src={thumbs[s.type]}
+                    alt=""
+                    draggable={false}
+                    className="h-12 w-12 object-contain transition-transform group-hover:scale-105"
+                  />
                 ) : (
                   <span className="h-12 w-12 rounded-lg" style={{ background: s.defaultColor }} />
                 )}
@@ -72,7 +77,9 @@ export function ShapeLibrary() {
                 title="Add Text — click, or drag onto the workplane"
                 className="group flex aspect-[0.92] flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-canvas p-1.5 transition-all hover:border-brand/30 hover:bg-brand-50 hover:shadow-sm active:scale-[0.97]"
               >
-                <span className="flex h-12 w-12 items-center justify-center text-[34px] font-extrabold leading-none text-brand drop-shadow-[0_2px_0_#1d4ed8] transition-transform group-hover:scale-105">A</span>
+                <span className="flex h-12 w-12 items-center justify-center text-[34px] font-extrabold leading-none text-brand drop-shadow-[0_2px_0_#1d4ed8] transition-transform group-hover:scale-105">
+                  A
+                </span>
                 <span className="text-center text-[12px] font-medium leading-tight text-[#344054]">Text</span>
               </button>
             )}
@@ -80,7 +87,8 @@ export function ShapeLibrary() {
           </div>
         )}
         <div className="mt-4 rounded-xl border border-dashed border-line p-3 text-[12px] leading-relaxed text-muted">
-          <span className="font-semibold text-[#344054]">Tip:</span> press <kbd className="rounded border border-line bg-white px-1">H</kbd> to turn a shape into a hole, then use <strong>Combine</strong> to cut it.
+          <span className="font-semibold text-[#344054]">Tip:</span> press <kbd className="rounded border border-line bg-white px-1">H</kbd>{' '}
+          to turn a shape into a hole, then use <strong>Combine</strong> to cut it.
         </div>
       </div>
     </aside>

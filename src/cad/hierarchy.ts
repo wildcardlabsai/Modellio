@@ -125,7 +125,8 @@ export function setCombinedBoundsResolver(fn: CombinedBoundsResolver | null) {
 
 function boxCorners(b: THREE.Box3): THREE.Vector3[] {
   const out: THREE.Vector3[] = [];
-  for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) out.push(new THREE.Vector3(x, y, z));
+  for (const x of [b.min.x, b.max.x])
+    for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) out.push(new THREE.Vector3(x, y, z));
   return out;
 }
 

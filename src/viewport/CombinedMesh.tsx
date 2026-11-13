@@ -14,7 +14,15 @@ import { HOLE_COLOR } from './ShapeMesh';
  * The live Boolean result of a combined group, rendered in the group's local
  * frame. Recomputed (via the kernel's cache) whenever any part changes.
  */
-export const CombinedMesh = memo(function CombinedMesh({ id, selected, highlighted }: { id: ObjectId; selected: boolean; highlighted: boolean }) {
+export const CombinedMesh = memo(function CombinedMesh({
+  id,
+  selected,
+  highlighted,
+}: {
+  id: ObjectId;
+  selected: boolean;
+  highlighted: boolean;
+}) {
   const doc = useEditor((s) => s.doc);
   const version = useCadReady((s) => s.version);
   // eslint-disable-next-line react-hooks/exhaustive-deps

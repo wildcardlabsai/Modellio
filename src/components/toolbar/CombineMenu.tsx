@@ -14,25 +14,49 @@ export function CombineMenu({ onDone }: { onDone: () => void }) {
   const s = useEditor.getState();
   const count = useEditor((st) => st.selection.length);
   const ready = useCadReady((st) => st.kernel);
-  const hasCombined = useEditor((st) => st.selection.some((id) => {
-    const o = st.doc.objects[id];
-    return o?.kind === 'group' && !!o.combine;
-  }));
-  const hasMesh = useEditor((st) => st.selection.some((id) => {
-    const o = st.doc.objects[id];
-    return o?.kind === 'shape' && o.shape === 'mesh';
-  }));
-  const allHoles = useEditor((st) =>
-    st.selection.length > 0 && st.selection.every((id) => {
+  const hasCombined = useEditor((st) =>
+    st.selection.some((id) => {
       const o = st.doc.objects[id];
-      return o?.kind === 'shape' && o.isHole;
+      return o?.kind === 'group' && !!o.combine;
     }),
+  );
+  const hasMesh = useEditor((st) =>
+    st.selection.some((id) => {
+      const o = st.doc.objects[id];
+      return o?.kind === 'shape' && o.shape === 'mesh';
+    }),
+  );
+  const allHoles = useEditor(
+    (st) =>
+      st.selection.length > 0 &&
+      st.selection.every((id) => {
+        const o = st.doc.objects[id];
+        return o?.kind === 'shape' && o.isHole;
+      }),
   );
 
   const booleans: Item[] = [
-    { label: 'Union', hint: 'Merge into one solid. Holes cut through it.', Icon: SquaresUnite, run: () => s.combineSelected('union'), disabled: count < 2 },
-    { label: 'Subtract', hint: 'Cut the others out of the first-selected object.', Icon: SquaresSubtract, run: () => s.combineSelected('subtract'), disabled: count < 2 },
-    { label: 'Intersect', hint: 'Keep only the volume they share.', Icon: SquaresIntersect, run: () => s.combineSelected('intersect'), disabled: count < 2 },
+    {
+      label: 'Union',
+      hint: 'Merge into one solid. Holes cut through it.',
+      Icon: SquaresUnite,
+      run: () => s.combineSelected('union'),
+      disabled: count < 2,
+    },
+    {
+      label: 'Subtract',
+      hint: 'Cut the others out of the first-selected object.',
+      Icon: SquaresSubtract,
+      run: () => s.combineSelected('subtract'),
+      disabled: count < 2,
+    },
+    {
+      label: 'Intersect',
+      hint: 'Keep only the volume they share.',
+      Icon: SquaresIntersect,
+      run: () => s.combineSelected('intersect'),
+      disabled: count < 2,
+    },
   ];
   const tools: Item[] = [
     {
@@ -42,8 +66,20 @@ export function CombineMenu({ onDone }: { onDone: () => void }) {
       run: () => s.setHole(useEditor.getState().selection, !allHoles),
       disabled: count < 1,
     },
-    { label: 'Flatten to mesh', hint: 'Bake a combination into one fixed mesh.', Icon: Layers2, run: () => s.bakeSelected(), disabled: !hasCombined },
-    { label: 'Separate parts', hint: 'Split a mesh into its disconnected pieces.', Icon: Scissors, run: () => s.separateSelected(), disabled: !hasMesh },
+    {
+      label: 'Flatten to mesh',
+      hint: 'Bake a combination into one fixed mesh.',
+      Icon: Layers2,
+      run: () => s.bakeSelected(),
+      disabled: !hasCombined,
+    },
+    {
+      label: 'Separate parts',
+      hint: 'Split a mesh into its disconnected pieces.',
+      Icon: Scissors,
+      run: () => s.separateSelected(),
+      disabled: !hasMesh,
+    },
   ];
 
   const render = (items: Item[]) =>
@@ -68,12 +104,16 @@ export function CombineMenu({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="w-[290px]">
-      <p className="px-2.5 pb-1 text-[12px] font-semibold uppercase tracking-wide text-muted">Combine {count > 1 ? `${count} objects` : ''}</p>
+      <p className="px-2.5 pb-1 text-[12px] font-semibold uppercase tracking-wide text-muted">
+        Combine {count > 1 ? `${count} objects` : ''}
+      </p>
       {render(booleans)}
       <div className="my-1.5 border-t border-line" />
       {render(tools)}
       {!ready && <p className="px-2.5 pt-1 text-[12px] text-muted">Loading the solid-modelling engine…</p>}
-      <p className="px-2.5 pt-2 text-[11px] leading-snug text-muted">Combinations stay editable: select a part in the Objects list to change it, or ungroup to get the parts back.</p>
+      <p className="px-2.5 pt-2 text-[11px] leading-snug text-muted">
+        Combinations stay editable: select a part in the Objects list to change it, or ungroup to get the parts back.
+      </p>
     </div>
   );
 }

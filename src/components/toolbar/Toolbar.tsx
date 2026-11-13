@@ -3,7 +3,22 @@ import { useProjects } from '@/store/projectStore';
 import { FileMenu } from './FileMenu';
 import { SaveStatus } from './SaveStatus';
 import { openMeshPicker, useFileUi } from '@/components/files/fileIntake';
-import { Undo2, Redo2, Copy, Trash2, Group, Ungroup, AlignHorizontalJustifyCenter, FlipHorizontal2, Combine, Upload, Download, Pencil, ChevronDown, Menu } from 'lucide-react';
+import {
+  Undo2,
+  Redo2,
+  Copy,
+  Trash2,
+  Group,
+  Ungroup,
+  AlignHorizontalJustifyCenter,
+  FlipHorizontal2,
+  Combine,
+  Upload,
+  Download,
+  Pencil,
+  ChevronDown,
+  Menu,
+} from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
 import { AlignMenu, MirrorMenu } from './AlignMenu';
 import { CombineMenu } from './CombineMenu';

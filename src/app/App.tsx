@@ -16,6 +16,9 @@ import { ImportDialog } from '@/components/files/ImportDialog';
 import { ExportDialog } from '@/components/files/ExportDialog';
 import { useFileUi } from '@/components/files/fileIntake';
 import { Loader2 } from 'lucide-react';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { ViewportCrash } from '@/components/layout/CrashScreens';
+import { useDebug } from '@/utils/debug';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
@@ -28,7 +31,15 @@ export function App() {
 
   // Expose the store for debugging and automated workflow tests.
   useEffect(() => {
-    (window as unknown as { modellio: unknown }).modellio = { store: useEditor, viewport, worldToScreen, hierarchy, computeCombined };
+    (window as unknown as { modellio: unknown }).modellio = {
+      store: useEditor,
+      projects: useProjects,
+      viewport,
+      worldToScreen,
+      hierarchy,
+      computeCombined,
+      debug: useDebug,
+    };
   }, []);
 
   const view = useProjects((s) => s.view);
@@ -71,7 +82,19 @@ export function App() {
         <LeftRail panel={panel} onChange={setPanel} />
         {panel === 'shapes' ? <ShapeLibrary /> : panel === 'text' ? <TextPanel /> : <WorkplanePanel />}
         <main className="relative min-w-0 flex-1">
-          <Viewport />
+          <ErrorBoundary
+            fallback={(error, reset) => (
+              <ViewportCrash
+                error={error}
+                reset={() => {
+                  useDebug.setState({ crashViewport: false });
+                  reset();
+                }}
+              />
+            )}
+          >
+            <Viewport />
+          </ErrorBoundary>
         </main>
         <Inspector />
         {/* The editor stays mounted (keeps the WebGL context) while the projects page is shown. */}
@@ -81,7 +104,10 @@ export function App() {
       <ImportDialog />
       <ExportDialog />
       {busy && (
-        <div role="status" className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white shadow-float">
+        <div
+          role="status"
+          className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white shadow-float"
+        >
           <Loader2 size={14} className="animate-spin" /> {busy}
         </div>
       )}

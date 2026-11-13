@@ -44,43 +44,124 @@ const FILLET: ParamSpec[] = [
   { key: 'filletSegments', label: 'Fillet smoothness', min: 1, max: 16, step: 1, integer: true },
 ];
 
-export const SHAPES: ShapeDefinition[] = ([
-  { type: 'box', label: 'Box', defaultSize: [20, 20, 20], defaultParams: { radius: 0, filletSegments: 4 }, defaultColor: '#2463EB', params: FILLET },
-  { type: 'cylinder', label: 'Cylinder', defaultSize: [20, 20, 20], defaultParams: { segments: 64 }, defaultColor: '#8B5CF6', params: [SEGMENTS], roundXY: true },
-  { type: 'sphere', label: 'Sphere', defaultSize: [20, 20, 20], defaultParams: { segments: 48 }, defaultColor: '#0EA5E9', params: [SEGMENTS], roundXY: true },
-  {
-    type: 'cone', label: 'Cone', defaultSize: [20, 20, 20], defaultParams: { segments: 64, topRatio: 0 }, defaultColor: '#EC4899', roundXY: true,
-    params: [SEGMENTS, { key: 'topRatio', label: 'Top radius', min: 0, max: 1, step: 0.05 }],
-  },
-  { type: 'pyramid', label: 'Pyramid', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#F59E0B', params: [] },
-  { type: 'roof', label: 'Roof', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#10B981', params: [] },
-  { type: 'torus', label: 'Torus', defaultSize: [20, 20, 4], defaultParams: { segments: 64 }, defaultColor: '#7C3AED', params: [SEGMENTS], roundXY: true },
-  {
-    type: 'tube', label: 'Tube', defaultSize: [20, 20, 20], defaultParams: { segments: 64, wall: 2 }, defaultColor: '#F97316', roundXY: true,
-    params: [SEGMENTS, { key: 'wall', label: 'Wall thickness', min: 0.1, max: 500, step: 0.1, unit: 'mm' }],
-  },
-  { type: 'wedge', label: 'Wedge', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#3B82F6', params: [] },
-  { type: 'halfSphere', label: 'Half Sphere', defaultSize: [20, 20, 10], defaultParams: { segments: 48 }, defaultColor: '#F43F5E', params: [SEGMENTS], roundXY: true },
-  {
-    type: 'polygon', label: 'Polygon', defaultSize: [20, 20, 10], defaultParams: { sides: 6 }, defaultColor: '#6366F1',
-    params: [{ key: 'sides', label: 'Sides', min: 3, max: 64, step: 1, integer: true }],
-  },
-  {
-    type: 'star', label: 'Star', defaultSize: [20, 20, 6], defaultParams: { points: 5, innerRatio: 0.5 }, defaultColor: '#EAB308',
-    params: [
-      { key: 'points', label: 'Points', min: 3, max: 32, step: 1, integer: true },
-      { key: 'innerRatio', label: 'Inner radius', min: 0.05, max: 0.95, step: 0.05 },
-    ],
-  },
-  { type: 'capsule', label: 'Capsule', defaultSize: [12, 12, 30], defaultParams: { segments: 48 }, defaultColor: '#14B8A6', params: [SEGMENTS], roundXY: true },
-  { type: 'paraboloid', label: 'Paraboloid', defaultSize: [20, 20, 20], defaultParams: { segments: 48 }, defaultColor: '#A855F7', params: [SEGMENTS], roundXY: true },
-] as unknown as ShapeDefinition[]).map((d): ShapeDefinition => ({ ...d, library: true })).concat([
-  {
-    type: 'text', label: 'Text', defaultSize: [40, 10, 5], defaultParams: { fontSize: 14, segments: 6 }, defaultColor: '#2463EB',
-    params: [{ key: 'segments', label: 'Curve smoothness', min: 2, max: 24, step: 1, integer: true }],
-  },
-  { type: 'mesh', label: 'Mesh', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#64748B', params: [] },
-]);
+export const SHAPES: ShapeDefinition[] = (
+  [
+    {
+      type: 'box',
+      label: 'Box',
+      defaultSize: [20, 20, 20],
+      defaultParams: { radius: 0, filletSegments: 4 },
+      defaultColor: '#2463EB',
+      params: FILLET,
+    },
+    {
+      type: 'cylinder',
+      label: 'Cylinder',
+      defaultSize: [20, 20, 20],
+      defaultParams: { segments: 64 },
+      defaultColor: '#8B5CF6',
+      params: [SEGMENTS],
+      roundXY: true,
+    },
+    {
+      type: 'sphere',
+      label: 'Sphere',
+      defaultSize: [20, 20, 20],
+      defaultParams: { segments: 48 },
+      defaultColor: '#0EA5E9',
+      params: [SEGMENTS],
+      roundXY: true,
+    },
+    {
+      type: 'cone',
+      label: 'Cone',
+      defaultSize: [20, 20, 20],
+      defaultParams: { segments: 64, topRatio: 0 },
+      defaultColor: '#EC4899',
+      roundXY: true,
+      params: [SEGMENTS, { key: 'topRatio', label: 'Top radius', min: 0, max: 1, step: 0.05 }],
+    },
+    { type: 'pyramid', label: 'Pyramid', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#F59E0B', params: [] },
+    { type: 'roof', label: 'Roof', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#10B981', params: [] },
+    {
+      type: 'torus',
+      label: 'Torus',
+      defaultSize: [20, 20, 4],
+      defaultParams: { segments: 64 },
+      defaultColor: '#7C3AED',
+      params: [SEGMENTS],
+      roundXY: true,
+    },
+    {
+      type: 'tube',
+      label: 'Tube',
+      defaultSize: [20, 20, 20],
+      defaultParams: { segments: 64, wall: 2 },
+      defaultColor: '#F97316',
+      roundXY: true,
+      params: [SEGMENTS, { key: 'wall', label: 'Wall thickness', min: 0.1, max: 500, step: 0.1, unit: 'mm' }],
+    },
+    { type: 'wedge', label: 'Wedge', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#3B82F6', params: [] },
+    {
+      type: 'halfSphere',
+      label: 'Half Sphere',
+      defaultSize: [20, 20, 10],
+      defaultParams: { segments: 48 },
+      defaultColor: '#F43F5E',
+      params: [SEGMENTS],
+      roundXY: true,
+    },
+    {
+      type: 'polygon',
+      label: 'Polygon',
+      defaultSize: [20, 20, 10],
+      defaultParams: { sides: 6 },
+      defaultColor: '#6366F1',
+      params: [{ key: 'sides', label: 'Sides', min: 3, max: 64, step: 1, integer: true }],
+    },
+    {
+      type: 'star',
+      label: 'Star',
+      defaultSize: [20, 20, 6],
+      defaultParams: { points: 5, innerRatio: 0.5 },
+      defaultColor: '#EAB308',
+      params: [
+        { key: 'points', label: 'Points', min: 3, max: 32, step: 1, integer: true },
+        { key: 'innerRatio', label: 'Inner radius', min: 0.05, max: 0.95, step: 0.05 },
+      ],
+    },
+    {
+      type: 'capsule',
+      label: 'Capsule',
+      defaultSize: [12, 12, 30],
+      defaultParams: { segments: 48 },
+      defaultColor: '#14B8A6',
+      params: [SEGMENTS],
+      roundXY: true,
+    },
+    {
+      type: 'paraboloid',
+      label: 'Paraboloid',
+      defaultSize: [20, 20, 20],
+      defaultParams: { segments: 48 },
+      defaultColor: '#A855F7',
+      params: [SEGMENTS],
+      roundXY: true,
+    },
+  ] as unknown as ShapeDefinition[]
+)
+  .map((d): ShapeDefinition => ({ ...d, library: true }))
+  .concat([
+    {
+      type: 'text',
+      label: 'Text',
+      defaultSize: [40, 10, 5],
+      defaultParams: { fontSize: 14, segments: 6 },
+      defaultColor: '#2463EB',
+      params: [{ key: 'segments', label: 'Curve smoothness', min: 2, max: 24, step: 1, integer: true }],
+    },
+    { type: 'mesh', label: 'Mesh', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#64748B', params: [] },
+  ]);
 
 export const LIBRARY_SHAPES = SHAPES.filter((s) => s.library);
 

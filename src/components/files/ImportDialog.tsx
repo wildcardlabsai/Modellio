@@ -111,7 +111,8 @@ function ImportDialogInner({ item, onDone }: { item: ReturnType<typeof useFileUi
         </p>
         {(tooBig || tooSmall) && (
           <p className="mt-1 flex items-center gap-1.5 text-[12px] text-amber-700">
-            <CircleAlert size={14} /> {tooBig ? 'That is larger than 2 m. Check the units.' : 'That is smaller than 0.5 mm. Check the units.'}
+            <CircleAlert size={14} />{' '}
+            {tooBig ? 'That is larger than 2 m. Check the units.' : 'That is smaller than 0.5 mm. Check the units.'}
           </p>
         )}
         <p className={`mt-2 flex items-start gap-1.5 text-[12px] ${open ? 'text-amber-700' : 'text-emerald-700'}`}>

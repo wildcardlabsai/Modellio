@@ -76,7 +76,8 @@ export function meshDataToGeometry(data: MeshData, creaseAngle = (32 * Math.PI) 
 export function meshDataBounds(data: MeshData): THREE.Box3 {
   const b = new THREE.Box3();
   const v = new THREE.Vector3();
-  for (let i = 0; i < data.positions.length; i += 3) b.expandByPoint(v.set(data.positions[i], data.positions[i + 1], data.positions[i + 2]));
+  for (let i = 0; i < data.positions.length; i += 3)
+    b.expandByPoint(v.set(data.positions[i], data.positions[i + 1], data.positions[i + 2]));
   return b;
 }
 

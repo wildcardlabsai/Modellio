@@ -167,7 +167,11 @@ export function ObjectTree() {
                 <span
                   className="h-3.5 w-3.5 shrink-0 rounded"
                   title={o.isHole ? 'Hole' : undefined}
-                  style={o.isHole ? { background: 'repeating-linear-gradient(45deg,#aab3c2 0 2px,#eef1f5 2px 4px)', outline: '1px dashed #8c97ab' } : { background: o.color }}
+                  style={
+                    o.isHole
+                      ? { background: 'repeating-linear-gradient(45deg,#aab3c2 0 2px,#eef1f5 2px 4px)', outline: '1px dashed #8c97ab' }
+                      : { background: o.color }
+                  }
                 />
               )}
               {renaming === id ? (

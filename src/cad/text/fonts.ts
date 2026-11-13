@@ -12,12 +12,32 @@ export interface FontDef {
 }
 
 export const FONTS: FontDef[] = [
-  { id: 'inter-bold', label: 'Inter Bold', load: () => import('@fontsource/inter/files/inter-latin-700-normal.woff?url').then((m) => m.default) },
+  {
+    id: 'inter-bold',
+    label: 'Inter Bold',
+    load: () => import('@fontsource/inter/files/inter-latin-700-normal.woff?url').then((m) => m.default),
+  },
   { id: 'inter', label: 'Inter', load: () => import('@fontsource/inter/files/inter-latin-400-normal.woff?url').then((m) => m.default) },
-  { id: 'roboto-slab', label: 'Roboto Slab', load: () => import('@fontsource/roboto-slab/files/roboto-slab-latin-700-normal.woff?url').then((m) => m.default) },
-  { id: 'bebas-neue', label: 'Bebas Neue', load: () => import('@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff?url').then((m) => m.default) },
-  { id: 'pacifico', label: 'Pacifico', load: () => import('@fontsource/pacifico/files/pacifico-latin-400-normal.woff?url').then((m) => m.default) },
-  { id: 'space-mono', label: 'Space Mono', load: () => import('@fontsource/space-mono/files/space-mono-latin-700-normal.woff?url').then((m) => m.default) },
+  {
+    id: 'roboto-slab',
+    label: 'Roboto Slab',
+    load: () => import('@fontsource/roboto-slab/files/roboto-slab-latin-700-normal.woff?url').then((m) => m.default),
+  },
+  {
+    id: 'bebas-neue',
+    label: 'Bebas Neue',
+    load: () => import('@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff?url').then((m) => m.default),
+  },
+  {
+    id: 'pacifico',
+    label: 'Pacifico',
+    load: () => import('@fontsource/pacifico/files/pacifico-latin-400-normal.woff?url').then((m) => m.default),
+  },
+  {
+    id: 'space-mono',
+    label: 'Space Mono',
+    load: () => import('@fontsource/space-mono/files/space-mono-latin-700-normal.woff?url').then((m) => m.default),
+  },
 ];
 
 export const DEFAULT_FONT: FontId = 'inter-bold';

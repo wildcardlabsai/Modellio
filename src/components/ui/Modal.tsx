@@ -56,7 +56,12 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid rounded-lg bg-canvas p-1" style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}>
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="grid rounded-lg bg-canvas p-1"
+      style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -75,4 +80,5 @@ export function Segmented<T extends string>({
 
 export const primaryBtn =
   'inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-[13px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50';
-export const secondaryBtn = 'inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas';
+export const secondaryBtn =
+  'inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas';

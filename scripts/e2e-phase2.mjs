@@ -61,7 +61,6 @@ const drag = async (from, to, steps = 20) => {
   await page.mouse.up();
   await page.waitForTimeout(250);
 };
-const treeRow = (name) => page.locator('[role=treeitem]').filter({ has: page.locator(`span[title="Double-click to rename"]:text-is("${name}")`) }).first().locator('> div');
 const treeRowLoose = (name) => page.locator('[role=treeitem] > div').filter({ hasText: name }).first();
 
 await page.goto(URL, { waitUntil: 'networkidle' });
@@ -72,7 +71,10 @@ const [boxId, cylId, sphId] = s.doc.rootIds;
 
 // --- 1. Multi-select in viewport + Ctrl+G
 await page.keyboard.press('Escape');
-for (const [id, shift] of [[boxId, false], [cylId, true]]) {
+for (const [id, shift] of [
+  [boxId, false],
+  [cylId, true],
+]) {
   const p = s.doc.objects[id].transform.position;
   const sp = await screen([p[0], p[1] - 9.5, p[2]]);
   if (shift) await page.keyboard.down('Shift');
@@ -103,7 +105,10 @@ check('2. Clicking a grouped part selects its group', (await state()).selection[
 await page.mouse.dblclick(cylScreen.x, cylScreen.y);
 await page.waitForTimeout(200);
 check('2b. Double-clicking selects the part inside the group', (await state()).selection[0] === cylId);
-check('2c. Inspector explains group-relative coordinates', await page.getByText('Position and rotation are relative to the group').isVisible());
+check(
+  '2c. Inspector explains group-relative coordinates',
+  await page.getByText('Position and rotation are relative to the group').isVisible(),
+);
 
 // --- 3. Move the group with the gizmo (one undo step)
 await page.locator('[role=treeitem] > div').first().click(); // group row
@@ -138,9 +143,17 @@ u = await gizmoUnit(gp);
 const zh = await screen([gp[0], gp[1], gp[2] + 0.5 * u]);
 await drag(zh, { x: zh.x, y: zh.y - 70 });
 let b = await bounds([gid]);
-check('4. Resizing the group makes every part taller and keeps it on the plate', b.max[2] > 21 && close(b.min[2], 0, 0.01), `height ${(b.max[2] - b.min[2]).toFixed(2)}`);
+check(
+  '4. Resizing the group makes every part taller and keeps it on the plate',
+  b.max[2] > 21 && close(b.min[2], 0, 0.01),
+  `height ${(b.max[2] - b.min[2]).toFixed(2)}`,
+);
 s = await state();
-check('4b. Children sizes changed (no hidden scale factor)', s.doc.objects[boxId].size[2] > 20 && s.doc.objects[cylId].size[2] > 20, `${s.doc.objects[boxId].size}`);
+check(
+  '4b. Children sizes changed (no hidden scale factor)',
+  s.doc.objects[boxId].size[2] > 20 && s.doc.objects[cylId].size[2] > 20,
+  `${s.doc.objects[boxId].size}`,
+);
 await page.keyboard.press('w');
 
 // --- 5. Exact group size in the inspector
@@ -158,14 +171,23 @@ await rz.click();
 await rz.fill('45');
 await rz.press('Enter');
 const rotatedBounds = await bounds([boxId, cylId]);
-await page.locator('body').click({ position: { x: 800, y: 870 } }).catch(() => {});
+await page
+  .locator('body')
+  .click({ position: { x: 800, y: 870 } })
+  .catch(() => {});
 await page.evaluate((id) => window.modellio.store.getState().select([id]), gid);
 await page.keyboard.press('Control+Shift+g');
 s = await state();
 const ungroupedBounds = await bounds([boxId, cylId]);
-const sameBounds = rotatedBounds.min.every((v, i) => close(v, ungroupedBounds.min[i], 0.01)) && rotatedBounds.max.every((v, i) => close(v, ungroupedBounds.max[i], 0.01));
+const sameBounds =
+  rotatedBounds.min.every((v, i) => close(v, ungroupedBounds.min[i], 0.01)) &&
+  rotatedBounds.max.every((v, i) => close(v, ungroupedBounds.max[i], 0.01));
 check('6. Ctrl+Shift+G ungroups a rotated group without moving parts', !s.doc.objects[gid] && sameBounds && s.selection.length === 2);
-check('6b. Parts inherit the 45° rotation', close(s.doc.objects[boxId].transform.rotation[2], 45, 0.01), JSON.stringify(s.doc.objects[boxId].transform.rotation));
+check(
+  '6b. Parts inherit the 45° rotation',
+  close(s.doc.objects[boxId].transform.rotation[2], 45, 0.01),
+  JSON.stringify(s.doc.objects[boxId].transform.rotation),
+);
 await page.keyboard.press('Control+z');
 s = await state();
 check('6c. Undo restores the group', s.doc.objects[gid]?.kind === 'group');
@@ -182,7 +204,10 @@ check('7c. Double-click renames in the tree', (await state()).doc.objects[sphId]
 await page.getByRole('button', { name: 'Hide Ball' }).click({ force: true });
 await page.waitForTimeout(150);
 const sphereInScene = await page.evaluate((id) => !!window.modellio.viewport.scene.getObjectByName(id), sphId);
-check('7d. Eye toggle hides the object (removed from the 3D scene)', (await state()).doc.objects[sphId].visible === false && !sphereInScene);
+check(
+  '7d. Eye toggle hides the object (removed from the 3D scene)',
+  (await state()).doc.objects[sphId].visible === false && !sphereInScene,
+);
 await page.getByRole('button', { name: 'Show Ball' }).click({ force: true });
 await page.getByRole('button', { name: 'Lock Ball' }).click({ force: true });
 await page.evaluate((id) => window.modellio.store.getState().select([id]), sphId);
@@ -200,7 +225,11 @@ await page.waitForTimeout(200);
 s = await state();
 const ballAfter = await worldPos(sphId);
 check('8. Dragging a row onto a group moves it inside', s.doc.objects[sphId].parentId === gid, `parent ${s.doc.objects[sphId].parentId}`);
-check('8b. …without moving it in 3D', ballAfter.every((v, i) => close(v, ballWorld[i], 0.01)), `${ballWorld} → ${ballAfter}`);
+check(
+  '8b. …without moving it in 3D',
+  ballAfter.every((v, i) => close(v, ballWorld[i], 0.01)),
+  `${ballWorld} → ${ballAfter}`,
+);
 // drag back out to root (drop on empty tree area)
 const tree = page.getByRole('tree');
 const tb = await tree.boundingBox();
@@ -217,7 +246,11 @@ await page.evaluate(() => {
 });
 const ids = await page.evaluate(() => {
   const s = window.modellio.store.getState();
-  const out = [s.addShape('box', [-60, -30], { exact: true }), s.addShape('cylinder', [10, 20], { exact: true }), s.addShape('wedge', [70, 50], { exact: true })];
+  const out = [
+    s.addShape('box', [-60, -30], { exact: true }),
+    s.addShape('cylinder', [10, 20], { exact: true }),
+    s.addShape('wedge', [70, 50], { exact: true }),
+  ];
   s.setSize(out[1], [30, 30, 40]);
   s.select(out);
   return out;
@@ -225,12 +258,20 @@ const ids = await page.evaluate(() => {
 await page.getByRole('button', { name: 'Align', exact: true }).click();
 await page.getByRole('dialog').getByRole('button', { name: 'Align Left (X)' }).click();
 let lefts = await Promise.all(ids.map((id) => bounds([id]).then((bb) => bb.min[0])));
-check('9. Align Left lines up the left edges', lefts.every((v) => close(v, lefts[0], 0.01)), lefts.map((v) => v.toFixed(2)).join(', '));
+check(
+  '9. Align Left lines up the left edges',
+  lefts.every((v) => close(v, lefts[0], 0.01)),
+  lefts.map((v) => v.toFixed(2)).join(', '),
+);
 const topsBefore = await Promise.all(ids.map((id) => bounds([id]).then((bb) => bb.max[2])));
 await page.getByRole('button', { name: 'Align', exact: true }).click();
 await page.getByRole('dialog').getByRole('button', { name: 'Align Top (Z)' }).click();
 const tops = await Promise.all(ids.map((id) => bounds([id]).then((bb) => bb.max[2])));
-check('9b. Align Top lines up the tops with the highest one', tops.every((v) => close(v, Math.max(...topsBefore), 0.01)), `${topsBefore.join(', ')} → ${tops.join(', ')}`);
+check(
+  '9b. Align Top lines up the tops with the highest one',
+  tops.every((v) => close(v, Math.max(...topsBefore), 0.01)),
+  `${topsBefore.join(', ')} → ${tops.join(', ')}`,
+);
 await page.getByRole('button', { name: 'Align', exact: true }).click();
 await page.getByRole('dialog').getByRole('button', { name: 'Y', exact: true }).click(); // distribute Y
 const bs = await Promise.all(ids.map((id) => bounds([id])));
@@ -250,7 +291,10 @@ await page.getByRole('button', { name: 'Mirror', exact: true }).click();
 await page.getByRole('dialog').getByRole('button', { name: 'Mirror X' }).click();
 s = await state();
 const wedgeAfter = await bounds([ids[2]]);
-check('10. Mirror X reflects the wedge in place', JSON.stringify(s.doc.objects[ids[2]].mirror) === '[-1,1,1]' && close(wedgeAfter.min[0], wedgeBefore.min[0], 0.01));
+check(
+  '10. Mirror X reflects the wedge in place',
+  JSON.stringify(s.doc.objects[ids[2]].mirror) === '[-1,1,1]' && close(wedgeAfter.min[0], wedgeBefore.min[0], 0.01),
+);
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${OUT}/p2-04-mirror.png` });
 
@@ -261,7 +305,10 @@ await page.keyboard.press('Control+c');
 await page.keyboard.press('Control+v');
 s = await state();
 const pasted = s.doc.objects[s.selection[0]];
-check('11. Ctrl+C / Ctrl+V pastes a full copy of a group', pasted?.kind === 'group' && pasted.children.length === 2 && Object.keys(s.doc.objects).length === 7);
+check(
+  '11. Ctrl+C / Ctrl+V pastes a full copy of a group',
+  pasted?.kind === 'group' && pasted.children.length === 2 && Object.keys(s.doc.objects).length === 7,
+);
 
 // --- 12. Workplane panel
 await page.getByRole('button', { name: 'Workplane' }).first().click();

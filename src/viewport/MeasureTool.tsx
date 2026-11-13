@@ -91,7 +91,10 @@ export function MeasureTool() {
         <>
           <Line points={[info.a, info.b]} color="#F59E0B" lineWidth={2.5} depthTest={false} renderOrder={19} />
           <Html position={info.mid} center zIndexRange={[30, 0]}>
-            <div className="pointer-events-none whitespace-nowrap rounded-lg bg-navy px-2.5 py-1.5 text-center text-white shadow-float" data-testid="measure-label">
+            <div
+              className="pointer-events-none whitespace-nowrap rounded-lg bg-navy px-2.5 py-1.5 text-center text-white shadow-float"
+              data-testid="measure-label"
+            >
               <div className="text-[14px] font-bold tabular-nums">{formatMm(info.d.length())} mm</div>
               <div className="mt-0.5 flex gap-2 text-[11px] font-medium tabular-nums">
                 <span className="text-[#ff8a8d]">ΔX {formatMm(Math.abs(info.d.x))}</span>

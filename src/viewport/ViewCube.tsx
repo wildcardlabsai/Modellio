@@ -40,10 +40,7 @@ function ViewCubeInner({ mainCamera }: { mainCamera: THREE.Camera }) {
   const [cornerHover, setCornerHover] = useState<number | null>(null);
   const group = useMemo(() => new THREE.Group(), []);
 
-  const materials = useMemo(
-    () => FACE_LABELS.map((l) => new THREE.MeshBasicMaterial({ map: faceTexture(l), toneMapped: false })),
-    [],
-  );
+  const materials = useMemo(() => FACE_LABELS.map((l) => new THREE.MeshBasicMaterial({ map: faceTexture(l), toneMapped: false })), []);
 
   const corners = useMemo(() => {
     const out: THREE.Vector3[] = [];

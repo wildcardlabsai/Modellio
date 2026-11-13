@@ -23,12 +23,14 @@ export function ProjectsPage() {
   const projects = useProjects((s) => s.projects);
   const current = useProjects((s) => s.current);
   const error = useProjects((s) => s.error);
+  const storage = useProjects((s) => s.storage);
   const p = useProjects.getState();
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
 
   useEffect(() => {
     void p.refresh();
+    void p.refreshStorage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -39,7 +41,8 @@ export function ProjectsPage() {
           <div>
             <h1 className="text-[26px] font-semibold tracking-tight text-ink">My projects</h1>
             <p className="mt-1 text-[14px] text-muted">
-              {projects.length} design{projects.length === 1 ? '' : 's'} saved in this browser. Download a project file to back it up or move it to another computer.
+              {projects.length} design{projects.length === 1 ? '' : 's'} saved in this browser. Download a project file to back it up or
+              move it to another computer.
             </p>
           </div>
           <div className="flex gap-2">
@@ -51,6 +54,15 @@ export function ProjectsPage() {
             </button>
           </div>
         </div>
+        {storage && (
+          <p className="mt-3 text-[12px] text-muted" data-testid="storage-info">
+            Using {(storage.usage / 1048576).toFixed(1)} MB of browser storage
+            {storage.quota ? ` (of ${(storage.quota / 1073741824).toFixed(1)} GB available)` : ''} ·{' '}
+            {storage.persisted
+              ? 'protected from automatic clean-up'
+              : 'the browser may clear it if your disk gets full — download project files as backups'}
+          </p>
+        )}
         {error && (
           <p className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
             <CircleAlert size={15} /> {error}
@@ -98,7 +110,12 @@ export function ProjectsPage() {
                   align="right"
                   side="top"
                   trigger={({ toggle }) => (
-                    <button type="button" aria-label={`Actions for ${m.name}`} onClick={toggle} className="rounded-lg p-1.5 text-muted hover:bg-canvas hover:text-ink">
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${m.name}`}
+                      onClick={toggle}
+                      className="rounded-lg p-1.5 text-muted hover:bg-canvas hover:text-ink"
+                    >
                       <MoreHorizontal size={18} />
                     </button>
                   )}

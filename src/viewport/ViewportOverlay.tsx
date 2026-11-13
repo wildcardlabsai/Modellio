@@ -45,7 +45,15 @@ export function ViewportOverlay() {
       {/* Transform tools */}
       <div className="absolute left-3 top-3 flex flex-col gap-1 rounded-xl border border-line bg-white/95 p-1 shadow-float backdrop-blur">
         {TOOLS.map(({ mode: m, label, key, Icon }) => (
-          <IconButton key={m} label={label} shortcut={key} variant="floating" tooltipSide="right" active={mode === m} onClick={() => setMode(m)}>
+          <IconButton
+            key={m}
+            label={label}
+            shortcut={key}
+            variant="floating"
+            tooltipSide="right"
+            active={mode === m}
+            onClick={() => setMode(m)}
+          >
             <Icon size={18} strokeWidth={2} />
           </IconButton>
         ))}
@@ -73,7 +81,10 @@ export function ViewportOverlay() {
 
       {/* Units + snapping */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2">
-        <div className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold text-ink shadow-panel" title="Units: millimetres">
+        <div
+          className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-[13px] font-semibold text-ink shadow-panel"
+          title="Units: millimetres"
+        >
           mm
         </div>
         <div className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white pl-1 pr-2 text-[13px] text-ink shadow-panel">
@@ -94,11 +105,13 @@ export function ViewportOverlay() {
             onChange={(e) => setSnap({ translate: Number(e.target.value) })}
             className="bg-transparent font-medium tabular-nums outline-none disabled:opacity-40"
           >
-            {[...new Set([...SNAP_STEPS, snap.translate])].sort((a, b) => a - b).map((s) => (
-              <option key={s} value={s}>
-                {s} mm
-              </option>
-            ))}
+            {[...new Set([...SNAP_STEPS, snap.translate])]
+              .sort((a, b) => a - b)
+              .map((s) => (
+                <option key={s} value={s}>
+                  {s} mm
+                </option>
+              ))}
           </select>
           <span className="ml-1 text-muted">·</span>
           <select
@@ -108,11 +121,13 @@ export function ViewportOverlay() {
             onChange={(e) => setSnap({ rotate: Number(e.target.value) })}
             className="bg-transparent font-medium tabular-nums outline-none disabled:opacity-40"
           >
-            {[...new Set([1, 5, 15, 22.5, 45, 90, snap.rotate])].sort((a, b) => a - b).map((s) => (
-              <option key={s} value={s}>
-                {s}°
-              </option>
-            ))}
+            {[...new Set([1, 5, 15, 22.5, 45, 90, snap.rotate])]
+              .sort((a, b) => a - b)
+              .map((s) => (
+                <option key={s} value={s}>
+                  {s}°
+                </option>
+              ))}
           </select>
         </div>
       </div>

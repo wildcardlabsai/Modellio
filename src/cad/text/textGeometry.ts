@@ -54,7 +54,9 @@ export function textContours(font: opentype.Font, layout: TextLayout): SimplePol
         case 'Q':
           for (let i = 1; i <= seg; i++) {
             const t = i / seg;
-            const a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, d = t * t;
+            const a = (1 - t) * (1 - t),
+              b = 2 * (1 - t) * t,
+              d = t * t;
             push(a * x + b * c.x1 + d * c.x, a * y + b * c.y1 + d * c.y);
           }
           x = c.x;
@@ -63,7 +65,10 @@ export function textContours(font: opentype.Font, layout: TextLayout): SimplePol
         case 'C':
           for (let i = 1; i <= seg; i++) {
             const t = i / seg;
-            const a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, d = 3 * (1 - t) * t * t, e = t ** 3;
+            const a = (1 - t) ** 3,
+              b = 3 * (1 - t) ** 2 * t,
+              d = 3 * (1 - t) * t * t,
+              e = t ** 3;
             push(a * x + b * c.x1 + d * c.x2 + e * c.x, a * y + b * c.y1 + d * c.y2 + e * c.y);
           }
           x = c.x;

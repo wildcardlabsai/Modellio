@@ -17,7 +17,16 @@ const SIDE: Record<NonNullable<Props['tooltipSide']>, string> = {
 };
 
 /** Accessible icon button with a styled tooltip that shows its keyboard shortcut. */
-export function IconButton({ label, shortcut, active, children, tooltipSide = 'bottom', variant = 'ghost', className = '', ...rest }: Props) {
+export function IconButton({
+  label,
+  shortcut,
+  active,
+  children,
+  tooltipSide = 'bottom',
+  variant = 'ghost',
+  className = '',
+  ...rest
+}: Props) {
   const base =
     variant === 'floating'
       ? active

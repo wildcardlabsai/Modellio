@@ -39,7 +39,13 @@ describe('primitive geometry', () => {
       });
 
       it('stays watertight with outward normals under every mirror combination', () => {
-        const combos: Vec3[] = [[-1, 1, 1], [1, -1, 1], [1, 1, -1], [-1, -1, 1], [-1, -1, -1]];
+        const combos: Vec3[] = [
+          [-1, 1, 1],
+          [1, -1, 1],
+          [1, 1, -1],
+          [-1, -1, 1],
+          [-1, -1, -1],
+        ];
         const reference = analyzeMesh(buildShapeGeometry(def.type, [20, 14, 9], def.defaultParams)).volume;
         for (const m of combos) {
           const g = buildShapeGeometry(def.type, [20, 14, 9], def.defaultParams, m);

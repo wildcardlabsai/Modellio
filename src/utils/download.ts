@@ -12,5 +12,8 @@ export function downloadBlob(data: BlobPart, fileName: string, type: string) {
 
 /** File-system-safe base name. */
 export function safeFileName(name: string): string {
-  return (name.trim() || 'modellio').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_').slice(0, 80);
+  return (name.trim() || 'modellio')
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '_')
+    .slice(0, 80);
 }

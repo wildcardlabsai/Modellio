@@ -2,13 +2,7 @@ import { create } from 'zustand';
 import { createEmptyDocument } from '@/cad/document';
 import { addMeshAsset, getMeshAsset } from '@/cad/assets';
 import type { MeshData } from '@/cad/kernel/meshData';
-import {
-  projectFromFile,
-  projectToFile,
-  referencedAssets,
-  type ProjectData,
-  type ProjectMeta,
-} from '@/cad/serialization/project';
+import { projectFromFile, projectToFile, referencedAssets, type ProjectData, type ProjectMeta } from '@/cad/serialization/project';
 import { createDefaultRepository, type ProjectRepository } from '@/cad/serialization/repository';
 import { useEditor } from './editorStore';
 import { createId } from '@/utils/id';
@@ -24,6 +18,9 @@ interface ProjectState {
   status: SaveStatus;
   error: string | null;
   view: 'editor' | 'projects';
+  /** Storage protection and usage (from the StorageManager API, when available). */
+  storage: { persisted: boolean; usage: number; quota: number } | null;
+  refreshStorage: () => Promise<void>;
 
   init: () => Promise<void>;
   setView: (view: 'editor' | 'projects') => void;
@@ -87,13 +84,21 @@ async function initOnce() {
   const { getState: get, setState: set } = useProjects;
   const repo = await createDefaultRepository();
   set({ repo });
+  // Ask the browser not to evict our data under storage pressure (best effort).
+  try {
+    if (navigator.storage?.persist && !(await navigator.storage.persisted())) await navigator.storage.persist();
+  } catch {
+    /* not supported */
+  }
+  void get().refreshStorage();
   const projects = await repo.list();
   set({ projects });
   const last = recall();
   const target = projects.find((p) => p.id === last) ?? projects[0];
   if (target) await get().open(target.id);
   else await get().newProject();
-  if (repo.kind === 'memory') set({ error: 'Browser storage is unavailable (private mode?). Projects are kept only until you close this tab.' });
+  if (repo.kind === 'memory')
+    set({ error: 'Browser storage is unavailable (private mode?). Projects are kept only until you close this tab.' });
 }
 
 let suppressAutosave = false;
@@ -110,6 +115,17 @@ export const useProjects = create<ProjectState>()((set, get) => ({
 
   // Idempotent: React StrictMode (and hot reloads) may call it more than once.
   init: () => (initPromise ??= initOnce()),
+
+  storage: null,
+  refreshStorage: async () => {
+    try {
+      if (!navigator.storage?.estimate) return;
+      const [est, persisted] = await Promise.all([navigator.storage.estimate(), navigator.storage.persisted?.() ?? Promise.resolve(false)]);
+      set({ storage: { persisted, usage: est.usage ?? 0, quota: est.quota ?? 0 } });
+    } catch {
+      /* not supported */
+    }
+  },
 
   setView: (view) => set({ view }),
 
@@ -135,7 +151,16 @@ export const useProjects = create<ProjectState>()((set, get) => ({
         if (!stillSame) scheduleAutosave();
         await get().refresh();
       })
-      .catch((e) => set({ status: 'error', error: `Saving failed: ${e instanceof Error ? e.message : e}` }))
+      .catch((e) => {
+        const quota = e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+        set({
+          status: 'error',
+          error: quota
+            ? 'Browser storage is full, so this design could not be saved. Download a project file as a backup, then delete old projects in My Projects.'
+            : `Saving failed: ${e instanceof Error ? e.message : e}`,
+        });
+        useEditor.getState().notify(quota ? 'Storage is full: design not saved. Download a backup.' : 'Saving failed.');
+      })
       .finally(() => {
         saving = null;
       });

@@ -14,8 +14,7 @@ type Builder = (size: Vec3, params: ShapeParams) => THREE.BufferGeometry;
 /** Shapes built purely from size + numeric params (text and mesh need more context). */
 export type ParametricType = Exclude<PrimitiveType, 'text' | 'mesh'>;
 
-const seg = (params: ShapeParams, fallback = 48) =>
-  Math.round(clamp(params.segments ?? fallback, 3, 256));
+const seg = (params: ShapeParams, fallback = 48) => Math.round(clamp(params.segments ?? fallback, 3, 256));
 
 /** Box with an optional fillet radius (mm) on every edge. The radius is absolute, never stretched. */
 const box: Builder = (size, p) => {
@@ -30,8 +29,7 @@ const sphere: Builder = (size, p) => {
   return fitToSize(yUpToZUp(new THREE.SphereGeometry(0.5, s, Math.max(2, Math.round(s / 2)))), size);
 };
 
-const cylinder: Builder = (size, p) =>
-  fitToSize(yUpToZUp(new THREE.CylinderGeometry(0.5, 0.5, 1, seg(p))), size);
+const cylinder: Builder = (size, p) => fitToSize(yUpToZUp(new THREE.CylinderGeometry(0.5, 0.5, 1, seg(p))), size);
 
 const cone: Builder = (size, p) => {
   // Optional truncated cone: topRatio = top radius / base radius.
@@ -168,7 +166,7 @@ const star: Builder = (size, p) => {
 const capsule: Builder = (size, p) => {
   const s = seg(p, 48);
   const r = 0.5;
-  const h = Math.max(0.01, (size[2] / Math.max(size[0], size[1])) - 1); // keep the ends round
+  const h = Math.max(0.01, size[2] / Math.max(size[0], size[1]) - 1); // keep the ends round
   return fitToSize(yUpToZUp(new THREE.CapsuleGeometry(r, h, Math.max(4, Math.round(s / 4)), s)), size);
 };
 

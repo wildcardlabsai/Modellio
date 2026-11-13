@@ -27,10 +27,11 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 
-const state = () => page.evaluate(() => {
-  const s = window.modellio.store.getState();
-  return { doc: s.doc, selection: s.selection, past: s.history.past.length, future: s.history.future.length, mode: s.mode };
-});
+const state = () =>
+  page.evaluate(() => {
+    const s = window.modellio.store.getState();
+    return { doc: s.doc, selection: s.selection, past: s.history.past.length, future: s.history.future.length, mode: s.mode };
+  });
 const obj = async (id) => (await state()).doc.objects[id];
 const screen = (p) => page.evaluate(([x, y, z]) => window.modellio.worldToScreen(x, y, z), p);
 /** World-space length of one TransformControls gizmo unit at a point (mirrors three's sizing). */
@@ -40,7 +41,11 @@ const gizmoUnit = (p) =>
     const d = Math.hypot(cam.position.x - x, cam.position.y - y, cam.position.z - z);
     return (d * Math.min((1.9 * Math.tan((Math.PI * cam.fov) / 360)) / cam.zoom, 7) * 0.85) / 4;
   }, p);
-const cameraPos = () => page.evaluate(() => { const c = window.modellio.viewport.camera.position; return [c.x, c.y, c.z]; });
+const cameraPos = () =>
+  page.evaluate(() => {
+    const c = window.modellio.viewport.camera.position;
+    return [c.x, c.y, c.z];
+  });
 const drag = async (from, to, steps = 20) => {
   await page.mouse.move(from.x, from.y);
   await page.waitForTimeout(60);
@@ -67,12 +72,18 @@ let s = await state();
 const ids = s.doc.rootIds;
 const kinds = ids.map((id) => s.doc.objects[id].shape);
 check('3. Box, sphere and cylinder added', JSON.stringify(kinds) === '["box","sphere","cylinder"]', kinds.join(', '));
-const [boxId, sphereId, cylId] = ids;
+const [boxId, sphereId] = ids;
 const target = await screen([60, -40, 0]);
-await page.locator('button[title^="Add Cone "]').dragTo(page.locator('[data-testid=viewport]'), { targetPosition: { x: target.x - 340, y: target.y - 108 } });
+await page
+  .locator('button[title^="Add Cone "]')
+  .dragTo(page.locator('[data-testid=viewport]'), { targetPosition: { x: target.x - 340, y: target.y - 108 } });
 s = await state();
 const cone = Object.values(s.doc.objects).find((o) => o.shape === 'cone');
-check('3b. Drag-and-drop places a cone on the workplane', !!cone && close(cone.transform.position[2], 10), cone ? JSON.stringify(cone.transform.position) : 'none');
+check(
+  '3b. Drag-and-drop places a cone on the workplane',
+  !!cone && close(cone.transform.position[2], 10),
+  cone ? JSON.stringify(cone.transform.position) : 'none',
+);
 await page.screenshot({ path: `${OUT}/02-shapes.png` });
 
 // 4. Select an object by clicking it in the viewport
@@ -110,7 +121,10 @@ let b1 = await obj(boxId);
 const dx = b1.transform.position[0] - p[0];
 check(
   '5. Gizmo X-arrow drag moves along X only (snapped to 1 mm)',
-  Math.abs(dx) > 5 && Number.isInteger(b1.transform.position[0]) && close(b1.transform.position[1], p[1]) && close(b1.transform.position[2], p[2]),
+  Math.abs(dx) > 5 &&
+    Number.isInteger(b1.transform.position[0]) &&
+    close(b1.transform.position[1], p[1]) &&
+    close(b1.transform.position[2], p[2]),
   `${JSON.stringify(p)} → ${JSON.stringify(b1.transform.position)}`,
 );
 s = await state();
@@ -122,7 +136,11 @@ await page.screenshot({ path: `${OUT}/03-moved.png` });
 await page.getByRole('button', { name: 'Home view' }).click();
 await page.waitForTimeout(900);
 const camHome = await cameraPos();
-check('6a. Home view button animates the camera back to the front-right-top view', camHome[0] > 0 && camHome[1] < 0 && camHome[2] > 0, camHome.map(Math.round).join(', '));
+check(
+  '6a. Home view button animates the camera back to the front-right-top view',
+  camHome[0] > 0 && camHome[1] < 0 && camHome[2] > 0,
+  camHome.map(Math.round).join(', '),
+);
 await page.keyboard.press('e');
 await page.waitForTimeout(150);
 p = b1.transform.position;
@@ -180,13 +198,20 @@ check('8b. Backspace while typing does not delete the object', !!(await obj(boxI
 await page.screenshot({ path: `${OUT}/06-exact-size.png` });
 
 // 9. Duplicate and delete
-await page.locator('[data-testid=viewport]').click({ position: { x: 5, y: 400 } }).catch(() => {});
+await page
+  .locator('[data-testid=viewport]')
+  .click({ position: { x: 5, y: 400 } })
+  .catch(() => {});
 await page.evaluate((id) => window.modellio.store.getState().select([id]), boxId);
 await page.keyboard.press('Control+d');
 s = await state();
 const copyId = s.selection[0];
 const copy = s.doc.objects[copyId];
-check('9. Ctrl+D duplicates the box with identical size', copyId !== boxId && JSON.stringify(copy.size) === JSON.stringify(b4.size), copy?.name);
+check(
+  '9. Ctrl+D duplicates the box with identical size',
+  copyId !== boxId && JSON.stringify(copy.size) === JSON.stringify(b4.size),
+  copy?.name,
+);
 await page.keyboard.press('Delete');
 check('9b. Delete removes the duplicate', !(await obj(copyId)) && Object.keys((await state()).doc.objects).length === 4);
 
@@ -202,7 +227,10 @@ await page.keyboard.press('Control+z'); // resize
 await page.keyboard.press('Control+z'); // rotate
 await page.keyboard.press('Control+z'); // move
 let b6 = await obj(boxId);
-check('10c. Undo reverts resize, rotate and move', JSON.stringify(b6.transform) === JSON.stringify(b0.transform) && JSON.stringify(b6.size) === '[20,20,20]');
+check(
+  '10c. Undo reverts resize, rotate and move',
+  JSON.stringify(b6.transform) === JSON.stringify(b0.transform) && JSON.stringify(b6.size) === '[20,20,20]',
+);
 for (let i = 0; i < 5; i++) await page.keyboard.press('Control+Shift+z');
 let b7 = await obj(boxId);
 check('10d. Ctrl+Shift+Z redoes to the typed size', JSON.stringify(b7.size) === JSON.stringify(b4.size), JSON.stringify(b7.size));
@@ -244,7 +272,7 @@ await page.screenshot({ path: `${OUT}/08-top-view.png` });
 // GPU memory: adding/resizing/deleting shapes must not leak geometries.
 const gpuGeometries = () =>
   page.evaluate(async () => {
-    window.modellio.viewport.renderer && (await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     return window.modellio.viewport.renderer.info.memory.geometries;
   });
 await page.keyboard.press('Escape');

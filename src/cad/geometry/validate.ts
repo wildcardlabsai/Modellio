@@ -36,7 +36,9 @@ export function analyzeMesh(geometry: THREE.BufferGeometry, tolerance = 1e-4): M
   }
 
   const directed = new Map<string, number>();
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const a = new THREE.Vector3(),
+    b = new THREE.Vector3(),
+    c = new THREE.Vector3();
   let volume = 0;
   let triangles = 0;
   for (let t = 0; t < triCount; t++) {

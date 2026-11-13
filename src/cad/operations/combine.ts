@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import type { Manifold } from 'manifold-3d';
 import type { ModelDocument, ObjectId, SceneObject, ShapeObject, Vec3 } from '@/types/document';
 import { getKernel } from '../kernel/kernel';
-import { centerMeshData, geometryToMeshData, manifoldToMeshData, meshDataBounds, meshDataToManifold, type MeshData } from '../kernel/meshData';
+import {
+  centerMeshData,
+  geometryToMeshData,
+  manifoldToMeshData,
+  meshDataBounds,
+  meshDataToManifold,
+  type MeshData,
+} from '../kernel/meshData';
 import { buildGeometryForShape } from '../shapeRegistry';
 import { setCombinedBoundsResolver, siblingsOf, worldMatrix } from '../hierarchy';
 import { addMeshAsset } from '../assets';
@@ -161,7 +168,14 @@ export function computeCombined(doc: ModelDocument, groupId: ObjectId): CombineR
     }
   } catch (e) {
     if (e instanceof PendingError) return null;
-    result = { mesh: null, error: e instanceof Error ? e.message : String(e), bounds: new THREE.Box3(), color, isHole: false, triangles: 0 };
+    result = {
+      mesh: null,
+      error: e instanceof Error ? e.message : String(e),
+      bounds: new THREE.Box3(),
+      color,
+      isHole: false,
+      triangles: 0,
+    };
   } finally {
     owned.forEach((m) => m.delete());
   }

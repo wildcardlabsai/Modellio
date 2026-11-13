@@ -29,7 +29,10 @@ function sampleProject(): ProjectData {
     meta: { id: 'p1', name: 'Test', createdAt: 1, updatedAt: 2, objectCount: 4 },
     document: doc,
     assets: {
-      mesh_test: { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1.5]), indices: new Uint32Array([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]) },
+      mesh_test: {
+        positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1.5]),
+        indices: new Uint32Array([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]),
+      },
       unused: { positions: new Float32Array(9), indices: new Uint32Array([0, 1, 2]) },
     },
   };

@@ -35,19 +35,21 @@ export function Workplane({ size, showGrid }: Props) {
         <shadowMaterial transparent opacity={0.12} />
       </mesh>
       {/* drei's Grid lives in its local XZ plane; rotate it into world XY. */}
-      {showGrid && <Grid
-        rotation={[Math.PI / 2, 0, 0]}
-        args={[w, h]}
-        cellSize={1}
-        cellThickness={0.6}
-        cellColor="#c9d4e6"
-        sectionSize={10}
-        sectionThickness={1}
-        sectionColor="#9fb3d6"
-        fadeDistance={Math.max(w, h) * 4}
-        fadeStrength={1.2}
-        side={THREE.DoubleSide}
-      />}
+      {showGrid && (
+        <Grid
+          rotation={[Math.PI / 2, 0, 0]}
+          args={[w, h]}
+          cellSize={1}
+          cellThickness={0.6}
+          cellColor="#c9d4e6"
+          sectionSize={10}
+          sectionThickness={1}
+          sectionColor="#9fb3d6"
+          fadeDistance={Math.max(w, h) * 4}
+          fadeStrength={1.2}
+          side={THREE.DoubleSide}
+        />
+      )}
       <lineSegments geometry={axes.x}>
         <lineBasicMaterial color="#e5484d" />
       </lineSegments>

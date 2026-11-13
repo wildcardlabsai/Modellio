@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 import { produce, type Draft } from 'immer';
 import * as THREE from 'three';
-import type { AlignMode, Axis, ModelDocument, ObjectId, PrimitiveType, ShapeObject, ShapeParams, TransformMode, Vec3 } from '@/types/document';
+import type {
+  AlignMode,
+  Axis,
+  ModelDocument,
+  ObjectId,
+  PrimitiveType,
+  ShapeObject,
+  ShapeParams,
+  TransformMode,
+  Vec3,
+} from '@/types/document';
 import {
   addObjectDraft,
   clampSize,
@@ -240,7 +250,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       const { history, doc, selection } = get();
       const r = undoHistory(history, doc);
       if (!r) return;
-      set({ doc: r.state, history: r.history, selection: validSelection(r.state, selection), lastAction: `Undo ${r.label}`, actionSeq: get().actionSeq + 1 });
+      set({
+        doc: r.state,
+        history: r.history,
+        selection: validSelection(r.state, selection),
+        lastAction: `Undo ${r.label}`,
+        actionSeq: get().actionSeq + 1,
+      });
     },
 
     redo: () => {
@@ -248,7 +264,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       const { history, doc, selection } = get();
       const r = redoHistory(history, doc);
       if (!r) return;
-      set({ doc: r.state, history: r.history, selection: validSelection(r.state, selection), lastAction: `Redo ${r.label}`, actionSeq: get().actionSeq + 1 });
+      set({
+        doc: r.state,
+        history: r.history,
+        selection: validSelection(r.state, selection),
+        lastAction: `Redo ${r.label}`,
+        actionSeq: get().actionSeq + 1,
+      });
     },
 
     loadDocument: (doc) => set({ doc, history: emptyHistory(), transaction: null, selection: [], collapsed: {} }),
@@ -288,9 +310,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       const def = getShapeDefinition(type);
       const doc = get().doc;
       const position: Vec3 =
-        opts?.exact && at
-          ? [roundTo(at[0]), roundTo(at[1]), def.defaultSize[2] / 2]
-          : findFreePosition(doc, def.defaultSize, at ?? [0, 0]);
+        opts?.exact && at ? [roundTo(at[0]), roundTo(at[1]), def.defaultSize[2] / 2] : findFreePosition(doc, def.defaultSize, at ?? [0, 0]);
       const obj = createShape(doc, type, position);
       get().apply(`Add ${def.label}`, (d) => addObjectDraft(d, obj));
       set({ selection: [obj.id] });
@@ -304,7 +324,9 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (selection.length) get().notify('Locked objects cannot be deleted.');
         return;
       }
-      get().apply(ids.length > 1 ? `Delete ${ids.length} objects` : `Delete ${doc.objects[ids[0]].name}`, (d) => removeObjectsDraft(d, ids));
+      get().apply(ids.length > 1 ? `Delete ${ids.length} objects` : `Delete ${doc.objects[ids[0]].name}`, (d) =>
+        removeObjectsDraft(d, ids),
+      );
       set({ selection: validSelection(get().doc, selection) });
     },
 
@@ -344,7 +366,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         selection: created,
         clipboard: {
           ...clip,
-          roots: clip.roots.map((r) => ({ ...r, world: { ...r.world, position: r.world.position.map((v, i) => v + DUPLICATE_OFFSET[i]) as Vec3 } })),
+          roots: clip.roots.map((r) => ({
+            ...r,
+            world: { ...r.world, position: r.world.position.map((v, i) => v + DUPLICATE_OFFSET[i]) as Vec3 },
+          })),
         },
       });
     },
@@ -404,7 +429,10 @@ export const useEditor = create<EditorState>()((set, get) => {
       const items = topLevel(doc, ids).filter((id) => !isEffectivelyLocked(doc, id));
       if (!items.length) return;
       const leaving = items.some((id) => doc.objects[id].parentId !== parentId);
-      get().apply(leaving ? (parentId ? 'Move into group' : 'Move out of group') : 'Reorder', (d) => void moveObjectsDraft(d, items, parentId, index));
+      get().apply(
+        leaving ? (parentId ? 'Move into group' : 'Move out of group') : 'Reorder',
+        (d) => void moveObjectsDraft(d, items, parentId, index),
+      );
     },
 
     setSize: (id, size) => editShape(id, 'Resize', (o) => void (o.size = clampSize(size))),
@@ -574,7 +602,12 @@ export const useEditor = create<EditorState>()((set, get) => {
       const gid = createId('grp');
       get().apply(parts.length > 1 ? `Import ${parts.length} parts` : 'Import mesh', (d) => {
         for (const sh of shapes) addObjectDraft(d, sh);
-        if (shapes.length > 1) groupDraft(d, shapes.map((x) => x.id), { id: gid, name: uniqueName(doc, opts?.groupName ?? 'Imported') });
+        if (shapes.length > 1)
+          groupDraft(
+            d,
+            shapes.map((x) => x.id),
+            { id: gid, name: uniqueName(doc, opts?.groupName ?? 'Imported') },
+          );
       });
       const sel = shapes.length > 1 ? [gid] : [shapes[0].id];
       set({ selection: sel });
@@ -599,7 +632,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       const depth = def.defaultSize[2];
       const size: Vec3 = [roundTo(ext.x), roundTo(ext.y), depth];
       const position = at ? ([roundTo(at[0]), roundTo(at[1]), depth / 2] as Vec3) : findFreePosition(doc, size);
-      const obj = { ...createShape(doc, 'text', position), text, params, size, name: uniqueName(doc, content.split('\n')[0].slice(0, 24) || 'Text') };
+      const obj = {
+        ...createShape(doc, 'text', position),
+        text,
+        params,
+        size,
+        name: uniqueName(doc, content.split('\n')[0].slice(0, 24) || 'Text'),
+      };
       get().apply('Add text', (d) => addObjectDraft(d, obj));
       set({ selection: [obj.id] });
       return obj.id;

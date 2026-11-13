@@ -61,7 +61,12 @@ export function findFreePosition(doc: ModelDocument, size: Vec3, preferred: [num
   if (fits(candidate(px, py))) return candidate(px, py);
   for (let ring = 1; ring <= 8; ring++) {
     for (let i = -ring; i <= ring; i++) {
-      for (const [dx, dy] of [[i, -ring], [i, ring], [-ring, i], [ring, i]]) {
+      for (const [dx, dy] of [
+        [i, -ring],
+        [i, ring],
+        [-ring, i],
+        [ring, i],
+      ]) {
         const c = candidate(px + dx * step, py + dy * step);
         if (fits(c)) return c;
       }

@@ -22,7 +22,13 @@ export function LeftRail({ panel, onChange }: { panel: LeftPanel; onChange: (p: 
       {PANELS.map(({ id, label, Icon }) => {
         const active = id === panel;
         return (
-          <button key={id} type="button" onClick={() => onChange(id)} aria-current={active ? 'true' : undefined} className={itemCls(active)}>
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            aria-current={active ? 'true' : undefined}
+            className={itemCls(active)}
+          >
             {active && <span className="absolute -left-1.5 top-2 bottom-2 w-[3px] rounded-full bg-brand" />}
             <Icon size={22} strokeWidth={1.8} />
             {label}

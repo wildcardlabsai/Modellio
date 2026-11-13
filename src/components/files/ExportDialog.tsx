@@ -39,7 +39,10 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
   const [w, d] = doc.settings.workplane;
   const offPlate =
     !collection.bounds.isEmpty() &&
-    (collection.bounds.min.x < -w / 2 - 1e-3 || collection.bounds.max.x > w / 2 + 1e-3 || collection.bounds.min.y < -d / 2 - 1e-3 || collection.bounds.max.y > d / 2 + 1e-3);
+    (collection.bounds.min.x < -w / 2 - 1e-3 ||
+      collection.bounds.max.x > w / 2 + 1e-3 ||
+      collection.bounds.min.y < -d / 2 - 1e-3 ||
+      collection.bounds.max.y > d / 2 + 1e-3);
   const belowPlate = !collection.bounds.isEmpty() && collection.bounds.min.z < -1e-3;
   const empty = collection.bodies.length === 0;
 
@@ -53,7 +56,11 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
         downloadBlob(obj, `${base}.obj`, 'model/obj');
         if (withMtl) setTimeout(() => downloadBlob(mtl, `${base}.mtl`, 'text/plain'), 300);
       }
-      useEditor.getState().notify(`Exported ${collection.bodies.length} object${collection.bodies.length > 1 ? 's' : ''} · ${collection.triangles.toLocaleString()} triangles`);
+      useEditor
+        .getState()
+        .notify(
+          `Exported ${collection.bodies.length} object${collection.bodies.length > 1 ? 's' : ''} · ${collection.triangles.toLocaleString()} triangles`,
+        );
       onClose();
     } catch (e) {
       useEditor.getState().notify(`Export failed: ${e instanceof Error ? e.message : e}`);
@@ -131,13 +138,16 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
             )}
             <p className={`mt-2 flex items-start gap-1.5 text-[12px] ${leaky.length ? 'text-amber-700' : 'text-emerald-700'}`}>
               {leaky.length ? <CircleAlert size={14} className="mt-px shrink-0" /> : <CircleCheck size={14} className="mt-px shrink-0" />}
-              {leaky.length ? `Not watertight: ${leaky.map((b) => b.name).join(', ')}. Your slicer may need to repair it.` : 'All objects are watertight solids.'}
+              {leaky.length
+                ? `Not watertight: ${leaky.map((b) => b.name).join(', ')}. Your slicer may need to repair it.`
+                : 'All objects are watertight solids.'}
             </p>
           </>
         )}
         {collection.skippedHoles > 0 && (
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-muted">
-            <Info size={14} className="mt-px shrink-0" /> {collection.skippedHoles} hole{collection.skippedHoles > 1 ? 's' : ''} not inside a combination
+            <Info size={14} className="mt-px shrink-0" /> {collection.skippedHoles} hole{collection.skippedHoles > 1 ? 's' : ''} not inside
+            a combination
             {collection.skippedHoles > 1 ? ' were' : ' was'} skipped (holes only cut when combined).
           </p>
         )}
@@ -148,7 +158,8 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
         ))}
         {belowPlate && (
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-amber-700">
-            <CircleAlert size={14} className="mt-px shrink-0" /> Part of the model is below the workplane. Use “Drop to workplane” (D) before printing.
+            <CircleAlert size={14} className="mt-px shrink-0" /> Part of the model is below the workplane. Use “Drop to workplane” (D)
+            before printing.
           </p>
         )}
         {offPlate && (
@@ -157,7 +168,9 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
           </p>
         )}
       </div>
-      <p className="mt-3 text-[11px] text-muted">Units: millimetres. Positions are exported as placed; your slicer will centre the model on its bed.</p>
+      <p className="mt-3 text-[11px] text-muted">
+        Units: millimetres. Positions are exported as placed; your slicer will centre the model on its bed.
+      </p>
     </Modal>
   );
 }

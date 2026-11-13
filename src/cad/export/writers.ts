@@ -8,9 +8,15 @@ function orient(x: number, y: number, z: number, up: UpAxis): [number, number, n
 }
 
 function triNormal(a: number[], b: number[], c: number[]): [number, number, number] {
-  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  const ux = b[0] - a[0],
+    uy = b[1] - a[1],
+    uz = b[2] - a[2];
+  const vx = c[0] - a[0],
+    vy = c[1] - a[1],
+    vz = c[2] - a[2];
+  const nx = uy * vz - uz * vy,
+    ny = uz * vx - ux * vz,
+    nz = ux * vy - uy * vx;
   const l = Math.hypot(nx, ny, nz) || 1;
   return [nx / l, ny / l, nz / l];
 }
@@ -86,7 +92,12 @@ export function writeObj(bodies: ExportBody[], up: UpAxis = 'z', mtlFileName?: s
     materials.set(mat, b.color);
     lines.push(`o ${name}`);
     const p = b.mesh.positions;
-    for (let i = 0; i < p.length; i += 3) lines.push(`v ${orient(p[i], p[i + 1], p[i + 2], up).map(fmt).join(' ')}`);
+    for (let i = 0; i < p.length; i += 3)
+      lines.push(
+        `v ${orient(p[i], p[i + 1], p[i + 2], up)
+          .map(fmt)
+          .join(' ')}`,
+      );
     if (mtlFileName) lines.push(`usemtl ${mat}`);
     const ix = b.mesh.indices;
     for (let t = 0; t < ix.length; t += 3) lines.push(`f ${ix[t] + base} ${ix[t + 1] + base} ${ix[t + 2] + base}`);

@@ -1,6 +1,28 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
-import { Copy, Trash2, Lock, Eye, ArrowDownToLine, Link2, Link2Off, Layers, FolderOpen, Ungroup, Group, ChevronDown, Info, Combine, CircleCheck, CircleAlert, Layers2, Scissors, SquaresUnite, SquaresSubtract, SquaresIntersect } from 'lucide-react';
+import {
+  Copy,
+  Trash2,
+  Lock,
+  Eye,
+  ArrowDownToLine,
+  Link2,
+  Link2Off,
+  Layers,
+  FolderOpen,
+  Ungroup,
+  Group,
+  ChevronDown,
+  Info,
+  Combine,
+  CircleCheck,
+  CircleAlert,
+  Layers2,
+  Scissors,
+  SquaresUnite,
+  SquaresSubtract,
+  SquaresIntersect,
+} from 'lucide-react';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
@@ -25,7 +47,22 @@ const AXES = [
   { label: 'Z', cls: 'text-axis-z' },
 ] as const;
 
-const PALETTE = ['#2463EB', '#0EA5E9', '#10B981', '#84CC16', '#F59E0B', '#F97316', '#EF4444', '#EC4899', '#8B5CF6', '#6366F1', '#101828', '#98A2B3', '#E4E7EC', '#FFFFFF'];
+const PALETTE = [
+  '#2463EB',
+  '#0EA5E9',
+  '#10B981',
+  '#84CC16',
+  '#F59E0B',
+  '#F97316',
+  '#EF4444',
+  '#EC4899',
+  '#8B5CF6',
+  '#6366F1',
+  '#101828',
+  '#98A2B3',
+  '#E4E7EC',
+  '#FFFFFF',
+];
 
 /** Right-hand panel: the inspector for the selection, above the object tree. */
 export function Inspector() {
@@ -152,11 +189,19 @@ function ObjectInspector({ object }: { object: SceneObject }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
         {isGroup ? (
-          object.combine ? <Combine size={22} className="shrink-0 text-brand" /> : <FolderOpen size={22} className="shrink-0 text-brand" />
+          object.combine ? (
+            <Combine size={22} className="shrink-0 text-brand" />
+          ) : (
+            <FolderOpen size={22} className="shrink-0 text-brand" />
+          )
         ) : (
           <span
             className="h-6 w-6 shrink-0 rounded-md shadow-inner"
-            style={object.kind === 'shape' && object.isHole ? { background: 'repeating-linear-gradient(45deg,#c3cad6 0 3px,#eef1f5 3px 6px)' } : { background: color }}
+            style={
+              object.kind === 'shape' && object.isHole
+                ? { background: 'repeating-linear-gradient(45deg,#c3cad6 0 3px,#eef1f5 3px 6px)' }
+                : { background: color }
+            }
           />
         )}
         <NameField id={object.id} name={object.name} />
@@ -192,7 +237,8 @@ function ObjectInspector({ object }: { object: SceneObject }) {
           <>
             {locked && (
               <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-                <Lock size={14} /> {inheritedLock ? 'Locked by its group. Unlock the group to edit.' : 'This object is locked. Unlock it to edit.'}
+                <Lock size={14} />{' '}
+                {inheritedLock ? 'Locked by its group. Unlock the group to edit.' : 'This object is locked. Unlock it to edit.'}
               </div>
             )}
             {parent && (
@@ -210,7 +256,13 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               title={isGroup ? 'Group size (mm)' : 'Size (mm)'}
               action={
                 <IconButton
-                  label={groupUniformOnly ? 'Scales uniformly (contains angled parts)' : lockProportions ? 'Proportions locked' : 'Lock proportions'}
+                  label={
+                    groupUniformOnly
+                      ? 'Scales uniformly (contains angled parts)'
+                      : lockProportions
+                        ? 'Proportions locked'
+                        : 'Lock proportions'
+                  }
                   active={proportional}
                   disabled={groupUniformOnly}
                   tooltipSide="left"
@@ -226,7 +278,14 @@ function ObjectInspector({ object }: { object: SceneObject }) {
             <Section
               title="Position (mm)"
               action={
-                <IconButton label="Drop to workplane" shortcut="D" tooltipSide="left" className="h-7 min-w-7" disabled={locked} onClick={() => s.dropToWorkplane([object.id])}>
+                <IconButton
+                  label="Drop to workplane"
+                  shortcut="D"
+                  tooltipSide="left"
+                  className="h-7 min-w-7"
+                  disabled={locked}
+                  onClick={() => s.dropToWorkplane([object.id])}
+                >
                   <ArrowDownToLine size={15} />
                 </IconButton>
               }
@@ -253,9 +312,24 @@ function ObjectInspector({ object }: { object: SceneObject }) {
             {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
-              <Toggle label="Lock proportions" icon={<Link2 size={15} className="text-muted" />} checked={lockProportions} onChange={s.setLockProportions} />
-              <Toggle label="Visible" icon={<Eye size={15} className="text-muted" />} checked={object.visible} onChange={(v) => s.setVisible(object.id, v)} />
-              <Toggle label="Locked" icon={<Lock size={15} className="text-muted" />} checked={object.locked} onChange={(v) => s.setLocked(object.id, v)} />
+              <Toggle
+                label="Lock proportions"
+                icon={<Link2 size={15} className="text-muted" />}
+                checked={lockProportions}
+                onChange={s.setLockProportions}
+              />
+              <Toggle
+                label="Visible"
+                icon={<Eye size={15} className="text-muted" />}
+                checked={object.visible}
+                onChange={(v) => s.setVisible(object.id, v)}
+              />
+              <Toggle
+                label="Locked"
+                icon={<Lock size={15} className="text-muted" />}
+                checked={object.locked}
+                onChange={(v) => s.setLocked(object.id, v)}
+              />
             </Section>
           </>
         ) : (
@@ -415,7 +489,9 @@ function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean 
   const asset = object.meshId ? getMeshAsset(object.meshId) : undefined;
   return (
     <Section title="Mesh">
-      <p className="text-[12px] text-muted">{asset ? `${(asset.indices.length / 3).toLocaleString()} triangles · watertight` : 'Mesh data missing'}</p>
+      <p className="text-[12px] text-muted">
+        {asset ? `${(asset.indices.length / 3).toLocaleString()} triangles · watertight` : 'Mesh data missing'}
+      </p>
       <button
         type="button"
         disabled={locked}

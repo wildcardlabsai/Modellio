@@ -11,8 +11,7 @@ interface Props {
   showDimensions: boolean;
 }
 
-const label =
-  'pointer-events-none whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums shadow-sm text-white';
+const label = 'pointer-events-none whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums shadow-sm text-white';
 
 /**
  * Oriented bounding box of a selected shape or group, with live X/Y/Z
@@ -32,7 +31,9 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
 
   const edges = useMemo(() => {
     const { min, max } = box;
-    const xs = [min.x, max.x], ys = [min.y, max.y], zs = [min.z, max.z];
+    const xs = [min.x, max.x],
+      ys = [min.y, max.y],
+      zs = [min.z, max.z];
     const pts: [number, number, number][] = [];
     for (const y of ys) for (const z of zs) pts.push([min.x, y, z], [max.x, y, z]);
     for (const x of xs) for (const z of zs) pts.push([x, min.y, z], [x, max.y, z]);

@@ -38,7 +38,7 @@ export function renderShapeThumbnails(px = 128): Partial<Record<PrimitiveType, s
       const mesh = new THREE.Mesh(geometry, material);
       scene.add(mesh);
       const radius = new THREE.Vector3(...def.defaultSize).length() / 2;
-      const dist = radius / Math.sin(THREE.MathUtils.degToRad(15)) * 1.02;
+      const dist = (radius / Math.sin(THREE.MathUtils.degToRad(15))) * 1.02;
       camera.position.set(1, -1.3, 0.9).normalize().multiplyScalar(dist);
       camera.lookAt(0, 0, 0);
       renderer.render(scene, camera);

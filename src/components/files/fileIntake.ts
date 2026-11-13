@@ -47,7 +47,11 @@ export async function handleFiles(files: File[], at?: [number, number]) {
       const parsed = parseMeshFile(file.name, await file.arrayBuffer());
       useFileUi.setState((s) => ({ queue: [...s.queue, { parsed, at }] }));
     } catch (e) {
-      notify(e instanceof ImportError || e instanceof ProjectFormatError ? e.message : `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`);
+      notify(
+        e instanceof ImportError || e instanceof ProjectFormatError
+          ? e.message
+          : `Could not import ${file.name}: ${e instanceof Error ? e.message : e}`,
+      );
     } finally {
       useFileUi.setState({ busy: null });
     }

@@ -89,7 +89,9 @@ export function migrateDocument(raw: unknown): ModelDocument {
     if (o.kind === 'group') o.children = o.children.filter((c) => doc.objects[c]?.parentId === o.id);
     if (o.parentId && doc.objects[o.parentId]?.kind !== 'group') o.parentId = null;
   }
-  doc.rootIds = (raw.rootIds as unknown[]).filter((id): id is string => typeof id === 'string' && !!doc.objects[id] && !doc.objects[id].parentId);
+  doc.rootIds = (raw.rootIds as unknown[]).filter(
+    (id): id is string => typeof id === 'string' && !!doc.objects[id] && !doc.objects[id].parentId,
+  );
   // Anything orphaned becomes top-level rather than silently disappearing.
   const reachable = new Set(collectSubtree(doc, doc.rootIds));
   for (const o of Object.values(doc.objects)) {
@@ -139,13 +141,15 @@ export function projectFromFile(text: string): ProjectData {
     throw new ProjectFormatError('This file is not a MODELLIO project (invalid JSON).');
   }
   if (!isObj(raw) || raw.format !== PROJECT_FILE_FORMAT) throw new ProjectFormatError('This file is not a MODELLIO project.');
-  if (typeof raw.version !== 'number' || raw.version > PROJECT_FILE_VERSION) throw new ProjectFormatError('This project file is from a newer version of MODELLIO.');
+  if (typeof raw.version !== 'number' || raw.version > PROJECT_FILE_VERSION)
+    throw new ProjectFormatError('This project file is from a newer version of MODELLIO.');
   const document = migrateDocument(raw.document);
   const assets: Record<string, MeshData> = {};
   const rawAssets = isObj(raw.assets) ? raw.assets : {};
   for (const id of referencedAssets(document)) {
     const a = rawAssets[id];
-    if (!isObj(a) || typeof a.positions !== 'string' || typeof a.indices !== 'string') throw new ProjectFormatError(`Mesh data for ${id} is missing.`);
+    if (!isObj(a) || typeof a.positions !== 'string' || typeof a.indices !== 'string')
+      throw new ProjectFormatError(`Mesh data for ${id} is missing.`);
     const pb = fromBase64(a.positions);
     const ib = fromBase64(a.indices);
     if (pb.byteLength % 12 || ib.byteLength % 12) throw new ProjectFormatError(`Mesh data for ${id} is corrupt.`);

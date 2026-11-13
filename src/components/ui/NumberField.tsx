@@ -86,7 +86,9 @@ export function NumberField({
   return (
     <label
       className={`group flex h-9 min-w-0 items-center gap-1.5 rounded-lg border bg-white px-2 transition-colors ${
-        error ? 'border-red-400 ring-2 ring-red-100' : 'border-line hover:border-[#c9d2e0] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15'
+        error
+          ? 'border-red-400 ring-2 ring-red-100'
+          : 'border-line hover:border-[#c9d2e0] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15'
       } ${disabled ? 'pointer-events-none opacity-50' : ''}`}
     >
       {label && <span className={`text-[11px] font-bold ${labelClass}`}>{label}</span>}

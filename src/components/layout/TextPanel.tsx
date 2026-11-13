@@ -52,7 +52,9 @@ export function TextPanel() {
             <li key={f.id}>{f.label}</li>
           ))}
         </ul>
-        <p className="mt-2 text-[11px] text-muted">Change the font of a selected text in the inspector. All fonts are SIL Open Font License.</p>
+        <p className="mt-2 text-[11px] text-muted">
+          Change the font of a selected text in the inspector. All fonts are SIL Open Font License.
+        </p>
       </div>
     </aside>
   );
