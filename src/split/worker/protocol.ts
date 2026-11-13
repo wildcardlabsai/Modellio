@@ -12,7 +12,10 @@ export function documentTransferables(doc: ThreeMFDocument): ArrayBuffer[] {
   for (const o of doc.objects)
     if (o.mesh) {
       for (const a of [o.mesh.vertices, o.mesh.triangles, o.mesh.perTriangleMaterialIds]) out.add(a.buffer as ArrayBuffer);
-      if (o.mesh.paint) out.add(o.mesh.paint.codes.buffer as ArrayBuffer);
+      if (o.mesh.paint) {
+        out.add(o.mesh.paint.codes.buffer as ArrayBuffer);
+        if (o.mesh.paint.base) out.add(o.mesh.paint.base.buffer as ArrayBuffer);
+      }
       if (o.mesh.preview)
         for (const a of [o.mesh.preview.positions, o.mesh.preview.normals, o.mesh.preview.groups]) out.add(a.buffer as ArrayBuffer);
     }

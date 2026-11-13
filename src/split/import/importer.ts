@@ -130,10 +130,11 @@ export async function importThreeMF(
 
   onProgress(0.85, 'Resolving materials');
   const flat = flattenInstances(raw, issues);
-  const { materials, perTriangle } = resolveMaterials(raw, scan, vendor, flat, issues);
+  const { materials, perTriangle, paintBase, filamentMaterials } = resolveMaterials(raw, scan, vendor, flat, issues);
 
   onProgress(0.92, 'Building document');
-  const doc = buildDocument(raw, flat, materials, perTriangle, issues, vendor?.objects, scan);
+  const doc = buildDocument(raw, flat, materials, perTriangle, issues, vendor?.objects, scan, paintBase);
+  doc.filamentMaterials = filamentMaterials;
   doc.fileName = fileName;
   doc.fileSize = bytes.length;
   doc.extensions = extensions;
@@ -158,6 +159,7 @@ function buildDocument(
   issues: ImportIssue[],
   vendorObjects?: Map<number, { name?: string; extruder?: number }>,
   scan?: ScanResult,
+  paintBase?: Map<number, Uint32Array>,
 ): ThreeMFDocument {
   const objects: ThreeMFObject[] = [];
   const indexOfUid = new Map<number, number>();
@@ -168,7 +170,10 @@ function buildDocument(
       triangles: m.triangles,
       perTriangleMaterialIds: perTriangle.get(m.uid) ?? new Uint32Array(m.triangles.length / 3),
       bounds: bounds(m.vertices),
-      paint: scan?.paint.get(objectKey(m.path, m.id)),
+      paint: (() => {
+        const p = scan?.paint.get(objectKey(m.path, m.id));
+        return p ? { ...p, base: paintBase?.get(m.uid) } : undefined;
+      })(),
     };
     indexOfUid.set(m.uid, objects.length);
     objects.push({
@@ -236,6 +241,7 @@ function buildDocument(
     application: null,
     extensions: [],
     materials,
+    filamentMaterials: {},
     objects,
     buildItems: raw.buildItems.map((b, index) => {
       const ref = uidToRef(b.objectUid);

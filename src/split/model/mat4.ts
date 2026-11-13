@@ -38,3 +38,66 @@ export function uniformScale(m: Mat4, eps = 1e-6): number | null {
   if (Math.abs(dot(a, b)) > tol || Math.abs(dot(a, c)) > tol || Math.abs(dot(b, c)) > tol) return null;
   return s;
 }
+
+/** Rotation taking unit vector `from` onto unit vector `to` (Rodrigues), as a column-major 4×4. */
+export function rotationBetween(from: [number, number, number], to: [number, number, number]): Mat4 {
+  const [ax, ay, az] = from;
+  const [bx, by, bz] = to;
+  const c = ax * bx + ay * by + az * bz;
+  let kx = ay * bz - az * by;
+  let ky = az * bx - ax * bz;
+  let kz = ax * by - ay * bx;
+  const s = Math.hypot(kx, ky, kz);
+  if (s < 1e-12) {
+    if (c > 0) return [...IDENTITY];
+    // Opposite: rotate 180° about any axis perpendicular to `from`.
+    const p = Math.abs(ax) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    kx = ay * p[2] - az * p[1];
+    ky = az * p[0] - ax * p[2];
+    kz = ax * p[1] - ay * p[0];
+    const l = Math.hypot(kx, ky, kz);
+    return axisAngle([kx / l, ky / l, kz / l], Math.PI);
+  }
+  return axisAngle([kx / s, ky / s, kz / s], Math.atan2(s, c));
+}
+
+export function axisAngle([x, y, z]: [number, number, number], angle: number): Mat4 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const t = 1 - c;
+  return [
+    t * x * x + c,
+    t * x * y + s * z,
+    t * x * z - s * y,
+    0,
+    t * x * y - s * z,
+    t * y * y + c,
+    t * y * z + s * x,
+    0,
+    t * x * z + s * y,
+    t * y * z - s * x,
+    t * z * z + c,
+    0,
+    0,
+    0,
+    0,
+    1,
+  ];
+}
+
+export function translation(x: number, y: number, z: number): Mat4 {
+  return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+}
+
+/** Apply a transform to every vertex (returns a new array). */
+export function transformPositions(m: Mat4, p: Float32Array): Float32Array {
+  const out = new Float32Array(p.length);
+  const q = [0, 0, 0];
+  for (let i = 0; i < p.length; i += 3) {
+    applyToPoint(m, p[i], p[i + 1], p[i + 2], q);
+    out[i] = q[0];
+    out[i + 1] = q[1];
+    out[i + 2] = q[2];
+  }
+  return out;
+}

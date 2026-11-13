@@ -215,3 +215,89 @@ export function sampleEyeBadge(): Uint8Array {
     build: [{ objectid: 10 }, { objectid: 11 }, { objectid: 12 }, { objectid: 13 }],
   });
 }
+
+/** Icosphere (watertight, outward) with optional per-triangle attributes chosen from the triangle centroid. */
+export function icosphereMesh(
+  r: number,
+  subdivisions: number,
+  centre: [number, number, number] = [0, 0, 0],
+  triAttrs?: (c: [number, number, number]) => Record<string, string> | undefined,
+): FxMesh {
+  const t = (1 + Math.sqrt(5)) / 2;
+  let verts: [number, number, number][] = [
+    [-1, t, 0],
+    [1, t, 0],
+    [-1, -t, 0],
+    [1, -t, 0],
+    [0, -1, t],
+    [0, 1, t],
+    [0, -1, -t],
+    [0, 1, -t],
+    [t, 0, -1],
+    [t, 0, 1],
+    [-t, 0, -1],
+    [-t, 0, 1],
+  ];
+  let faces: [number, number, number][] = [
+    [0, 11, 5],
+    [0, 5, 1],
+    [0, 1, 7],
+    [0, 7, 10],
+    [0, 10, 11],
+    [1, 5, 9],
+    [5, 11, 4],
+    [11, 10, 2],
+    [10, 7, 6],
+    [7, 1, 8],
+    [3, 9, 4],
+    [3, 4, 2],
+    [3, 2, 6],
+    [3, 6, 8],
+    [3, 8, 9],
+    [4, 9, 5],
+    [2, 4, 11],
+    [6, 2, 10],
+    [8, 6, 7],
+    [9, 8, 1],
+  ];
+  const norm = (v: [number, number, number]): [number, number, number] => {
+    const l = Math.hypot(...v);
+    return [v[0] / l, v[1] / l, v[2] / l];
+  };
+  verts = verts.map(norm);
+  for (let s = 0; s < subdivisions; s++) {
+    const cache = new Map<string, number>();
+    const mid = (a: number, b: number) => {
+      const k = a < b ? `${a}_${b}` : `${b}_${a}`;
+      let m = cache.get(k);
+      if (m === undefined) {
+        m = verts.push(norm([(verts[a][0] + verts[b][0]) / 2, (verts[a][1] + verts[b][1]) / 2, (verts[a][2] + verts[b][2]) / 2])) - 1;
+        cache.set(k, m);
+      }
+      return m;
+    };
+    const next: [number, number, number][] = [];
+    for (const [a, b, c] of faces) {
+      const ab = mid(a, b);
+      const bc = mid(b, c);
+      const ca = mid(c, a);
+      next.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]);
+    }
+    faces = next;
+  }
+  const vertices = verts.map(
+    ([x, y, z]) =>
+      [+(centre[0] + x * r).toFixed(5), +(centre[1] + y * r).toFixed(5), +(centre[2] + z * r).toFixed(5)] as [number, number, number],
+  );
+  return {
+    vertices,
+    triangles: faces.map((v) => {
+      const c: [number, number, number] = [0, 1, 2].map((k) => (vertices[v[0]][k] + vertices[v[1]][k] + vertices[v[2]][k]) / 3) as [
+        number,
+        number,
+        number,
+      ];
+      return { v, attrs: triAttrs?.(c) };
+    }),
+  };
+}

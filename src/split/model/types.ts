@@ -37,7 +37,7 @@ export interface ThreeMFMesh {
   perTriangleMaterialIds: Uint32Array;
   bounds: { min: [number, number, number]; max: [number, number, number] };
   /** Slicer paint (Bambu `paint_color` / Prusa `mmu_segmentation`), kept for exact splitting. */
-  paint?: { codes: Uint32Array; strings: string[] };
+  paint?: { codes: Uint32Array; strings: string[]; base?: Uint32Array };
   /** Render-ready buffers built in the worker (triangles ordered by material). */
   preview?: PreviewBuffers;
 }
@@ -140,6 +140,8 @@ export interface ThreeMFDocument {
   /** Extension namespaces used by the package. */
   extensions: string[];
   materials: ThreeMFMaterial[];
+  /** Paint state / filament slot → material index (for exact paint splitting). */
+  filamentMaterials: Record<number, number>;
   objects: ThreeMFObject[];
   buildItems: ThreeMFBuildItem[];
   instances: ThreeMFInstance[];

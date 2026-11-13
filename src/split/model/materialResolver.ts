@@ -26,6 +26,10 @@ export interface ResolvedMaterials {
   materials: ThreeMFMaterial[];
   /** Mesh uid → per-triangle material index. */
   perTriangle: Map<number, Uint32Array>;
+  /** Mesh uid → per-triangle material ignoring paint (painted meshes only); paint state 0 uses it. */
+  paintBase: Map<number, Uint32Array>;
+  /** Paint state / filament slot → material index. */
+  filamentMaterials: Record<number, number>;
 }
 
 const NEUTRAL = '#B8BCC4';
@@ -270,6 +274,7 @@ export function resolveMaterials(
   const filamentOf = (slot: number) => (filamentCache[slot] ??= filament(slot));
 
   const perTriangle = new Map<number, Uint32Array>();
+  const paintBase = new Map<number, Uint32Array>();
   for (const mesh of raw.meshes) {
     const n = mesh.triangles.length / 3;
     const out = new Uint32Array(n);
@@ -288,6 +293,12 @@ export function resolveMaterials(
       }
     });
     const codes = paint?.codes;
+    const baseOut = codes ? new Uint32Array(n) : null;
+    // Fine paint can use filaments that are never a triangle's main colour: register them all.
+    paint?.strings.forEach((str, k) => {
+      if (!paintInfo![k].split) return;
+      for (const st of decodePaint(str).areas.keys()) if (st > 0) filamentOf(st);
+    });
     const volumes = ctx?.obj.volumes ?? [];
     let unassignedId = -1;
     let nPaint = 0;
@@ -299,7 +310,9 @@ export function resolveMaterials(
     let nUnassigned = 0;
     const kindCounts = new Map<string, number>();
     for (let t = 0; t < n; t++) {
-      let mat = -1;
+      let nonPrintingMat = -1;
+      let extruderMat = -1;
+      let state = 0;
       // 1–3: slicer assignments.
       if (ctx || paint) {
         let role: PartRole = ctx?.partRole ?? 'part';
@@ -311,11 +324,9 @@ export function resolveMaterials(
             extruder = vol.extruder ?? ctx?.obj.extruder;
           }
         }
-        if (role !== 'part') {
-          mat = nonPrinting(role);
-        } else {
+        if (role !== 'part') nonPrintingMat = nonPrinting(role);
+        else {
           const code = codes ? codes[t] : 0;
-          let state = 0;
           if (code) {
             const info = paintInfo![code - 1];
             if (info.invalid) nInvalid++;
@@ -323,31 +334,39 @@ export function resolveMaterials(
             state = info.majority;
             if (state > 0) nPaint++;
           }
-          if (state > 0) mat = filamentOf(state);
-          else if (ctx) mat = filamentOf(extruder && extruder > 0 ? extruder : 1);
+          if (ctx) extruderMat = filamentOf(extruder && extruder > 0 ? extruder : 1);
         }
-        if (mat >= 0 && mesh.triResource[t] !== 0 && ctx) nOverSpec++;
       }
-      // 4–5: 3MF properties.
-      if (mat < 0) {
-        const uid = mesh.triResource[t];
-        if (uid !== 0) {
-          const p1 = mesh.triProps[t * 3];
-          const hit = cachedProperty(uid, p1);
-          if (hit.mat === null) nMissing++;
-          else {
-            mat = hit.mat;
+      if (nonPrintingMat >= 0) {
+        out[t] = nonPrintingMat;
+        if (baseOut) baseOut[t] = nonPrintingMat;
+        continue;
+      }
+      // The triangle's material without paint: slicer extruder, else 3MF properties (4–5), else unassigned.
+      let base = extruderMat;
+      const uid = mesh.triResource[t];
+      if (base >= 0) {
+        if (uid !== 0) nOverSpec++;
+      } else if (uid !== 0) {
+        const p1 = mesh.triProps[t * 3];
+        const hit = cachedProperty(uid, p1);
+        if (hit.mat === null) {
+          if (state === 0) nMissing++;
+        } else {
+          base = hit.mat;
+          if (state === 0) {
             if (hit.code) kindCounts.set(hit.code, (kindCounts.get(hit.code) ?? 0) + 1);
             if ((p1 !== mesh.triProps[t * 3 + 1] || p1 !== mesh.triProps[t * 3 + 2]) && hit.kind !== 'texture') nGradient++;
           }
-        } else if (objectLevel !== null) mat = objectLevel;
-      }
-      if (mat < 0) {
+        }
+      } else if (objectLevel !== null) base = objectLevel;
+      if (base < 0) {
         if (unassignedId < 0) unassignedId = unassigned();
-        mat = unassignedId;
-        nUnassigned++;
+        base = unassignedId;
+        if (state === 0) nUnassigned++;
       }
-      out[t] = mat;
+      if (baseOut) baseOut[t] = base;
+      out[t] = state > 0 ? filamentOf(state) : base;
     }
     if (nPaint) count('paint', nPaint);
     if (nSplit) count('paint-split', nSplit);
@@ -358,6 +377,7 @@ export function resolveMaterials(
     if (nUnassigned) count('unassigned', nUnassigned);
     for (const [code, k] of kindCounts) count(code, k);
     perTriangle.set(mesh.uid, out);
+    if (baseOut) paintBase.set(mesh.uid, baseOut);
   }
 
   const msg: Record<string, [ImportIssue['level'], (n: number) => string]> = {
@@ -398,5 +418,10 @@ export function resolveMaterials(
     const m = msg[code];
     if (m) issues.push({ level: m[0], code, message: m[1](n), count: n });
   }
-  return { materials, perTriangle };
+  return {
+    materials,
+    perTriangle,
+    paintBase,
+    filamentMaterials: Object.fromEntries(filamentCache.map((m, slot) => [slot, m]).filter((x) => x[1] !== undefined)),
+  };
 }

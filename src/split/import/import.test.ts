@@ -369,8 +369,8 @@ describe('3MF import — slicer projects', () => {
     });
     const c = comps(doc);
     expect(c.map((x) => [x.name, x.colour, x.triangleCount, x.approximate])).toEqual([
-      ['Filament 3', expect.any(String), 1, true],
       ['Filament 1', '#FF8000', 11, false],
+      ['Filament 3', expect.any(String), 1, true],
       ['Filament 2', '#DB5182', 12, false],
     ]);
     expect(issue(doc, 'filament-colour-unknown')?.count).toBe(1);
