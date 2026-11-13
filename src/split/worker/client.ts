@@ -73,3 +73,43 @@ export function importInWorker(file: Blob & { name?: string }, options: ImportOp
       });
   });
 }
+
+/** Run a Split Studio job (split / connect / export) in a dedicated worker. */
+export function runStudioJob<T extends import('./jobs').StudioJobResult['type']>(
+  job: Extract<import('./jobs').StudioJob, { type: T }>,
+  options: ImportOptions = {},
+): Promise<Extract<import('./jobs').StudioJobResult, { type: T }>> {
+  return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) return reject(new ImportCancelledError());
+    const worker = new Worker(new URL('./studio.worker.ts', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = () => {
+      settled = true;
+      worker.terminate();
+      options.signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      if (settled) return;
+      finish();
+      reject(new ImportCancelledError());
+    };
+    options.signal?.addEventListener('abort', onAbort);
+    worker.onmessage = (e: MessageEvent<import('./jobs').StudioWorkerMessage>) => {
+      const msg = e.data;
+      if (msg.type === 'progress') options.onProgress?.(msg.fraction, msg.stage);
+      else if (msg.type === 'done') {
+        finish();
+        resolve(msg.result as Extract<import('./jobs').StudioJobResult, { type: T }>);
+      } else {
+        finish();
+        reject(new ImportFailedError(msg.message, false));
+      }
+    };
+    worker.onerror = (e) => {
+      if (settled) return;
+      finish();
+      reject(new ImportFailedError(`The worker failed: ${e.message || 'unknown error'}`, false));
+    };
+    worker.postMessage(job);
+  });
+}

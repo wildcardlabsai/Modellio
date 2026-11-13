@@ -194,25 +194,36 @@ export function cylinderMesh(cx: number, cy: number, r: number, z0: number, z1: 
 }
 
 /**
- * Built-in sample: a multi-colour "eye" badge. A white base plate, a blue iris and a black
- * pupil as separate objects (base materials), plus a cube coloured per triangle (colour group).
+ * Built-in sample: a multi-colour "eye" badge and a character head.
+ * - White base plate, blue iris and black pupil as separate objects (base materials).
+ * - A cube coloured per triangle (colour group): red sides, yellow top and bottom.
+ * - A yellow head (sphere) with a painted eye on its front: a dark ring around a white highlight.
  */
 export function sampleEyeBadge(): Uint8Array {
   return build3mf({
     metadata: { Title: 'Eye badge (sample)', Application: 'MODELLIO sample' },
     root: {
       resources:
-        `<basematerials id="1"><base name="White PLA" displaycolor="#F4F4F2"/><base name="Blue PLA" displaycolor="#2F6FDE"/><base name="Black PLA" displaycolor="#1B1B1F"/></basematerials>` +
-        `<m:colorgroup id="2"><m:color color="#E0262B"/><m:color color="#F5C518"/></m:colorgroup>`,
+        `<basematerials id="1"><base name="White PLA" displaycolor="#F4F4F2"/><base name="Blue PLA" displaycolor="#2F6FDE"/><base name="Black PLA" displaycolor="#1B1B1F"/><base name="Yellow PLA" displaycolor="#F5C518"/></basematerials>` +
+        `<m:colorgroup id="2"><m:color color="#E0262B"/><m:color color="#F5C518"/><m:color color="#26262B"/><m:color color="#FFFFFF"/></m:colorgroup>`,
       objects: [
         { id: 10, name: 'Base plate', attrs: { pid: '1', pindex: '0' }, mesh: cylinderMesh(0, 0, 20, 0, 3, 48) },
         { id: 11, name: 'Iris', attrs: { pid: '1', pindex: '1' }, mesh: cylinderMesh(0, 0, 11, 3, 5, 40) },
         { id: 12, name: 'Pupil', attrs: { pid: '1', pindex: '2' }, mesh: cylinderMesh(0, 0, 5, 5, 6.5, 32) },
         // Per-triangle colours: red sides, yellow top and bottom.
         { id: 13, name: 'Two-tone cube', mesh: boxMesh([28, -6, 0], [40, 6, 12], (i) => ({ pid: '2', p1: i < 4 ? '1' : '0' })) },
+        // A head with an eye painted on its front (−Y): ring and white highlight.
+        {
+          id: 14,
+          name: 'Head',
+          attrs: { pid: '1', pindex: '3' },
+          mesh: icosphereMesh(18, 4, [-48, 0, 18], (c) =>
+            c[1] < -16.6 ? { pid: '2', p1: '3' } : c[1] < -12 ? { pid: '2', p1: '2' } : undefined,
+          ),
+        },
       ],
     },
-    build: [{ objectid: 10 }, { objectid: 11 }, { objectid: 12 }, { objectid: 13 }],
+    build: [{ objectid: 10 }, { objectid: 11 }, { objectid: 12 }, { objectid: 13 }, { objectid: 14 }],
   });
 }
 

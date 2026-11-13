@@ -1,4 +1,4 @@
-import type { ImportIssue } from '../model/types';
+import type { ImportIssue, PreviewBuffers } from '../model/types';
 
 export type Vec3 = [number, number, number];
 
@@ -57,6 +57,8 @@ export interface SplitPart {
   surfaceTriangles: number;
   caps: CapRecord[];
   report: PartReport;
+  /** Render-ready buffers (built in the worker). */
+  preview?: PreviewBuffers;
 }
 
 /** Two parts that touch along a shared, identically capped boundary. */

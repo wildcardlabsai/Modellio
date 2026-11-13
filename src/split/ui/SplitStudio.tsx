@@ -1,21 +1,37 @@
 import { useEffect, useState, type DragEvent } from 'react';
-import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert } from 'lucide-react';
-import { AVAILABLE_STEPS, STEPS, useSplit } from '../store';
+import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert, Undo2, Redo2 } from 'lucide-react';
+import { STEPS, useSplit } from '../store';
+import { IconButton } from '@/components/ui/IconButton';
+import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
-import { SplitViewport } from './SplitViewport';
+import { SplitViewport, splitView } from './SplitViewport';
 import { openSample, openSplitPicker } from './intake';
 
 /**
- * Split Studio shell: guided stepper, model/colour panel, 3D preview and details panel.
- * Only the Import step is available in this release; later steps are shown locked.
+ * Split Studio shell: guided stepper (Import → Split → Connect → Export), step panel,
+ * 3D preview and details panel. Steps unlock as their inputs exist.
  */
 export default function SplitStudio() {
   const doc = useSplit((s) => s.doc);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    (window as unknown as { modellioSplit: unknown }).modellioSplit = { store: useSplit };
+    (window as unknown as { modellioSplit: unknown }).modellioSplit = { store: useSplit, view: splitView };
+    // Studio shortcuts: undo / redo settings.
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        useSplit.getState().undo();
+      } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        useSplit.getState().redo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const onDrop = (e: DragEvent) => {
@@ -46,6 +62,7 @@ export default function SplitStudio() {
         <main className="relative min-w-0 flex-1" aria-label="Preview">
           <SplitViewport />
           {!doc && <EmptyState />}
+          <JobProgress />
         </main>
         <RightPanel />
       </div>
@@ -62,35 +79,42 @@ export default function SplitStudio() {
 function Stepper() {
   const step = useSplit((s) => s.step);
   const doc = useSplit((s) => s.doc);
-  const setStep = useSplit((s) => s.setStep);
+  const split = useSplit((s) => s.split);
+  const connected = useSplit((s) => s.connected);
+  const canUndo = useSplit((s) => s.past.length > 0);
+  const canRedo = useSplit((s) => s.future.length > 0);
+  // Subscribe to what canEnter depends on.
+  useSplit((s) => !!s.split);
+  const { setStep, canEnter, undo, redo } = useSplit.getState();
+  const done: Record<string, boolean> = { import: !!doc, split: !!split?.parts.length, connect: !!connected, export: false };
   return (
     <nav className="flex h-12 shrink-0 items-center gap-1 border-b border-line bg-white px-3 sm:px-5" aria-label="Split Studio steps">
       <span className="mr-3 hidden text-[14px] font-semibold text-ink md:block">Split Studio</span>
       <ol className="flex items-center gap-1">
         {STEPS.map((s, i) => {
-          const available = AVAILABLE_STEPS.includes(s.id);
+          const available = canEnter(s.id);
           const active = step === s.id;
-          const done = s.id === 'import' && !!doc;
+          const isDone = done[s.id];
           return (
             <li key={s.id} className="flex items-center">
-              {i > 0 && <span className="mx-1 h-px w-4 bg-line sm:w-6" aria-hidden />}
+              {i > 0 && <span className="mx-1 h-px w-3 bg-line sm:w-5" aria-hidden />}
               <button
                 type="button"
                 disabled={!available}
                 onClick={() => setStep(s.id)}
                 aria-current={active ? 'step' : undefined}
-                title={available ? undefined : 'This step is not available yet'}
+                title={available ? undefined : s.id === 'split' ? 'Import a 3MF file first' : 'Split the model first'}
                 className={`flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-medium ${
                   active ? 'bg-brand-50 text-brand' : available ? 'text-[#344054] hover:bg-[#f2f4f7]' : 'text-[#98a2b3]'
                 }`}
               >
                 <span
                   className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
-                    done ? 'bg-brand text-white' : active ? 'border border-brand' : 'border border-[#d0d5dd]'
+                    isDone ? 'bg-brand text-white' : active ? 'border border-brand' : 'border border-[#d0d5dd]'
                   }`}
                   aria-hidden
                 >
-                  {done ? <Check size={12} /> : available ? i + 1 : <Lock size={10} />}
+                  {isDone ? <Check size={12} /> : available ? i + 1 : <Lock size={10} />}
                 </span>
                 {s.label}
                 {!available && <span className="sr-only"> (not available yet)</span>}
@@ -101,11 +125,54 @@ function Stepper() {
       </ol>
       <div className="flex-1" />
       {doc && (
-        <span className="hidden max-w-[40%] truncate text-[13px] text-muted lg:block" data-testid="split-title">
+        <span className="mr-2 hidden max-w-[30%] truncate text-[13px] text-muted xl:block" data-testid="split-title">
           {doc.metadata.Title || doc.fileName}
         </span>
       )}
+      <IconButton label="Undo settings change" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo}>
+        <Undo2 size={17} />
+      </IconButton>
+      <IconButton label="Redo settings change" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={redo}>
+        <Redo2 size={17} />
+      </IconButton>
     </nav>
+  );
+}
+
+function JobProgress() {
+  const job = useSplit((s) => s.job);
+  if (!job) return null;
+  const pct = Math.round(job.fraction * 100);
+  return (
+    <div
+      className="absolute left-1/2 top-4 z-20 flex w-[min(92%,360px)] -translate-x-1/2 items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-float"
+      role="status"
+      data-testid="split-job"
+    >
+      <Loader2 size={16} className="shrink-0 animate-spin text-brand" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-medium text-ink">
+          {job.stage} · {pct}%
+        </p>
+        <div
+          className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#eef1f6]"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+          aria-label={job.stage}
+        >
+          <div className="h-full rounded-full bg-brand transition-[width]" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => useSplit.getState().cancelJob()}
+        className="rounded-md px-2 py-1 text-[12px] font-medium text-[#344054] hover:bg-[#f2f4f7]"
+      >
+        Cancel
+      </button>
+    </div>
   );
 }
 

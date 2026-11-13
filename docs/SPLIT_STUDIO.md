@@ -106,29 +106,39 @@ distinct and the source data is never altered.
 * e2e: open the Split Studio, upload fixtures through the real UI (picker and drag-and-drop), check the colour legend, warnings, preview,
   cancellation and return to Design; the editor suites stay green.
 
-## 8. Phases
+## 8. Phases (all implemented)
 
-1. **Integration** ✅ — studio routing (`?studio=split`, Back/Forward), top-bar switcher, Split Studio shell with a guided stepper
-   (later steps locked), its own viewport; editor shortcuts and the first-run tour are inactive while in the studio.
-2. **Import** ✅ — package reader, lib3mf parser in a worker (progress, cancellation), units → mm, components and instances,
-   vendor metadata, paint decoding, material resolver, colour legend (select / hide / isolate), region dimensions, preview,
-   import report. Known limits (all reported in the import report):
-   * fine (sub-triangle) paint shows each triangle's majority colour; exact splitting is Phase 3;
-   * textures show neutral grey; composite materials show the blended colour; multi-properties use the last colour layer;
-   * the Split Studio has no undo/redo, save or export yet: nothing in Phases 1–2 changes the model, and those controls arrive
-     with the phases that need them.
-3. Split strategies, geometry separation, boundary and validation report.
-4. Explode controller, plates.
-5. Round peg / blind socket connectors (Manifold Booleans), tolerances, the Pokémon-eye acceptance scenario.
-6. Export (per-plate and per-component 3MF and STL), validation, round trip.
-7. Performance, persistence, polish, documentation.
+1. **Integration** ✅ — studio routing, switcher, shell, guided stepper (Import → Split → Connect → Export), own viewport.
+2. **Import** ✅ — MODELLIO's streaming 3MF reader in a worker (lib3mf is the test reference: every import test runs both readers
+   and requires identical results), native-inflate unzip, vendor metadata, paint, material resolver, colour legend, import report.
+3. **Split** ✅ — `geometry/split.ts`: per instance, welded mesh → exact fine-paint expansion (PrusaSlicer TriangleSelector
+   rules, conforming re-triangulation) → regions (per colour, optionally per connected piece) → boundary loops → caps.
+   A loop's cap is triangulated once from a canonical vertex order and shared (reversed) by both neighbours, so two-colour
+   joints mate exactly; volumes of the parts add up to the original. Caps fall back to a centre fan when a flat
+   triangulation would reuse a mesh edge or the projection self-intersects (reported). Per-part validation and report.
+   `geometry/inlay.ts`: thin regions (flat paint, shallow lenses) become plugs of a set depth with a matching pocket.
+4. **Explode and plates** ✅ — explode slider (display only, never exported); `geometry/layout.ts` lays each part on its
+   largest flat face and shelf-packs parts onto plates (printer presets, one colour per plate by default).
+5. **Connectors** ✅ — `geometry/connectors.ts`: round peg / blind socket per joint face (1, 2 or auto), socket in the
+   thicker part, blind-socket and anchoring checks on the real geometry, pegs only with their sockets; skipped joints
+   are listed with the reason. Acceptance test: a sphere with a painted eye (ring + highlight).
+6. **Export** ✅ — `geometry/export.ts`: a 3MF per plate, an STL per part and a README in one ZIP, or one plate at a time.
+   Round-trip test: exported plates re-import as the same closed solids.
+7. **Polish** ✅ — undo/redo of studio settings (buttons and Ctrl+Z / Ctrl+Shift+Z), settings remembered between visits,
+   progress and cancel for every job, accessibility checks.
+
+### Known limits
+
+* Joints where three or more colours meet are capped per part and may not mate perfectly (reported).
+* Strongly curved colour boundaries get a centre-fan cap (reported); connectors need a joint face within 1.5 mm of flat.
+* Exact paint subdivision follows the published PrusaSlicer algorithm; it is tested for self-consistency here and should be
+  checked against real Bambu/Prusa painted files.
+* Multi-plate Bambu project export is not produced; plates are separate 3MF files that any slicer opens.
 
 ## 9. Tests
 
-* `src/split/import/import.test.ts` — 21 tests: paint decoding; base materials; colour groups; gradients; nested components and
-  transforms; multiple instances; inch units; textures, composites and multi-properties; production-extension parts; round trip
-  with MODELLIO's 3MF writer; the sample; Bambu parts, extruders, filament colours, paint and modifiers; Prusa volumes and MMU
-  painting; malformed packages.
-* `scripts/e2e-split.mjs` — 41 browser checks: routing, shell, sample import, preview pixels, selection and dimensions,
-  visibility, viewport picking, Bambu project via the file picker, error handling, progress and cancellation, a 200k-triangle
-  file without blocking the page, drag-and-drop, studio switching with Back/Forward, editor isolation, accessibility, tablet layout.
+* `src/split/import/import.test.ts` — import on synthetic fixtures; every case compared against lib3mf.
+* `src/split/geometry/split.test.ts` — painted sphere (volume conservation, joints), islands, instances, exact and nested paint, inlays.
+* `src/split/geometry/connectors.test.ts` — eye acceptance scenario, blind sockets, peg/socket pairing, plate export round trip.
+* `src/split/model/preview.test.ts` — preview buffers and the native unzip.
+* `scripts/e2e-split.mjs` — 58 browser checks, including the full sample workflow and the downloaded files.

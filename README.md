@@ -146,20 +146,19 @@ Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates an
 
 The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
 
-## Split Studio (phases 1–2) ✅
+## Split Studio ✅
 
-A second workspace (**Split Studio** on the landing page and in the top bar, or `/?studio=split`) for printing multi-colour designs as separate
-single-colour parts. Phases 1–2 cover integration and import:
+A second workspace (**Split Studio** on the landing page and in the top bar, or `/?studio=split`) for printing multi-colour
+designs as separate single-colour parts: **Import → Split → Connect → Export**.
 
-* Imports 3MF files using the official 3MF Consortium library (lib3mf, WebAssembly) in a Web Worker, with progress and cancel.
-* Reads objects, nested components, build items, transforms and units (converted to mm), base materials, colour groups and per-triangle
-  colours. Textures, composites and multi-properties are detected and reported.
-* Reads Bambu Studio / OrcaSlicer and PrusaSlicer project data: part and volume extruders, filament colours, painted triangles, and
-  modifier volumes (which are not printed).
-* Colour legend with select / hide / show-only, region dimensions in mm, a 3D preview and an import report that lists everything
-  approximated or skipped.
+* **Import:** a fast streaming 3MF reader in a Web Worker, checked against the official lib3mf library in tests. It reads objects,
+  components, units, materials, colour groups, Bambu/Orca/Prusa filaments and painted triangles, and reports anything approximated.
+* **Split:** each colour becomes a closed solid. Paint is split exactly, shared joint faces mate exactly, and thin painted
+  areas become inlays with matching pockets. Every part is validated.
+* **Connect:** round pegs and blind sockets on joint faces, with checks for wall thickness and break-through.
+* **Export:** parts laid flat and packed onto plates for your printer; download a 3MF per plate, an STL per part and a README.
 
-Design and plan: [docs/SPLIT_STUDIO.md](docs/SPLIT_STUDIO.md). Splitting, explode view, connectors and export are the next phases.
+Design notes and limits: [docs/SPLIT_STUDIO.md](docs/SPLIT_STUDIO.md).
 
 ## Cloud projects (optional)
 

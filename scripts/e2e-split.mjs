@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
-const { zipSync, strToU8 } = require('fflate');
+const { zipSync, strToU8, unzipSync } = require('fflate');
 
 const URL = process.argv[2] ?? 'http://localhost:5173';
 const OUT = process.argv[3] ?? 'e2e-results';
@@ -97,10 +97,12 @@ function bigGrid(n) {
   );
 }
 const big = bigGrid(320);
+// About a million triangles: long enough to cancel reliably now that import is fast.
+const huge = bigGrid(700);
 
 // ---------- Browser ----------
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const context = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+const context = await browser.newContext({ viewport: { width: 1500, height: 900 }, acceptDownloads: true });
 await context.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
 const page = await context.newPage();
 const errors = [];
@@ -187,8 +189,8 @@ check(
 await page.getByRole('button', { name: 'Try a sample' }).click();
 await waitFor(async () => (await split()).loaded);
 let st = await split();
-check('6. Sample imports with five colours', st.colours.length === 5, st.colours.map((c) => c.name).join(', '));
-check('7. Colour list shows every colour', (await page.getByTestId('split-colour').count()) === 5);
+check('6. Sample imports with eight colours', st.colours.length === 8, st.colours.map((c) => c.name).join(', '));
+check('7. Colour list shows every colour', (await page.getByTestId('split-colour').count()) === 8);
 check(
   '8. File info shows the title and triangle count',
   (await page.getByTestId('split-file-info').textContent()).includes('Eye badge (sample)') &&
@@ -225,12 +227,33 @@ check('15. Show all restores every colour', (await split()).hidden.length === 0)
 await page.getByTestId('split-colour').filter({ hasText: 'Blue PLA' }).getByRole('button', { name: 'Show only Blue PLA' }).click();
 await page.waitForTimeout(300);
 st = await split();
-check('16. "Show only" isolates one colour', st.hidden.length === 4);
+check('16. "Show only" isolates one colour', st.hidden.length === 7);
 await page.getByRole('button', { name: 'Show all' }).click();
 await S(() => window.modellioSplit.store.getState().select(null));
 // Click the model in the viewport.
 const vp = await page.getByTestId('split-viewport').boundingBox();
-await page.mouse.click(vp.x + vp.width / 2, vp.y + vp.height / 2);
+// Click a pixel that shows the model (the first non-background pixel nearest the centre).
+const hitPoint = await S(() => {
+  const c = document.querySelector('[data-testid="split-viewport"] canvas');
+  const cv = document.createElement('canvas');
+  cv.width = 200;
+  cv.height = Math.round((c.height / c.width) * 200);
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(c, 0, 0, cv.width, cv.height);
+  const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+  let best = null;
+  for (let y = 0; y < cv.height; y++)
+    for (let x = 0; x < cv.width; x++) {
+      const i = (y * cv.width + x) * 4;
+      const bg = Math.abs(d[i] - 245) + Math.abs(d[i + 1] - 247) + Math.abs(d[i + 2] - 251) < 40;
+      const grid = Math.abs(d[i] - d[i + 2]) < 25 && d[i] > 180;
+      if (bg || grid) continue;
+      const dist = Math.hypot(x - cv.width / 2, y - cv.height / 2);
+      if (!best || dist < best.dist) best = { x: x / cv.width, y: y / cv.height, dist };
+    }
+  return best;
+});
+await page.mouse.click(vp.x + (hitPoint?.x ?? 0.5) * vp.width, vp.y + (hitPoint?.y ?? 0.5) * vp.height);
 await page.waitForTimeout(200);
 check('17. Clicking the model selects the colour under the cursor', (await split()).selected !== null);
 await page.getByTestId('split-fit').click();
@@ -245,8 +268,8 @@ check(
   '19. Bambu parts resolve to filament colours',
   JSON.stringify(st.colours.map((c) => [c.name, c.colour, c.tris])) ===
     JSON.stringify([
-      ['Filament 2 · PLA', '#E0262B', 2],
       ['Filament 1 · PLA', '#FFFFFF', 10],
+      ['Filament 2 · PLA', '#E0262B', 2],
       ['Filament 3 · PLA', '#2F6FDE', 12],
       ['Modifier volume (not printed)', '#9AA1AD', 12],
     ]),
@@ -261,7 +284,7 @@ check(
 );
 check(
   '22. Instances are named from the slicer project',
-  (await page.getByTestId('split-colour').first().getByRole('button').first().textContent()).includes('Filament 2'),
+  (await page.getByTestId('split-colour').nth(1).getByRole('button').first().textContent()).includes('Filament 2'),
 );
 await page
   .getByTestId('split-colour')
@@ -289,7 +312,7 @@ await page.getByRole('button', { name: 'Dismiss error' }).click();
 
 // 6. Progress and cancellation (large file)
 const [bigChooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Open another 3MF' }).click()]);
-await bigChooser.setFiles({ name: 'big-grid.3mf', mimeType: 'model/3mf', buffer: big });
+await bigChooser.setFiles({ name: 'huge-grid.3mf', mimeType: 'model/3mf', buffer: huge });
 const sawProgress = await page
   .getByTestId('split-progress')
   .waitFor({ timeout: 5000 })
@@ -383,6 +406,125 @@ const violations = await S(async () => {
     .map((v) => `${v.id} (${v.nodes.length}): ${v.nodes[0]?.target?.join(' ')}`);
 });
 check('37. No serious accessibility violations in Split Studio', violations.length === 0, violations.slice(0, 4).join(' | '));
+
+// 12. Full workflow: split → connect → export
+{
+  await page.getByRole('button', { name: 'Close file' }).click();
+  await page.getByRole('button', { name: 'Try a sample' }).click();
+  await waitFor(async () => (await split()).colours.length === 8);
+  await page.getByTestId('split-next-split').click();
+  await page.getByTestId('split-part').first().waitFor({ timeout: 30000 });
+  const parts = () =>
+    S(
+      () =>
+        window.modellioSplit.store.getState().split?.parts.map((p) => ({ name: p.name, ok: p.report.watertight, v: p.report.volume })) ??
+        [],
+    );
+  let ps = await parts();
+  check(
+    'W1. Splitting the sample gives 9 parts, all closed solids',
+    ps.length === 9 && ps.every((p) => p.ok && p.v > 0),
+    ps.map((p) => p.name).join(' | '),
+  );
+  check('W2. Every part is marked ready to print', (await page.locator('[data-testid="split-part"][data-status="ok"]').count()) === 9);
+  check('W3. The viewport shows the parts', (await page.getByTestId('split-viewport').getAttribute('data-mode')) === 'parts');
+  const snap = () => S(() => document.querySelector('[data-testid="split-viewport"] canvas').toDataURL().length);
+  const before = await snap();
+  await page.getByTestId('split-explode').fill('80');
+  await page.waitForTimeout(400);
+  check(
+    'W4. The explode slider moves the parts apart',
+    (await S(() => window.modellioSplit.store.getState().explode)) === 0.8 && (await snap()) !== before,
+  );
+  await page.getByTestId('split-part').filter({ hasText: 'Colour #26262B' }).getByRole('button').first().click();
+  const details = await page.getByTestId('split-part-details').textContent();
+  check(
+    'W5. Selecting a part shows its size, volume and solid check',
+    details.includes('Colour #26262B') && details.includes('Closed and manifold') && details.includes('cm³'),
+    details.slice(0, 80),
+  );
+  await page.getByRole('switch', { name: 'Separate disconnected pieces' }).click();
+  await waitFor(async () => (await parts()).length === 8, 30000);
+  check('W6. Changing a split option re-splits (cube faces merge into one part)', (await parts()).length === 8);
+  await page.getByRole('button', { name: 'Undo settings change' }).click();
+  await waitFor(async () => (await parts()).length === 9, 30000);
+  check('W7. Undo restores the previous split', (await parts()).length === 9);
+  await page.keyboard.press('Control+Shift+Z');
+  await waitFor(async () => (await parts()).length === 8, 30000);
+  check('W8. Redo (keyboard) applies it again', (await parts()).length === 8);
+  await page.keyboard.press('Control+z');
+  await waitFor(async () => (await parts()).length === 9, 30000);
+
+  await page.getByTestId('split-next-connect').click();
+  await waitFor(() => S(() => !!window.modellioSplit.store.getState().connected), 30000);
+  const con = await S(() => {
+    const s = window.modellioSplit.store.getState();
+    return {
+      connectors: s.connected.connectors.length,
+      joints: s.split.joints.length,
+      ok: s.connected.parts.every((p) => p.report.watertight),
+    };
+  });
+  check('W9. Connectors: pegs and blind sockets are added, parts stay closed', con.connectors === 2 && con.ok, JSON.stringify(con));
+  const jointsText = await page.getByTestId('split-joints').textContent();
+  check(
+    'W10. The joints list explains each joint',
+    jointsText.includes('Ø3 mm peg') && jointsText.includes('Inlay'),
+    jointsText.slice(0, 120),
+  );
+  await page.getByLabel('Peg diameter (mm)').fill('4');
+  await page.getByLabel('Peg diameter (mm)').press('Enter');
+  await waitFor(() => S(() => window.modellioSplit.store.getState().connected?.connectors[0]?.diameter === 4), 30000);
+  check(
+    'W11. Changing the peg diameter rebuilds the connectors',
+    await S(() => window.modellioSplit.store.getState().connected?.connectors[0]?.diameter === 4),
+  );
+
+  await page.getByTestId('split-next-export').click();
+  await page.getByTestId('split-plate').first().waitFor();
+  check(
+    'W12. Export shows one plate per colour',
+    (await page.getByTestId('split-plate').count()) === 8 &&
+      (await page.getByTestId('split-viewport').getAttribute('data-mode')) === 'plates',
+  );
+  await page.getByLabel('Printer').selectOption('bambu-a1mini');
+  check('W13. Choosing a printer sets the plate size', await S(() => window.modellioSplit.store.getState().plateSettings.width === 180));
+  await page.screenshot({ path: `${OUT}/split-04-plates.png` });
+  const [one] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /Download plate 1 .* as 3MF/ }).click(),
+  ]);
+  const oneBytes = fs.readFileSync(await one.path());
+  check(
+    'W14. A single plate downloads as a 3MF package',
+    one.suggestedFilename().endsWith('.3mf') && !!unzipSync(oneBytes)['3D/3dmodel.model'],
+    one.suggestedFilename(),
+  );
+  const [all] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.getByTestId('split-download').click()]);
+  const files = unzipSync(fs.readFileSync(await all.path()));
+  const names = Object.keys(files);
+  const readme = new TextDecoder().decode(files[names.find((n) => n.endsWith('README.txt'))]);
+  check(
+    'W15. "Download all" gives a ZIP with a 3MF per plate, an STL per part and a README',
+    names.filter((n) => n.endsWith('.3mf')).length === 8 &&
+      names.filter((n) => n.endsWith('.stl')).length === 9 &&
+      readme.includes('Connectors: 2'),
+    `${names.length} files`,
+  );
+  await page.addScriptTag({ content: fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8') });
+  const v2 = await S(async () => {
+    const r = await window.axe.run(document, { resultTypes: ['violations'] });
+    return r.violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => `${v.id} (${v.nodes.length}): ${v.nodes[0]?.target?.join(' ')}`);
+  });
+  check('W16. No serious accessibility violations in the export step', v2.length === 0, v2.slice(0, 4).join(' | '));
+  await page
+    .getByRole('navigation', { name: 'Split Studio steps' })
+    .getByRole('button', { name: /Import/ })
+    .click();
+  check('W17. The stepper returns to Import with the colour list', await page.getByTestId('split-colour-list').isVisible());
+}
 
 // 11. Tablet layout
 const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true });

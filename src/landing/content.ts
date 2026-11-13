@@ -56,7 +56,11 @@ export const LIVE_STUDIOS: StudioCard[] = [
     studio: 'split',
     image: '/landing/split-studio.jpg',
     badge: 'New',
-    points: ['Reads slicer filaments and paint', 'Shows each colour’s size and surface', 'Reports anything it can’t read exactly'],
+    points: [
+      'Reads slicer filaments and painted areas',
+      'Splits each colour into a closed, printable part',
+      'Adds pegs and sockets, then exports plates',
+    ],
   },
 ];
 
@@ -133,8 +137,8 @@ export const SPLIT_FEATURES: { Icon: LucideIcon; title: string; body: string; so
     title: 'Keeps your assembly',
     body: 'Objects, parts and repeated copies stay separate, with their exact positions in mm.',
   },
-  { Icon: Scissors, title: 'Split by colour', body: 'Separate each colour into its own solid part.', soon: true },
-  { Icon: Puzzle, title: 'Pegs and sockets', body: 'Add alignment pegs so the printed parts fit back together.', soon: true },
+  { Icon: Scissors, title: 'Split by colour', body: 'Each colour becomes its own closed solid; thin painted areas become inlays.' },
+  { Icon: Puzzle, title: 'Pegs and sockets', body: 'Alignment pegs and blind sockets so the printed parts fit back together.' },
 ];
 
 export const STEPS = [

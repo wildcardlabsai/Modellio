@@ -2,26 +2,35 @@ import { Eye, EyeOff, FileBox, FolderOpen, X, Focus, TriangleAlert } from 'lucid
 import { useSplit } from '../store';
 import { formatBytes, formatCount, KIND_LABEL, UNIT_LABEL } from './format';
 import { openSplitPicker } from './intake';
+import { ConnectPanel, ExportPanel, NextButton, SplitPanel } from './StepPanels';
 
 export function LeftPanel() {
   const doc = useSplit((s) => s.doc);
+  const step = useSplit((s) => s.step);
   return (
     <aside
-      className="flex w-[264px] shrink-0 xl:w-[300px] flex-col overflow-y-auto border-r border-line bg-white"
-      aria-label="Model and colours"
+      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-r border-line bg-white xl:w-[300px]"
+      aria-label={step === 'import' ? 'Model and colours' : 'Step settings'}
       data-testid="split-left"
     >
-      {doc ? (
-        <>
-          <FileInfo />
-          <ColourList />
-        </>
-      ) : (
+      {!doc ? (
         <div className="p-4 text-[13px] leading-relaxed text-muted">
           <h2 className="mb-1 text-[14px] font-semibold text-ink">Start with a 3MF file</h2>
           Import a multi-colour 3MF from Bambu Studio, OrcaSlicer, PrusaSlicer or any CAD tool. Split Studio reads its objects and colours
           so you can print each colour as a separate part.
         </div>
+      ) : step === 'split' ? (
+        <SplitPanel />
+      ) : step === 'connect' ? (
+        <ConnectPanel />
+      ) : step === 'export' ? (
+        <ExportPanel />
+      ) : (
+        <>
+          <FileInfo />
+          <ColourList />
+          <NextButton to="split" label="Next: split by colour" />
+        </>
       )}
     </aside>
   );

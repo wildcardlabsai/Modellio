@@ -1,22 +1,27 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { CircleAlert, Info, TriangleAlert, Focus } from 'lucide-react';
-import { useSplit } from '../store';
+import { CircleAlert, Info, TriangleAlert, Focus, CircleCheck as CheckCircle } from 'lucide-react';
+import { currentParts, useSplit } from '../store';
 import type { ImportIssue } from '../model/types';
 import { placedBounds } from './previewGeometry';
 import { formatArea, formatCount, formatMm, KIND_LABEL } from './format';
 
 export function RightPanel() {
   const doc = useSplit((s) => s.doc);
+  const step = useSplit((s) => s.step);
+  const split = useSplit((s) => s.split);
+  const connected = useSplit((s) => s.connected);
   if (!doc) return null;
+  const partsMode = step !== 'import' && !!split;
+  const issues = !partsMode ? doc.issues : step === 'split' ? split!.issues : [...split!.issues, ...(connected?.issues ?? [])];
   return (
     <aside
-      className="flex w-[264px] shrink-0 xl:w-[300px] flex-col overflow-y-auto border-l border-line bg-white"
+      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px]"
       aria-label="Details"
       data-testid="split-right"
     >
-      <Selection />
-      <Report issues={doc.issues} />
+      {partsMode ? <PartInspector /> : <Selection />}
+      <Report issues={issues} title={partsMode ? (step === 'split' ? 'Split report' : 'Report') : 'Import report'} />
     </aside>
   );
 }
@@ -110,14 +115,14 @@ function Selection() {
 const ICON = { error: CircleAlert, warning: TriangleAlert, info: Info };
 const TONE = { error: 'text-red-600', warning: 'text-amber-600', info: 'text-brand' };
 
-function Report({ issues }: { issues: ImportIssue[] }) {
+function Report({ issues, title }: { issues: ImportIssue[]; title: string }) {
   const order = { error: 0, warning: 1, info: 2 };
   const sorted = [...issues].sort((a, b) => order[a.level] - order[b.level]);
   const problems = issues.filter((i) => i.level !== 'info').length;
   return (
     <section className="p-4" aria-labelledby="split-report-heading" data-testid="split-report">
       <h2 id="split-report-heading" className="mb-2 text-[13px] font-semibold text-ink">
-        Import report <span className="font-normal text-muted">{problems ? `(${problems} to review)` : '(no problems)'}</span>
+        {title} <span className="font-normal text-muted">{problems ? `(${problems} to review)` : '(no problems)'}</span>
       </h2>
       {sorted.length === 0 ? (
         <p className="text-[12px] text-muted">Everything in the file was read.</p>
@@ -134,6 +139,102 @@ function Report({ issues }: { issues: ImportIssue[] }) {
           })}
         </ul>
       )}
+    </section>
+  );
+}
+
+function PartInspector() {
+  const split = useSplit((s) => s.split)!;
+  const connected = useSplit((s) => s.connected);
+  const step = useSplit((s) => s.step);
+  const selected = useSplit((s) => s.selectedPart);
+  const parts = step === 'split' ? split.parts : currentParts({ split, connected });
+  const part = parts.find((p) => p.partId === selected) ?? null;
+  const colours = new Set(parts.map((p) => p.materialId)).size;
+  if (!part) {
+    const all = new THREE.Box3();
+    for (const p of parts) all.union(new THREE.Box3(new THREE.Vector3(...p.report.bounds.min), new THREE.Vector3(...p.report.bounds.max)));
+    const bad = parts.filter((p) => !p.report.watertight).length;
+    return (
+      <section className="border-b border-line p-4" aria-labelledby="split-sel-heading" data-testid="split-summary">
+        <h2 id="split-sel-heading" className="mb-2 text-[13px] font-semibold text-ink">
+          {parts.length} part{parts.length === 1 ? '' : 's'} in {colours} colour{colours === 1 ? '' : 's'}
+        </h2>
+        <p className="mb-1.5 text-[12px] text-muted">Assembled size (mm)</p>
+        <Dimensions box={all} />
+        <p className={`mt-3 flex items-center gap-1.5 text-[12px] ${bad ? 'text-red-700' : 'text-[#067647]'}`}>
+          {bad ? <CircleAlert size={14} /> : <CheckCircle size={14} />}
+          {bad ? `${bad} part(s) are not closed solids` : 'Every part is a closed solid'}
+        </p>
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">Select a part in the list or click it to inspect it.</p>
+      </section>
+    );
+  }
+  const box = new THREE.Box3(new THREE.Vector3(...part.report.bounds.min), new THREE.Vector3(...part.report.bounds.max));
+  const joints = split.joints.filter((j) => j.partA === part.partId || j.partB === part.partId);
+  const name = (id: string) => parts.find((p) => p.partId === id)?.name ?? id;
+  const cons = connected?.connectors ?? [];
+  const pegs = cons.filter((c) => c.pegPartId === part.partId).length;
+  const sockets = cons.filter((c) => c.socketPartId === part.partId).length;
+  return (
+    <section className="border-b border-line p-4" aria-labelledby="split-sel-heading" data-testid="split-part-details">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="h-8 w-8 shrink-0 rounded-lg border border-black/10" style={{ background: part.colour }} aria-hidden />
+        <div className="min-w-0">
+          <h2 id="split-sel-heading" className="truncate text-[14px] font-semibold text-ink" title={part.name}>
+            {part.name}
+          </h2>
+          <p className="text-[12px] text-muted">
+            {part.materialName} · {part.colour}
+          </p>
+        </div>
+      </div>
+      <p className="mb-1.5 text-[12px] text-muted">Size (mm)</p>
+      <Dimensions box={box} />
+      <dl className="mt-3 grid grid-cols-[88px_1fr] gap-x-2 gap-y-1 text-[12px]">
+        <dt className="text-muted">Volume</dt>
+        <dd className="font-medium text-[#344054]">{(Math.abs(part.report.volume) / 1000).toFixed(2)} cm³</dd>
+        <dt className="text-muted">Triangles</dt>
+        <dd className="font-medium text-[#344054]">{formatCount(part.mesh.indices.length / 3)}</dd>
+        <dt className="text-muted">Solid</dt>
+        <dd className={`font-medium ${part.report.watertight ? 'text-[#067647]' : 'text-red-700'}`}>
+          {part.report.watertight
+            ? 'Closed and manifold'
+            : `${part.report.boundaryEdges} open, ${part.report.nonManifoldEdges} non-manifold edges`}
+        </dd>
+        <dt className="text-muted">Pieces</dt>
+        <dd className="font-medium text-[#344054]">{part.report.shells}</dd>
+        {(pegs > 0 || sockets > 0) && (
+          <>
+            <dt className="text-muted">Connectors</dt>
+            <dd className="font-medium text-[#344054]">
+              {[pegs ? `${pegs} peg${pegs > 1 ? 's' : ''}` : '', sockets ? `${sockets} socket${sockets > 1 ? 's' : ''}` : '']
+                .filter(Boolean)
+                .join(', ')}
+            </dd>
+          </>
+        )}
+        {joints.length > 0 && (
+          <>
+            <dt className="text-muted">Touches</dt>
+            <dd className="font-medium text-[#344054]">
+              <ul>
+                {joints.map((j) => (
+                  <li key={j.jointId} className="truncate">
+                    {name(j.partA === part.partId ? j.partB : j.partA)}
+                    {j.kind === 'inlay' ? ' (inlay)' : ''}
+                  </li>
+                ))}
+              </ul>
+            </dd>
+          </>
+        )}
+      </dl>
+      {part.report.warnings.map((w) => (
+        <p key={w} className="mt-2 flex gap-2 rounded-lg bg-amber-50 p-2 text-[12px] leading-relaxed text-amber-900">
+          <TriangleAlert size={14} className="mt-0.5 shrink-0" /> {w}
+        </p>
+      ))}
     </section>
   );
 }

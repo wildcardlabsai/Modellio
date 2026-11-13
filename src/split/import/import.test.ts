@@ -277,9 +277,18 @@ describe('3MF import — core and materials', () => {
     expect(Array.from(doc.objects[0].mesh!.triangles)).toEqual(Array.from(mesh.indices));
   });
 
-  it('builds the sample with five colours', async () => {
+  it('builds the sample with eight colours', async () => {
     const doc = await run(sampleEyeBadge());
-    expect(comps(doc).map((c) => c.name)).toEqual(['White PLA', 'Blue PLA', 'Black PLA', 'Colour #F5C518', 'Colour #E0262B']);
+    expect(comps(doc).map((c) => c.name)).toEqual([
+      'White PLA',
+      'Blue PLA',
+      'Black PLA',
+      'Colour #F5C518',
+      'Colour #E0262B',
+      'Yellow PLA',
+      'Colour #26262B',
+      'Colour #FFFFFF',
+    ]);
   });
 });
 
