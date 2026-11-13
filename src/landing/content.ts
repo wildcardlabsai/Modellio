@@ -38,6 +38,22 @@ export const DESIGN_STUDIO: Maker = {
 
 export const MAKERS: Maker[] = [
   {
+    id: 'vase',
+    name: 'Vase Maker',
+    line: '32 templates or a blank profile in; a vase, plant pot or lampshade out.',
+    description:
+      'Start from a template, or draw your own: drag points on the side profile, pick a cross-section (round, polygon, star, flower, gear), twist it, and add ribs, waves, bubbles or a diamond texture. Plant pots get drainage holes and a saucer; vases can be a single spiral wall for vase mode.',
+    studio: 'vase',
+    image: '/landing/vase-maker.jpg',
+    action: 'Open Vase Maker',
+    facts: [
+      '32 templates in four categories',
+      'Profile curve you can drag',
+      'Twist and 7 surface patterns',
+      'Capacity and overhang checks',
+    ],
+  },
+  {
     id: 'cookie',
     name: 'Cookie Cutter & Stamp Maker',
     line: 'A shape, a name or a drawing in; a cutter, a stamp and a handle out.',

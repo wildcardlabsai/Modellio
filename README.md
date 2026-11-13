@@ -144,6 +144,7 @@ Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates an
 | `/?studio=design` | Design Studio (the editor). Share links (`#share=…`) open here too |
 | `/?studio=split` | Split Studio |
 | `/?studio=cookie` | Cookie Cutter & Stamp Maker |
+| `/?studio=vase` | Vase Maker |
 
 The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
 
@@ -176,6 +177,23 @@ print-ready parts.
 
 Code: `src/makers/cookie` (geometry with Manifold 2D offsets and extrusion; tests in `cookie.test.ts`, browser suite
 `scripts/e2e-cookie.mjs`).
+
+## Vase Maker ✅
+
+`/?studio=vase` (Makers menu or the landing page). Vases, plant pots, bowls and lampshades.
+
+* **32 templates** in four categories (vases, planters, bowls & pots, lampshades), each just a set of editable settings,
+  plus **Surprise me** for a random printable design.
+* **Start blank** and shape it yourself: a side-profile curve with draggable points (add, remove, keyboard nudging),
+  6 cross-sections (round, polygon, star, flower, gear, squircle) with sides, depth and rounding, twist (even, eased,
+  there-and-back) and 7 surface patterns (ribs, spiral, waves, diamond, bubbles, organic, steps) with depth, count,
+  rows, turns and sharpness.
+* **Vase mode** (a solid for the slicer's spiral mode) or real walls with a true offset, so stars and flowers keep their
+  wall thickness. Plant pots get 1 or 5 drainage holes and a matching saucer; lampshades a lamp-holder hole.
+* Shows size, **capacity** and the **steepest overhang**, and warns about drooping overhangs, thin walls, narrow
+  openings and tippy shapes. Undo/redo, remembered designs, finer mesh for downloads (3MF or STL), and
+  "Customise in Design Studio".
+* Builds run in a Web Worker so dragging stays smooth. Thumbnails: `node scripts/render-vase-thumbnails.mjs`.
 
 ## Cloud projects (optional)
 

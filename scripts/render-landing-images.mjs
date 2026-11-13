@@ -52,5 +52,15 @@ await page.waitForFunction(
 await page.waitForTimeout(1200);
 await page.screenshot({ path: 'public/landing/cookie-maker.jpg', type: 'jpeg', quality: 82 });
 
+// Vase Maker with the spiral star template.
+await page.goto(URL + '/?studio=vase', { waitUntil: 'networkidle' });
+await page.evaluate(() => window.modellioVase.store.getState().applyTemplate('spiral-star'));
+await page.evaluate(() => window.modellioVase.store.getState().setTab('templates'));
+await page.waitForFunction(() => !window.modellioVase.store.getState().building && window.modellioVase.store.getState().result, null, {
+  timeout: 30000,
+});
+await page.waitForTimeout(1500);
+await page.screenshot({ path: 'public/landing/vase-maker.jpg', type: 'jpeg', quality: 82 });
+
 await browser.close();
 for (const f of fs.readdirSync('public/landing')) console.log(f, (fs.statSync(`public/landing/${f}`).size / 1024).toFixed(0), 'KB');
