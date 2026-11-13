@@ -37,7 +37,7 @@ function ImportDialogInner({ item, onDone }: { item: ReturnType<typeof useFileUi
   const tooSmall = Math.max(...mm) < 0.5;
 
   const doImport = () => {
-    let parts = parsed.parts.map((p) => ({ name: p.name, mesh: normalizeMesh(p.mesh, unit, up) }));
+    let parts = parsed.parts.map((p) => ({ name: p.name, mesh: normalizeMesh(p.mesh, unit, up), color: p.color }));
     if (merge && parts.length > 1) {
       // Concatenate into one mesh (keeps every part's placement).
       let vOff = 0;
@@ -52,7 +52,7 @@ function ImportDialogInner({ item, onDone }: { item: ReturnType<typeof useFileUi
         ii += p.mesh.indices.length;
         vOff += p.mesh.positions.length / 3;
       }
-      parts = [{ name: parsed.fileName.replace(/\.[^.]+$/, ''), mesh: { positions, indices } }];
+      parts = [{ name: parsed.fileName.replace(/\.[^.]+$/, ''), mesh: { positions, indices }, color: parts[0].color }];
     }
     useEditor.getState().importMeshes(parts, { at, groupName: parsed.fileName.replace(/\.[^.]+$/, '') });
     onDone();

@@ -11,11 +11,13 @@ export interface ImportedPart {
   name: string;
   /** Raw mesh in file units and file axes. */
   mesh: MeshData;
+  /** Colour from the file (3MF), if any. */
+  color?: string;
 }
 
 export interface ParsedFile {
   fileName: string;
-  format: 'stl' | 'obj';
+  format: 'stl' | 'obj' | '3mf';
   parts: ImportedPart[];
   triangles: number;
   /** Raw extents (file units). */

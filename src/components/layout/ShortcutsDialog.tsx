@@ -6,7 +6,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     title: 'Editing',
     items: [
       ['Save', `${MOD} S`],
-      ['Import STL / OBJ', `${MOD} O`],
+      ['Import a file', `${MOD} O`],
       ['Export', `${MOD} E`],
       ['Undo', `${MOD} Z`],
       ['Redo', `${MOD} ⇧ Z`],
@@ -29,9 +29,10 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Move tool', 'W'],
       ['Rotate tool', 'E'],
       ['Resize tool', 'R'],
-      ['Nudge X / Y', '← → ↑ ↓'],
-      ['Nudge Z', 'PgUp / PgDn'],
-      ['Nudge ×10', '⇧ + nudge'],
+      ['Nudge X / Y (0.5 mm)', '← → ↑ ↓'],
+      ['Nudge Z (0.5 mm)', 'PgUp / PgDn'],
+      ['Nudge 5 mm', '⇧ + nudge'],
+      ['Nudge 0.1 mm', 'Alt + nudge'],
     ],
   },
   {

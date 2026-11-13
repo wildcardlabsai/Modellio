@@ -153,3 +153,51 @@ describe('keyring templates', () => {
     expect(detached).toEqual([]);
   });
 });
+
+describe('keyring back side', () => {
+  const plate = () => shape('rect', 'plate', { w: 60, h: 20 });
+  const noRing = { hole: { ...DEFAULT_KEYRING.hole, enabled: false } };
+
+  it('engraves the back from the bottom face, mirrored so it reads from behind', async () => {
+    const plain = await make([plate()], { plateMode: 'elements', ...noRing });
+    // A 10×10 square on the back at x = +15 (as seen from behind) is at x = −15 in the model.
+    const back = shape('rect', 'engraved', { x: 15, w: 10, h: 10, side: 'back' });
+    const r = await make([plate(), back], { plateMode: 'elements', ...noRing });
+    const tag = r.parts.find((p) => p.id === 'base' || p.id === 'tag')!;
+    expect(tag.watertight).toBe(true);
+    const plainVol = plain.parts.find((p) => p.id === 'base' || p.id === 'tag')!.volume;
+    expect(plainVol - tag.volume).toBeCloseTo(100 * 0.8, 0);
+    // The pocket opens on the bottom face (z = 0) at x ≈ −15.
+    const P = tag.mesh.positions;
+    let found = false;
+    for (let i = 0; i < P.length; i += 3) if (Math.abs(P[i + 2]) < 1e-4 && Math.abs(P[i] + 10) < 1e-3) found = true;
+    expect(found).toBe(true);
+    expect(r.notes.some((n) => /mirrored/.test(n))).toBe(true);
+  });
+
+  it('raised items on the back count as engraved (nothing prints in mid-air)', async () => {
+    const r1 = await make([plate(), shape('rect', 'raised', { w: 10, h: 10, side: 'back' })], { plateMode: 'elements', ...noRing });
+    const r2 = await make([plate(), shape('rect', 'engraved', { w: 10, h: 10, side: 'back' })], { plateMode: 'elements', ...noRing });
+    expect(r1.parts.map((p) => p.volume)).toEqual(r2.parts.map((p) => p.volume));
+  });
+
+  it('a back inlay is a flush first-layer fill in the top colour, with a filament-change note', async () => {
+    const r = await make([plate(), shape('rect', 'inlay', { w: 10, h: 10, side: 'back' })], { plateMode: 'elements', ...noRing });
+    const top = r.parts.find((p) => p.id === 'top')!;
+    expect(top.volume).toBeCloseTo(100 * 0.6, 1);
+    expect(top.size[2]).toBeCloseTo(0.6, 3);
+    expect(r.notes.some((n) => /Start in the top colour, change to the base colour at 0.60 mm/.test(n))).toBe(true);
+    for (const p of r.parts) expect(p.watertight).toBe(true);
+  });
+
+  it('front and back cuts together always leave material between them', async () => {
+    const r = await make(
+      [plate(), shape('rect', 'engraved', { w: 10, h: 10 }), shape('rect', 'engraved', { w: 10, h: 10, side: 'back' })],
+      { plateMode: 'elements', thickness: 2, engraveDepth: 1.5, twoColour: false, ...noRing },
+    );
+    expect(r.parts[0].watertight).toBe(true);
+    const plain = await make([plate()], { plateMode: 'elements', thickness: 2, twoColour: false, ...noRing });
+    // Front 1.2 mm (thickness − 0.8) and back 0.2 mm (the minimum), so 0.6 mm remains.
+    expect(plain.parts[0].volume - r.parts[0].volume).toBeCloseTo(100 * (1.2 + 0.2), 0);
+  });
+});

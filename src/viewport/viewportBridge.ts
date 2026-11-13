@@ -138,17 +138,22 @@ export function manipulatorAt(clientX: number, clientY: number): boolean {
   return new THREE.Raycaster(ray.origin, ray.direction).intersectObjects(targets, false).length > 0;
 }
 
+/** Visible pickable meshes in the scene (object meshes and Boolean results), minus `exclude`. */
+export function pickableMeshes(exclude?: (name: string) => boolean): THREE.Object3D[] {
+  const targets: THREE.Object3D[] = [];
+  viewport.scene?.traverseVisible((o) => {
+    if ((o as THREE.Mesh).isMesh && o.userData.pickable && !(exclude && exclude(o.name))) targets.push(o);
+  });
+  return targets;
+}
+
 /**
  * Highest pickable surface straight below the given X/Y points (for resting
  * objects on top of others). Returns 0 (the plate) where nothing is below.
  */
-export function heightUnder(points: [number, number][], exclude?: (name: string) => boolean): number {
-  const { scene } = viewport;
-  if (!scene) return 0;
-  const targets: THREE.Object3D[] = [];
-  scene.traverseVisible((o) => {
-    if ((o as THREE.Mesh).isMesh && o.userData.pickable && !(exclude && exclude(o.name))) targets.push(o);
-  });
+export function heightUnder(points: [number, number][], exclude?: (name: string) => boolean, meshes?: THREE.Object3D[]): number {
+  const targets = meshes ?? pickableMeshes(exclude);
+  if (!targets.length) return 0;
   const ray = new THREE.Raycaster();
   let top = 0;
   for (const [x, y] of points) {

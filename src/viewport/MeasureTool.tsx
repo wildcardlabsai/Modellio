@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
-import { Line } from '@react-three/drei';
+import { FastLine } from './FastLine';
 import { usePublishLabels, type Label } from './labels';
 import { useEditor } from '@/store/editorStore';
 import type { Vec3 } from '@/types/document';
@@ -118,7 +118,7 @@ export function MeasureTool() {
       ))}
       {info && (
         <>
-          <Line points={[info.a, info.b]} color="#F59E0B" lineWidth={2.5} depthTest={false} renderOrder={19} />
+          <FastLine points={[info.a.toArray(), info.b.toArray()]} color="#F59E0B" lineWidth={2.5} depthTest={false} renderOrder={19} />
         </>
       )}
     </group>

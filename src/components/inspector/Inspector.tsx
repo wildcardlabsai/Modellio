@@ -23,6 +23,7 @@ import {
   SquaresSubtract,
   SquaresIntersect,
   BetweenHorizontalEnd,
+  FlipVertical2,
 } from 'lucide-react';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
@@ -121,6 +122,44 @@ function Section({ title, children, action }: { title: string; children: ReactNo
       </div>
       {children}
     </section>
+  );
+}
+
+/** Send the selection face down into the bottom of the part below it (double-sided prints). */
+function UndersideSection({ locked }: { locked: boolean }) {
+  const [depth, setDepth] = useState(0.6);
+  const place = useEditor((st) => st.placeOnUnderside);
+  const btn =
+    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-2 text-[12px] font-medium text-[#344054] hover:border-brand hover:text-brand disabled:opacity-50';
+  return (
+    <Section title="Underside">
+      <p className="mb-2 text-[12px] leading-relaxed text-muted">
+        Printing both sides? Put this face down into the bottom of the part it sits on, reading the right way when the print is turned over.
+      </p>
+      <div className="flex gap-1.5">
+        <button type="button" className={btn} disabled={locked} onClick={() => place('engrave', depth)}>
+          <FlipVertical2 size={14} /> Engrave
+        </button>
+        <button type="button" className={btn} disabled={locked} onClick={() => place('inlay', depth)}>
+          <FlipVertical2 size={14} /> Flush colour
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-muted">
+        <span>Depth</span>
+        <div className="w-[120px]">
+          <NumberField
+            value={depth}
+            onCommit={setDepth}
+            min={0.2}
+            max={5}
+            step={0.2}
+            decimals={1}
+            suffix="mm"
+            ariaLabel="Underside depth (mm)"
+          />
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -319,6 +358,7 @@ function ObjectInspector({ object }: { object: SceneObject }) {
                 onCommit={(axis, v) => s.setPosition(object.id, object.transform.position.map((c, i) => (i === axis ? v : c)) as Vec3)}
               />
             </Section>
+            {!object.parentId && <UndersideSection locked={locked} />}
             <Section title="Rotation (°)">
               <Vec3Fields
                 name="Rotation"

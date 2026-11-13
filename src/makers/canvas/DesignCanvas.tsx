@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { boxCorners, designBounds, fillRuleOf, onUnitsChanged, worldPolygons, type DesignElement } from './model';
+import { boxCorners, designBounds, fillRuleOf, onUnitsChanged, sideOf, worldPolygons, type DesignElement } from './model';
 import type { MakerState } from './store';
 
 export interface RoleStyle {
@@ -67,6 +67,18 @@ export function DesignCanvas({
   const elements = useStore((s) => s.elements) as DesignElement[];
   const selected = useStore((s) => s.selected);
   const tool = useStore((s) => s.tool);
+  // Double-sided makers: the face being edited. The other face shows faded and mirrored
+  // (as seen through the tag); back items are stored as seen from behind.
+  const back = useStore((s) => s.side) === 'back';
+  const mine = useMemo(() => elements.filter((e) => (sideOf(e) === 'back') === back), [elements, back]);
+  const ghosts = useMemo(() => elements.filter((e) => (sideOf(e) === 'back') !== back), [elements, back]);
+  const shownPins = useMemo(
+    () =>
+      back
+        ? pins.map((p) => ({ ...p, x: -p.x, onMove: (x: number, y: number, ph: 'start' | 'move' | 'end') => p.onMove(-x, y, ph) }))
+        : pins,
+    [pins, back],
+  );
   const { select, update, beginGesture, add, remove, duplicate } = useStore.getState();
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -78,7 +90,8 @@ export function DesignCanvas({
   // View: the artboard plus everything on it, with a margin. Frozen while dragging so it doesn't jump.
   const frozen = useRef<{ minX: number; minY: number; w: number; h: number } | null>(null);
   const live = useMemo(() => {
-    const b = designBounds(elements);
+    const b = designBounds(mine);
+    const g = designBounds(ghosts);
     let minX = -artboard.w / 2;
     let maxX = artboard.w / 2;
     let minY = -artboard.h / 2;
@@ -89,7 +102,13 @@ export function DesignCanvas({
       minY = Math.min(minY, b.minY);
       maxY = Math.max(maxY, b.maxY);
     }
-    for (const p of pins) {
+    if (g) {
+      minX = Math.min(minX, -g.maxX);
+      maxX = Math.max(maxX, -g.minX);
+      minY = Math.min(minY, g.minY);
+      maxY = Math.max(maxY, g.maxY);
+    }
+    for (const p of shownPins) {
       minX = Math.min(minX, p.x - p.r);
       maxX = Math.max(maxX, p.x + p.r);
       minY = Math.min(minY, p.y - p.r);
@@ -97,7 +116,7 @@ export function DesignCanvas({
     }
     const m = Math.max(maxX - minX, maxY - minY) * 0.08 + 4;
     return { minX: minX - m, minY: minY - m, w: maxX - minX + 2 * m, h: maxY - minY + 2 * m };
-  }, [elements, artboard.w, artboard.h, pins]);
+  }, [mine, ghosts, artboard.w, artboard.h, shownPins]);
   const view = frozen.current ?? live;
   const px = view.w / Math.max(1, svg.current?.clientWidth ?? 600); // mm per screen pixel
 
@@ -214,14 +233,16 @@ export function DesignCanvas({
   const onKey = (e: KeyboardEvent) => {
     const el = elements.find((x) => x.id === selected);
     if (!el) return;
-    const step = e.shiftKey ? 5 : 0.5;
+    // 0.5 mm, Shift 5 mm, Alt 0.1 mm (the same as the Design Studio).
+    const step = e.shiftKey ? 5 : e.altKey ? 0.1 : 0.5;
     const moves: Record<string, [number, number]> = {
       ArrowLeft: [-step, 0],
       ArrowRight: [step, 0],
       ArrowUp: [0, step],
       ArrowDown: [0, -step],
     };
-    if (moves[e.key]) update(el.id, { x: el.x + moves[e.key][0], y: el.y + moves[e.key][1] });
+    const r = (v: number) => Math.round(v * 100) / 100;
+    if (moves[e.key]) update(el.id, { x: r(el.x + moves[e.key][0]), y: r(el.y + moves[e.key][1]) });
     else if (e.key === 'Delete' || e.key === 'Backspace') remove(el.id);
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') duplicate(el.id);
     else if (e.key === 'Escape') select(null);
@@ -288,12 +309,35 @@ export function DesignCanvas({
           strokeWidth={px}
           pointerEvents="none"
         />
-        {underlay && <g pointerEvents="none">{underlay(px)}</g>}
+        {underlay && (
+          <g pointerEvents="none" transform={back ? 'scale(-1,1)' : undefined}>
+            {underlay(px)}
+          </g>
+        )}
+        {ghosts.length > 0 && (
+          <g transform="scale(-1,1)" opacity={0.3} pointerEvents="none" data-testid="canvas-ghosts">
+            {ghosts.map((el) => {
+              const polys = worldPolygons(el);
+              if (!polys) return null;
+              const st = roleStyle(el.role);
+              return (
+                <path
+                  key={el.id}
+                  d={toPath(polys)}
+                  fill={st.fill}
+                  fillRule={fillRuleOf(el) === 'EvenOdd' ? 'evenodd' : 'nonzero'}
+                  stroke={st.stroke}
+                  strokeWidth={px}
+                />
+              );
+            })}
+          </g>
+        )}
         {guides.x && (
           <line x1={0} x2={0} y1={-(view.minY + view.h)} y2={-view.minY} stroke="#E0262B" strokeWidth={px} pointerEvents="none" />
         )}
         {guides.y && <line y1={0} y2={0} x1={view.minX} x2={view.minX + view.w} stroke="#E0262B" strokeWidth={px} pointerEvents="none" />}
-        {elements.map((el) => {
+        {mine.map((el) => {
           const polys = worldPolygons(el);
           const st = roleStyle(el.role);
           const d = polys ? toPath(polys) : '';
@@ -341,7 +385,7 @@ export function DesignCanvas({
             pointerEvents="none"
           />
         )}
-        {pins.map((pin) => (
+        {shownPins.map((pin) => (
           <g
             key={pin.id}
             className="cursor-move"

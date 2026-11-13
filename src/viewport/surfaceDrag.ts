@@ -4,10 +4,11 @@ import { useEditor } from '@/store/editorStore';
 import { collectSubtree } from '@/cad/document';
 import { isEffectivelyLocked, parentWorldMatrix, topLevel, worldBoundsOf } from '@/cad/hierarchy';
 import type { ObjectId, Transform } from '@/types/document';
-import { heightUnder, rayFromClient, setOrbitEnabled, viewport } from './viewportBridge';
+import { heightUnder, pickableMeshes, rayFromClient, setOrbitEnabled, viewport } from './viewportBridge';
 import { smartSnap } from '@/cad/snapping';
 import { useGuides } from './guides';
 import { roundTo, snapTo } from '@/utils/math';
+import { frameThrottle } from './frameThrottle';
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -46,6 +47,8 @@ export function startSurfaceDrag(e: ThreeEvent<PointerEvent>, clickedId: ObjectI
   let others: THREE.Box3[] = [];
   let grabOffset = new THREE.Vector2();
   let excluded = new Set<string>();
+  // Surfaces to stack on, collected once per drag (searching the scene on every move is slow).
+  let surfaces: THREE.Object3D[] = [];
 
   const engage = () => {
     engaged = true;
@@ -63,6 +66,7 @@ export function startSurfaceDrag(e: ThreeEvent<PointerEvent>, clickedId: ObjectI
     startBounds = worldBoundsOf(d, items);
     const moving = new Set(collectSubtree(d, items));
     excluded = new Set([...moving, ...[...moving].map((id) => `${id}:result`)]);
+    surfaces = pickableMeshes((n) => excluded.has(n));
     others = d.rootIds.filter((id) => !moving.has(id) && d.objects[id]?.visible).map((id) => worldBoundsOf(d, [id]));
     // Keep the grabbed point under the cursor (relative to the object's footprint).
     const base = startBounds.getCenter(new THREE.Vector3());
@@ -103,6 +107,7 @@ export function startSurfaceDrag(e: ThreeEvent<PointerEvent>, clickedId: ObjectI
         [cx + ix, cy + iy],
       ],
       (n) => excluded.has(n),
+      surfaces,
     );
     delta.z = restZ - startBounds.min.z;
     useGuides.setState({ guides: snapped.guides });
@@ -120,8 +125,15 @@ export function startSurfaceDrag(e: ThreeEvent<PointerEvent>, clickedId: ObjectI
     });
   };
 
+  const throttled = frameThrottle(onMove);
+  const onPointerMove = (ev: PointerEvent) => {
+    // The first move past the threshold engages at once; the rest wait for the next frame.
+    if (!engaged) onMove(ev);
+    else throttled.call(ev);
+  };
   const onUp = () => {
-    window.removeEventListener('pointermove', onMove);
+    throttled.flush();
+    window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
     setOrbitEnabled(true);
@@ -133,7 +145,7 @@ export function startSurfaceDrag(e: ThreeEvent<PointerEvent>, clickedId: ObjectI
     }
   };
 
-  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onUp);
 }

@@ -21,7 +21,7 @@ export function FileMenu({ onDone, onVersions }: { onDone: () => void; onVersion
       { label: 'Duplicate design', Icon: CopyPlus, run: () => p.current && void p.duplicate(p.current.id) },
     ],
     [
-      { label: 'Import STL / OBJ…', Icon: Upload, run: openMeshPicker },
+      { label: 'Import STL, OBJ, 3MF, SVG or picture…', Icon: Upload, run: openMeshPicker },
       { label: 'Export STL / OBJ…', Icon: Download, run: () => useFileUi.getState().setExportOpen(true), shortcut: `${MOD}+E` },
     ],
     [

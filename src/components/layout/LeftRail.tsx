@@ -1,11 +1,12 @@
 import { Shapes, Type, Ruler, Grid3x3, Package, Printer } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 
-export type LeftPanel = 'shapes' | 'text' | 'workplane' | 'print';
+export type LeftPanel = 'shapes' | 'text' | 'assets' | 'workplane' | 'print';
 
 const PANELS: { id: LeftPanel; label: string; Icon: typeof Shapes }[] = [
   { id: 'shapes', label: 'Shapes', Icon: Shapes },
   { id: 'text', label: 'Text', Icon: Type },
+  { id: 'assets', label: 'Assets', Icon: Package },
   { id: 'workplane', label: 'Workplane', Icon: Grid3x3 },
   { id: 'print', label: 'Print', Icon: Printer },
 ];
@@ -46,10 +47,6 @@ export function LeftRail({ panel, onChange }: { panel: LeftPanel; onChange: (p: 
       >
         <Ruler size={22} strokeWidth={1.8} />
         Measure
-      </button>
-      <button type="button" disabled title="Assets — coming in Phase 4" className={itemCls(false, false)}>
-        <Package size={22} strokeWidth={1.8} />
-        Assets
       </button>
     </nav>
   );

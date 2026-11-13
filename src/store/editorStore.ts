@@ -48,6 +48,7 @@ import { initKernel } from '@/cad/kernel/kernel';
 import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
 import { centerMeshData, meshDataBounds, type MeshData } from '@/cad/kernel/meshData';
 import { addMeshAsset } from '@/cad/assets';
+import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
 import type { CombineMode, TextContent } from '@/types/document';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
@@ -157,6 +158,8 @@ export interface EditorState {
   setVisible: (id: ObjectId, visible: boolean) => void;
   setLocked: (id: ObjectId, locked: boolean) => void;
   dropToWorkplane: (ids: ObjectId[]) => void;
+  /** Send the selection face down into the bottom of the part below it (engraved, or a flush colour inlay). */
+  placeOnUnderside: (mode: UndersideMode, depth: number) => void;
   setWorkplaneSize: (size: [number, number]) => void;
   /** Rotate an object so the face with this world normal rests on the plate. */
   layFlat: (id: ObjectId, worldNormal: Vec3) => void;
@@ -176,7 +179,10 @@ export interface EditorState {
    * Add imported meshes (already in mm, Z-up) as mesh shapes, resting on the
    * workplane. Several parts keep their relative placement and are grouped.
    */
-  importMeshes: (parts: { name: string; mesh: MeshData }[], opts?: { at?: [number, number]; groupName?: string }) => ObjectId[];
+  importMeshes: (
+    parts: { name: string; mesh: MeshData; color?: string }[],
+    opts?: { at?: [number, number]; groupName?: string },
+  ) => ObjectId[];
   setText: (id: ObjectId, patch: Partial<TextContent> & { fontSize?: number }) => Promise<void>;
 }
 
@@ -546,6 +552,21 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (o) o.locked = locked;
       }),
     dropToWorkplane: (ids) => get().apply('Drop to workplane', (doc) => dropToWorkplaneDraft(doc, ids)),
+    placeOnUnderside: (mode, depth) => {
+      const ids = editableSelection();
+      if (!ids.length) {
+        get().notify('Select text, a logo or a shape to put on the underside.');
+        return;
+      }
+      let out: ReturnType<typeof placeOnUndersideDraft> | null = null;
+      get().apply(mode === 'engrave' ? 'Engrave underside' : 'Inlay underside', (d) => {
+        out = placeOnUndersideDraft(d, ids, mode, depth);
+      });
+      const r = out as ReturnType<typeof placeOnUndersideDraft> | null;
+      if (r?.message) get().notify(r.message);
+      if (r) set({ selection: r.selection.filter((id) => get().doc.objects[id]) });
+      get().requestFrame();
+    },
     combineSelected: (op) => {
       const { doc, selection } = get();
       const ids = editableSelection();
@@ -645,7 +666,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         const c = centerMeshData(p.mesh);
         all.expandByPoint(c.center.clone().sub(c.size.clone().multiplyScalar(0.5)));
         all.expandByPoint(c.center.clone().add(c.size.clone().multiplyScalar(0.5)));
-        return { ...c, name: p.name };
+        return { ...c, name: p.name, color: p.color };
       });
       const allSize = all.getSize(new THREE.Vector3());
       const allCenter = all.getCenter(new THREE.Vector3());
@@ -667,7 +688,7 @@ export const useEditor = create<EditorState>()((set, get) => {
           meshId: addMeshAsset(c.mesh),
           params: {},
           size: [roundTo(c.size.x), roundTo(c.size.y), roundTo(c.size.z)] as Vec3,
-          color: colors[i % colors.length],
+          color: c.color ?? colors[i % colors.length],
           transform: {
             position: [roundTo(c.center.x + shift.x), roundTo(c.center.y + shift.y), roundTo(c.center.z + shift.z)] as Vec3,
             rotation: [0, 0, 0] as Vec3,

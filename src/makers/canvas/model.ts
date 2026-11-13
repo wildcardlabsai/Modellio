@@ -21,6 +21,11 @@ export interface ElementBase {
   /** Degrees, counter-clockwise. */
   rotation: number;
   flipX?: boolean;
+  /**
+   * Which face of a double-sided design the item is on (makers that support it). Back items
+   * are stored as seen from behind, so text reads normally while editing the back.
+   */
+  side?: 'front' | 'back';
   role: string;
   name?: string;
 }
@@ -195,3 +200,6 @@ export function fitNatural(elements: DesignElement[]): DesignElement[] {
   });
   return changed ? out : elements;
 }
+
+/** The side an element is on (front unless marked back). */
+export const sideOf = (el: { side?: 'front' | 'back' }) => el.side ?? 'front';

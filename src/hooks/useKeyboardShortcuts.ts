@@ -151,10 +151,13 @@ export function useKeyboardShortcuts() {
   }, []);
 }
 
-/** Arrow keys move the selection on X/Y; PageUp/PageDown on Z. Shift = ×10. */
+/** Nudge distances (mm): plain arrow, with Shift, with Alt. Independent of the grid snap. */
+export const NUDGE_STEP = { normal: 0.5, shift: 5, alt: 0.1 };
+
+/** Arrow keys move the selection on X/Y; PageUp/PageDown on Z. 0.5 mm, Shift 5 mm, Alt 0.1 mm. */
 function nudge(e: KeyboardEvent) {
   const s = useEditor.getState();
-  const step = (s.snap.enabled ? s.snap.translate : 1) * (e.shiftKey ? 10 : 1);
+  const step = e.shiftKey ? NUDGE_STEP.shift : e.altKey ? NUDGE_STEP.alt : NUDGE_STEP.normal;
   const d: Vec3 = [0, 0, 0];
   if (e.key === 'ArrowLeft') d[0] = -step;
   if (e.key === 'ArrowRight') d[0] = step;

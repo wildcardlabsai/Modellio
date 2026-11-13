@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { Line } from '@react-three/drei';
+import { FastLine } from './FastLine';
 import { usePublishLabels, type Label } from './labels';
 import type { ModelDocument, ObjectId } from '@/types/document';
 import { formatLength } from '@/utils/units';
@@ -90,7 +90,7 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
   return (
     <>
       <group matrix={matrix} matrixAutoUpdate={false} userData={{ noThumbnail: true }}>
-        <Line
+        <FastLine
           points={edges}
           segments
           color="#2463eb"
@@ -105,7 +105,7 @@ export function SelectionOverlay({ doc, id, showDimensions }: Props) {
         />
       </group>
       {showDimensions && Math.abs(elevation) > 0.005 && (
-        <Line
+        <FastLine
           userData={{ noThumbnail: true }}
           points={[
             [world.min.x, world.min.y, 0],

@@ -1,6 +1,6 @@
+import { FastEdges } from './FastLine';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
-import { Edges } from '@react-three/drei';
 import { useEditor } from '@/store/editorStore';
 import * as THREE from 'three';
 import type { ModelDocument, ObjectId } from '@/types/document';
@@ -109,7 +109,16 @@ export const CombinedMesh = memo(function CombinedMesh({
           polygonOffsetUnits={1}
         />
       )}
-      {active && <Edges threshold={25} color="#0b3fb3" lineWidth={selected ? 1.25 : 1} transparent opacity={selected ? 1 : 0.55} />}
+      {active && (
+        <FastEdges
+          geometry={geometry}
+          threshold={25}
+          color="#0b3fb3"
+          lineWidth={selected ? 1.25 : 1}
+          transparent
+          opacity={selected ? 1 : 0.55}
+        />
+      )}
     </mesh>
   );
 });

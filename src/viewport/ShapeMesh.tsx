@@ -1,6 +1,6 @@
+import { FastEdges } from './FastLine';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
-import { Edges } from '@react-three/drei';
 import type { ShapeObject } from '@/types/document';
 import { buildGeometryForShape } from '@/cad/shapeRegistry';
 import { useEditor } from '@/store/editorStore';
@@ -104,7 +104,8 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
         />
       )}
       {(active || isHole) && (
-        <Edges
+        <FastEdges
+          geometry={geometry}
           threshold={20}
           color={isHole && !active ? '#5B6577' : '#0b3fb3'}
           lineWidth={selected ? 1.25 : 1}

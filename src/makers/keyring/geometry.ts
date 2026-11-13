@@ -1,7 +1,7 @@
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
 import { manifoldToMeshData, type MeshData } from '@/cad/kernel/meshData';
 import { validatePart } from '@/split/geometry/split';
-import { unionOf, type DesignElement } from '../canvas/model';
+import { sideOf, unionOf, type DesignElement } from '../canvas/model';
 
 /**
  * Keyring and name tag geometry. Element roles:
@@ -73,17 +73,26 @@ export function buildKeyring(k: ManifoldToplevel, elements: DesignElement[], p: 
   const warnings: string[] = [];
   const notes: string[] = [];
   try {
-    const raised = own(unionOf(k, elements, ['raised']));
-    const engraved = own(unionOf(k, elements, ['engraved']));
-    const inlay = own(unionOf(k, elements, ['inlay']));
-    const cuts = own(unionOf(k, elements, ['cut']));
+    // Back items are stored as seen from behind: mirror them into the front's frame.
+    const front = elements.filter((e) => sideOf(e) === 'front');
+    const backEls = elements.filter((e) => sideOf(e) === 'back');
+    const mirrored = (roles: string[]) => own(own(unionOf(k, backEls, roles)).scale([-1, 1]));
+    const raised = own(unionOf(k, front, ['raised']));
+    const engraved = own(unionOf(k, front, ['engraved']));
+    const inlay = own(unionOf(k, front, ['inlay']));
+    // On the back, nothing can stand proud (it would print in mid-air): raised counts as engraved.
+    const backEngraved = mirrored(['engraved', 'raised']);
+    const backInlay = mirrored(['inlay']);
+    const cuts = own(own(unionOf(k, front, ['cut'])).add(mirrored(['cut'])));
     let plate: CrossSection;
     if (p.plateMode === 'bubble') {
-      const content = own(unionOf(k, elements, ['plate', 'raised', 'engraved', 'inlay']));
+      const content = own(
+        own(unionOf(k, front, ['plate', 'raised', 'engraved', 'inlay'])).add(mirrored(['plate', 'raised', 'engraved', 'inlay'])),
+      );
       if (content.isEmpty()) throw new Error('Add some text or a shape to make a tag.');
       plate = own(own(own(content.offset(p.margin + 1.5, 'Round', 2, 48)).offset(-1.5, 'Round', 2, 48)).simplify(0.02));
     } else {
-      plate = own(unionOf(k, elements, ['plate']));
+      plate = own(own(unionOf(k, front, ['plate'])).add(mirrored(['plate'])));
       if (plate.isEmpty())
         throw new Error('There is no plate. Add a shape and set its role to "Plate", or switch the plate to "Around the content".');
     }
@@ -117,6 +126,21 @@ export function buildKeyring(k: ManifoldToplevel, elements: DesignElement[], p: 
     if (!inl.isEmpty())
       base = own(base.subtract(own(own(k.Manifold.extrude(inl, inlayDepth + 0.01)).translate([0, 0, p.thickness - inlayDepth]))));
 
+    // Back face: engraving and flush inlays cut up from the bottom, leaving at least 0.6 mm between
+    // them and anything cut down from the top.
+    const usedTop = Math.max(engr.isEmpty() ? 0 : Math.min(p.engraveDepth, p.thickness - 0.8), inl.isEmpty() ? 0 : inlayDepth);
+    const backRoom = Math.max(0.2, p.thickness - usedTop - 0.6);
+    const bEngr = own(backEngraved.intersect(inner));
+    if (!bEngr.isEmpty()) {
+      const depth = Math.min(p.engraveDepth, backRoom);
+      base = own(base.subtract(own(own(k.Manifold.extrude(bEngr, depth + 0.01)).translate([0, 0, -0.01]))));
+    }
+    const bInl = own(own(backInlay.intersect(inner)).subtract(bEngr));
+    const backInlayDepth = Math.min(p.inlayDepth, backRoom);
+    if (!bInl.isEmpty()) base = own(base.subtract(own(own(k.Manifold.extrude(bInl, backInlayDepth + 0.01)).translate([0, 0, -0.01]))));
+    if (!bEngr.isEmpty() || !bInl.isEmpty())
+      notes.push('The back is mirrored in the model so it reads correctly when the tag is turned over.');
+
     // Top colour: raised areas (clipped to the plate), an optional border, and the inlay fill.
     let top2d = own(own(raised.intersect(plate2d)).subtract(engr));
     if (p.border.enabled) {
@@ -126,10 +150,11 @@ export function buildKeyring(k: ManifoldToplevel, elements: DesignElement[], p: 
     const parts: Manifold[] = [];
     if (!top2d.isEmpty()) parts.push(own(own(k.Manifold.extrude(top2d, p.raisedHeight)).translate([0, 0, p.thickness])));
     if (!inl.isEmpty()) parts.push(own(own(k.Manifold.extrude(inl, inlayDepth)).translate([0, 0, p.thickness - inlayDepth])));
+    if (!bInl.isEmpty()) parts.push(own(k.Manifold.extrude(bInl, backInlayDepth)));
     const top = parts.length ? own(k.Manifold.union(parts)) : null;
 
     // Detail check: strokes thinner than a 0.4 mm nozzle line are lost.
-    const detail = own(top2d.add(engr));
+    const detail = own(own(own(top2d.add(engr)).add(bEngr)).add(bInl));
     if (!detail.isEmpty()) {
       const kept = own(own(detail.offset(-0.4, 'Round', 2, 16)).offset(0.4, 'Round', 2, 16));
       if (kept.area() < detail.area() * 0.92)
@@ -156,8 +181,11 @@ export function buildKeyring(k: ManifoldToplevel, elements: DesignElement[], p: 
       add('base', 'Base', p.baseColour, base);
       add('top', 'Top colour', p.topColour, top);
       const swap = !inl.isEmpty() ? p.thickness - inlayDepth : p.thickness;
+      const hasTop = !top2d.isEmpty() || !inl.isEmpty();
       notes.push(
-        `One nozzle? Add a filament change (pause) at ${swap.toFixed(2)} mm and swap to the top colour. With an AMS or MMU, the two parts are ready as separate colours in the 3MF.`,
+        bInl.isEmpty()
+          ? `One nozzle? Add a filament change (pause) at ${swap.toFixed(2)} mm and swap to the top colour. With an AMS or MMU, the two parts are ready as separate colours in the 3MF.`
+          : `One nozzle? Start in the top colour, change to the base colour at ${backInlayDepth.toFixed(2)} mm${hasTop ? `, and back to the top colour at ${swap.toFixed(2)} mm` : ''}. With an AMS or MMU, the parts are ready as separate colours in the 3MF.`,
       );
     } else {
       add('tag', 'Tag', p.baseColour, top ? own(base.add(top)) : base);

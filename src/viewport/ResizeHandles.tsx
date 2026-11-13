@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { frameThrottle } from './frameThrottle';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { useEditor } from '@/store/editorStore';
 import type { ModelDocument, ObjectId, Vec3 } from '@/types/document';
@@ -187,8 +188,11 @@ function Handles({ id, doc }: { id: ObjectId; doc: ModelDocument }) {
         draft.objects[id].transform.position = position;
       });
     };
+    const throttled = frameThrottle(onMove);
+    const onPointerMove = (ev: PointerEvent) => throttled.call(ev);
     const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
+      throttled.flush();
+      window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
       setOrbitEnabled(true);
@@ -197,7 +201,7 @@ function Handles({ id, doc }: { id: ObjectId; doc: ModelDocument }) {
       viewport.lastGizmoRelease = performance.now();
       useEditor.getState().commitTransaction();
     };
-    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
   };

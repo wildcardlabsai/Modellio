@@ -255,7 +255,7 @@ check('Extra: Shift+click multi-selects', s.selection.length === 2, JSON.stringi
 await page.keyboard.press('w');
 await page.keyboard.press('ArrowUp');
 const sph2 = await obj(sphereId);
-check('Extra: Arrow-key nudge moves the whole selection', close(sph2.transform.position[1], sph.transform.position[1] + 1));
+check('Extra: Arrow-key nudge moves the whole selection by 0.5 mm', close(sph2.transform.position[1], sph.transform.position[1] + 0.5));
 
 // View cube: click the Top face (cube centre is 72 px from the canvas' top-right corner).
 await page.getByRole('button', { name: 'Home view' }).click();

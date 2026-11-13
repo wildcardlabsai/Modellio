@@ -25,6 +25,9 @@ export interface MakerState<P, R> {
   params: P;
   selected: string | null;
   tool: 'select' | 'draw';
+  /** The face being edited, for double-sided makers. New items go on this side. */
+  side: 'front' | 'back';
+  setSide: (side: 'front' | 'back') => void;
   templateId: string | null;
   result: R | null;
   error: string | null;
@@ -86,16 +89,23 @@ export function createMakerStore<P extends object, R>(opts: {
       ...init,
       selected: null,
       tool: 'select',
+      side: 'front',
+      setSide: (side) => set({ side, selected: null }),
       result: null,
       error: null,
       building: false,
       past: [],
       future: [],
-      select: (selected) => set({ selected }),
+      // Selecting an item (e.g. from Layers) shows the side it is on.
+      select: (selected) => {
+        const el = selected ? get().elements.find((e) => e.id === selected) : null;
+        set({ selected, ...(el ? { side: el.side ?? 'front' } : {}) });
+      },
       setTool: (tool) => set({ tool, selected: tool === 'draw' ? null : get().selected }),
       add: (el) => {
         const id = el.id || newId();
-        commit({ elements: [...get().elements, { ...el, id } as DesignElement], selected: id });
+        const side = el.side ?? (get().side === 'back' ? 'back' : undefined);
+        commit({ elements: [...get().elements, { ...el, id, ...(side ? { side } : {}) } as DesignElement], selected: id });
         return id;
       },
       update: (id, patch, o) =>
@@ -124,6 +134,7 @@ export function createMakerStore<P extends object, R>(opts: {
           params: { ...opts.defaults, ...structuredClone(params) },
           templateId,
           selected: null,
+          side: 'front',
         }),
       undo: () => {
         const { past } = get();

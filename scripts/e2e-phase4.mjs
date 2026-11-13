@@ -147,7 +147,7 @@ check('3e. ASCII STL has one solid per body', (ascii.match(/^solid /gm) ?? []).l
 
 // --- 4. Import STL via the file chooser
 const before = Object.keys((await state()).doc.objects).length;
-const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Import STL / OBJ' }).click()]);
+const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /^Import STL, OBJ/ }).click()]);
 await chooser.setFiles(stlFile);
 await page.getByRole('dialog', { name: /Import Desk_Organiser.stl/ }).waitFor();
 const sizeText = await page.getByTestId('import-size').textContent();
@@ -303,7 +303,7 @@ check(
 );
 const txt = path.join(OUT, 'notes.step');
 fs.writeFileSync(txt, 'ISO-10303-21;');
-const [tc] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Import STL / OBJ' }).click()]);
+const [tc] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /^Import STL, OBJ/ }).click()]);
 await tc.setFiles(txt);
 check(
   '9b. Unsupported formats are refused with a message',

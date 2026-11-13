@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { ArrowDown, ArrowUp, Copy, FlipHorizontal2, Pencil, Shapes, Trash2, Type, Upload, MousePointer2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  FlipHorizontal2,
+  Package,
+  Repeat2,
+  Pencil,
+  Shapes,
+  Trash2,
+  Type,
+  Upload,
+  MousePointer2,
+} from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
 import { NumberField } from '@/components/ui/NumberField';
 import { FONTS, loadFont, DEFAULT_FONT } from '@/cad/text/fonts';
@@ -8,9 +21,8 @@ import type { FontId } from '@/types/document';
 import { CANVAS_SHAPES } from './shapes';
 import { naturalAspect, normalise, type DesignElement } from './model';
 import type { MakerState } from './store';
-import { svgOutlines } from '../cookie/svg';
-import { readImageFile } from './image';
-import { maskFromRgba, traceMask } from '../cookie/trace';
+import { outlineFromFile } from '@/assets/outlines';
+import { assetFile, isOutlineAsset, useAssets, type AssetRecord } from '@/assets/library';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyMakerStore = UseBoundStore<StoreApi<MakerState<any, any>>>;
@@ -31,6 +43,8 @@ export interface PanelConfig {
   newShapeSize: number;
   newTextHeight: number;
   defaultText: string;
+  /** Double-sided makers: the roles allowed for items on the back. */
+  backRoles?: string[];
 }
 
 const btn = 'flex h-8 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-[#344054] hover:bg-[#f9fafb]';
@@ -49,31 +63,10 @@ function ShapeThumb({ id }: { id: string }) {
 
 /** Trace an SVG or a picture into an outline element (centred, longest side `size` mm). */
 export async function fileToElement(file: File, size: number, role: string): Promise<DesignElement> {
-  let polys: [number, number][][];
-  let fillRule: 'Positive' | 'EvenOdd' = 'Positive';
-  if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') polys = svgOutlines(await file.text()).polygons;
-  else if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)) {
-    const img = await readImageFile(file);
-    const { mask } = maskFromRgba(img.rgba, img.width, img.height, img.threshold, false);
-    polys = traceMask(mask, img.width, img.height, { tolerance: 0.9, smoothing: 2, minAreaFraction: 0.0008 });
-    fillRule = 'EvenOdd';
-  } else throw new Error(`"${file.name}" isn't an SVG or a picture.`);
-  if (!polys.length) throw new Error(`Nothing to use was found in "${file.name}".`);
+  const { polys, fillRule, name } = await outlineFromFile(file);
   const { aspect } = normalise(polys);
   const [w, h] = aspect >= 1 ? [size, size / aspect] : [size * aspect, size];
-  return {
-    id: '',
-    kind: 'outline',
-    polygons: polys,
-    fillRule,
-    role,
-    x: 0,
-    y: 0,
-    w,
-    h,
-    rotation: 0,
-    name: file.name.replace(/\.[^.]+$/, ''),
-  } as DesignElement;
+  return { id: '', kind: 'outline', polygons: polys, fillRule, role, x: 0, y: 0, w, h, rotation: 0, name } as DesignElement;
 }
 
 /** Add shapes, text, uploaded artwork, or draw freehand. */
@@ -136,6 +129,14 @@ export function AddBar({
       name: 'Text',
     } as DesignElement);
   };
+  const addAsset = async (a: AssetRecord) => {
+    try {
+      add(await fileToElement(assetFile(a), config.newShapeSize, roleFor('upload')));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
   const upload = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -145,6 +146,8 @@ export function AddBar({
       if (!file) return;
       try {
         add(await fileToElement(file, config.newShapeSize, roleFor('upload')));
+        // Keep it in the asset library so it can be reused in other makers and the Design Studio.
+        void useAssets.getState().add([file]);
         onError(null);
       } catch (e) {
         onError((e as Error).message);
@@ -196,6 +199,15 @@ export function AddBar({
       <button type="button" className={btn} onClick={upload}>
         <Upload size={14} /> Upload
       </button>
+      <Popover
+        trigger={({ open, toggle }) => (
+          <button type="button" className={btn} onClick={toggle} aria-expanded={open} aria-haspopup="menu">
+            <Package size={14} /> Assets
+          </button>
+        )}
+      >
+        {(close) => <AssetPicker onPick={(a) => (close(), void addAsset(a))} onUpload={() => (close(), upload())} />}
+      </Popover>
       <button
         type="button"
         className={`${btn} ${tool === 'draw' ? 'border-brand bg-brand-50 text-brand' : ''}`}
@@ -203,6 +215,39 @@ export function AddBar({
         onClick={() => setTool(tool === 'draw' ? 'select' : 'draw')}
       >
         <Pencil size={14} /> Draw
+      </button>
+    </div>
+  );
+}
+
+/** Saved logos and artwork (SVGs and pictures) from the asset library. */
+function AssetPicker({ onPick, onUpload }: { onPick: (a: AssetRecord) => void; onUpload: () => void }) {
+  const all = useAssets((s) => s.assets);
+  const loaded = useAssets((s) => s.loaded);
+  useEffect(() => void useAssets.getState().load(), []);
+  const assets = all.filter(isOutlineAsset);
+  return (
+    <div className="w-64" role="menu" aria-label="Assets" data-testid="maker-assets">
+      <p className="px-1 pb-2 text-[12px] leading-relaxed text-muted">Your saved logos and artwork, shared with the Design Studio.</p>
+      {loaded && !assets.length && <p className="px-1 pb-2 text-[12px] text-[#475467]">No SVGs or pictures saved yet.</p>}
+      <div className="grid max-h-64 grid-cols-3 gap-1.5 overflow-y-auto">
+        {assets.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="menuitem"
+            title={a.name}
+            aria-label={a.name}
+            onClick={() => onPick(a)}
+            className="overflow-hidden rounded-md border border-line hover:border-brand"
+            data-testid="maker-asset"
+          >
+            <img src={a.thumb} alt="" className="aspect-square w-full bg-[#f5f7fb] object-contain" />
+          </button>
+        ))}
+      </div>
+      <button type="button" role="menuitem" onClick={onUpload} className={`${btn} mt-2 w-full justify-center`}>
+        <Upload size={14} /> Upload new…
       </button>
     </div>
   );
@@ -235,7 +280,10 @@ export function LayersPanel({ useStore, config }: { useStore: AnyMakerStore; con
               <span className="min-w-0 flex-1 truncate font-medium text-ink">
                 {el.kind === 'text' ? `“${el.text}”` : (el.name ?? el.kind)}
               </span>
-              <span className="shrink-0 text-[11px] text-[#475467]">{role?.label ?? el.role}</span>
+              <span className="shrink-0 text-[11px] text-[#475467]">
+                {el.side === 'back' ? 'Back · ' : ''}
+                {role?.label ?? el.role}
+              </span>
             </button>
           </li>
         );
@@ -323,19 +371,21 @@ export function Inspector({ useStore, config }: { useStore: AnyMakerStore; confi
       <div>
         <p className="mb-1 text-[12px] text-muted">Role</p>
         <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Role">
-          {config.roles.map((r) => (
-            <button
-              key={r.value}
-              type="button"
-              role="radio"
-              aria-checked={el.role === r.value}
-              onClick={() => update(el.id, { role: r.value })}
-              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-medium ${el.role === r.value ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
-            >
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: r.colour }} aria-hidden />
-              {r.label}
-            </button>
-          ))}
+          {config.roles
+            .filter((r) => el.side !== 'back' || !config.backRoles || config.backRoles.includes(r.value))
+            .map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                role="radio"
+                aria-checked={el.role === r.value}
+                onClick={() => update(el.id, { role: r.value })}
+                className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-medium ${el.role === r.value ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
+              >
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: r.colour }} aria-hidden />
+                {r.label}
+              </button>
+            ))}
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -361,6 +411,22 @@ export function Inspector({ useStore, config }: { useStore: AnyMakerStore; confi
         )}
       </div>
       <div className="flex flex-wrap gap-1.5">
+        {config.backRoles && (
+          <button
+            type="button"
+            className={btn}
+            onClick={() => {
+              // Same place on the tag, seen from the other face (x mirrors); roles the back can't print become engraved.
+              const toBack = el.side !== 'back';
+              const role = toBack && !config.backRoles!.includes(el.role) ? config.backRoles![0] : el.role;
+              update(el.id, { side: toBack ? 'back' : 'front', x: -el.x, role } as Partial<DesignElement>);
+              useStore.getState().setSide(toBack ? 'back' : 'front');
+              useStore.getState().select(el.id);
+            }}
+          >
+            <Repeat2 size={14} /> Move to {el.side === 'back' ? 'front' : 'back'}
+          </button>
+        )}
         <button type="button" className={btn} onClick={() => update(el.id, { flipX: !el.flipX })} aria-pressed={!!el.flipX}>
           <FlipHorizontal2 size={14} /> Flip
         </button>

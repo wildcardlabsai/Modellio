@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Line } from '@react-three/drei';
+import { FastLine } from './FastLine';
 import type { SnapGuide } from '@/cad/snapping';
 
 /** Transient snap guides shown while dragging. */
@@ -10,7 +10,7 @@ export function SnapGuides() {
   return (
     <group userData={{ noThumbnail: true }}>
       {guides.map((g, i) => (
-        <Line
+        <FastLine
           key={i}
           points={
             g.axis === 0

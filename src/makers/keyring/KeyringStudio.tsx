@@ -30,6 +30,9 @@ export const KEYRING_PANEL: PanelConfig = {
     { value: 'cut', label: 'Hole', colour: '#E0262B' },
   ] satisfies { value: KeyringRole; label: string; colour: string }[],
   defaults: { shape: 'raised', text: 'raised', upload: 'raised', draw: 'raised' },
+  // On the back, new items are engraved (nothing can stand proud of the bottom face).
+  pickRole: () => (useKeyring.getState().side === 'back' ? 'engraved' : 'raised'),
+  backRoles: ['engraved', 'inlay', 'cut'],
   newShapeSize: 14,
   newTextHeight: 9,
   defaultText: 'NAME',
@@ -219,7 +222,34 @@ function shade(hex: string) {
   return `rgb(${f(n >> 16)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
 }
 
+/** Front / Back: which face of the tag is being edited. */
+function SideSwitch() {
+  const side = useKeyring((s) => s.side);
+  const backCount = useKeyring((s) => s.elements.filter((e) => e.side === 'back').length);
+  return (
+    <div className="absolute left-3 top-3 flex items-center gap-2" data-testid="keyring-sides">
+      <div className="w-[180px] rounded-lg bg-white shadow-sm">
+        <Segmented<'front' | 'back'>
+          label="Side of the tag"
+          value={side}
+          options={[
+            { value: 'front', label: 'Front' },
+            { value: 'back', label: backCount ? `Back (${backCount})` : 'Back' },
+          ]}
+          onChange={(v) => useKeyring.getState().setSide(v)}
+        />
+      </div>
+      {side === 'back' && (
+        <span className="rounded-md bg-white/90 px-2 py-1 text-[11px] text-[#475467] shadow-sm">
+          Seen from behind · engraved or flush only
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Canvas2D() {
+  const back = useKeyring((s) => s.side === 'back');
   const roleStyle = useRoleStyle();
   const hole = useKeyring((s) => s.params.hole);
   const plateMode = useKeyring((s) => s.params.plateMode);
@@ -250,7 +280,7 @@ function Canvas2D() {
       artboard={{ w: 80, h: 50, label: 'Tag area 80 × 50 mm' }}
       roleStyle={roleStyle}
       pins={pins}
-      drawRole="raised"
+      drawRole={back ? 'engraved' : 'raised'}
       underlay={(px) =>
         d ? (
           <path
@@ -265,8 +295,9 @@ function Canvas2D() {
         ) : null
       }
     >
+      <SideSwitch />
       {empty && (
-        <div className="pointer-events-none absolute inset-x-0 top-6 text-center text-[13px] text-muted">
+        <div className="pointer-events-none absolute inset-x-0 top-14 text-center text-[13px] text-muted">
           Add text or a shape from the panel on the left, or draw with the pen.
         </div>
       )}

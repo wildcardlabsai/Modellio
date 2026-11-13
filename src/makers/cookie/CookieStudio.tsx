@@ -7,6 +7,7 @@ import { DesignCanvas, type RoleStyle } from '../canvas/DesignCanvas';
 import { AddBar, Inspector, LayersPanel, fileToElement, type PanelConfig } from '../canvas/DesignPanels';
 import { MakerPreview, downloadBytes, slugify } from '../canvas/MakerPreview';
 import { TemplateGallery } from '../canvas/TemplateGallery';
+import { useAssets } from '@/assets/library';
 import { designBounds, type DesignElement } from '../canvas/model';
 import { NumberField } from '@/components/ui/NumberField';
 import { Toggle } from '@/components/ui/Toggle';
@@ -83,6 +84,7 @@ export default function CookieStudio() {
     try {
       const role = COOKIE_PANEL.pickRole!('upload', useCookie.getState().elements);
       useCookie.getState().add(await fileToElement(f, 60, role));
+      void useAssets.getState().add([f]);
       setTab('design');
       setError(null);
     } catch (err) {

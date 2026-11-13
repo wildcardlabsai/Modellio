@@ -140,7 +140,7 @@ export function Toolbar() {
         {(close) => <CombineMenu onDone={close} />}
       </Popover>
       <div className="flex-1" />
-      <IconButton label="Import STL / OBJ" onClick={openMeshPicker}>
+      <IconButton label="Import STL, OBJ, 3MF, SVG or picture" onClick={openMeshPicker}>
         <Upload size={17} />
         <span className="hidden lg:inline">Import</span>
       </IconButton>

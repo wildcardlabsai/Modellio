@@ -82,7 +82,8 @@ npm run dev          # http://localhost:5173
   - Choose everything or just the selection, and Z-up (slicers) or Y-up (3D apps).
   - Before you download, a summary shows the object count, triangles and overall size, plus checks for watertightness,
     loose holes, parts below the workplane and parts beyond the plate.
-* **Import STL / OBJ** with the Import button, <kbd>Ctrl/⌘ O</kbd>, or by dropping files onto the viewport.
+* **Import STL, OBJ, 3MF, SVG or a picture** with the Import button, <kbd>Ctrl/⌘ O</kbd>, the Assets panel, or by dropping
+  files onto the viewport. 3MF keeps its colours; SVGs and pictures are traced into a 40 mm × 2 mm solid.
   - Units (mm/cm/inch/m) and up axis are detected: models smaller than 1 unit are assumed to be in metres,
     and OBJ files are assumed to be Y-up. You can override both.
   - The dialog previews the final size in mm and reports whether the mesh is watertight.
@@ -133,6 +134,23 @@ npm run dev          # http://localhost:5173
 
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
+## Assets, double-sided prints and editing comfort ✅
+
+* **Assets** (Design Studio rail, and the **Assets** button in the Keyring and Cookie makers): a library of your logos,
+  artwork and models kept on this device (IndexedDB). Upload SVG, PNG, JPG, STL, OBJ or 3MF; click an asset to add it, or
+  drag it onto the workplane. Anything uploaded in a maker is saved there too, so a logo uploaded once is available
+  everywhere. Code: `src/assets`.
+* **Underside** (Inspector, for top-level objects): sends the selected text, logo or shape face down into the bottom of
+  the part it sits on, reading the right way when the print is turned over — **Engrave** (a hole cut into the bottom) or
+  **Flush colour** (a flush second-colour inlay with a matching pocket). Depth adjustable; one undo step.
+  Code: `src/cad/underside.ts`.
+* **Keyring back side:** a Front / Back switch on the canvas. The back is edited as seen from behind (the front shows faded
+  and mirrored); back items are engraved, flush or holes, and the 3MF and notes cover the extra colour change.
+* **Number fields** have ▲/▼ arrows: click, Shift-click ×10, press and hold to repeat.
+* **Arrow-key nudging** moves 0.5 mm (Shift 5 mm, Alt 0.1 mm) in the Design Studio and the makers.
+* **Smoother dragging:** selection outlines, guides and edges no longer recompile their shaders on every mouse move
+  (`src/viewport/FastLine.tsx`); drags and resizes update once per frame.
+
 ## Landing page and studios
 
 `/` is the landing page: product overview, the live studios, the coming-soon studios (Sign Generator,
@@ -169,7 +187,8 @@ The keyring and cookie makers share a 2D design space (`src/makers/canvas`), so 
 
 * **Add** shapes (25+), text in any bundled font, uploads (SVG, or a picture traced automatically) and freehand drawing.
 * **Arrange** on a millimetre grid: drag to move (snaps to 0.5 mm and the centre lines), corner handles resize in
-  proportion (Shift to stretch), the top handle rotates (Shift snaps to 15°); arrow keys nudge, Delete, Ctrl+D duplicates.
+  proportion (Shift to stretch), the top handle rotates (Shift snaps to 15°); arrow keys nudge 0.5 mm (Shift 5 mm, Alt
+  0.1 mm), Delete, Ctrl+D duplicates.
 * **Roles** say what each item does in that maker (raised, engraved, a hole, stamp-only detail…), set in the inspector,
   which also takes exact positions, sizes and angles. Layers, undo/redo per gesture, and the design is remembered.
 * A **live 3D preview** sits beside the canvas (or full size with the 3D view), with the built outline drawn on the canvas.

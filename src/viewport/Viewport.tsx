@@ -37,6 +37,7 @@ function ReportCrash({ error, onCrash }: { error: Error; onCrash: (e: Error) => 
   return null;
 }
 import { handleFiles } from '@/components/files/fileIntake';
+import { ASSET_DRAG_MIME, assetFile, useAssets } from '@/assets/library';
 
 export const SHAPE_DRAG_MIME = 'application/x-modellio-shape';
 
@@ -132,7 +133,8 @@ export function Viewport() {
   const home = VIEW_DIRECTIONS.home.clone().multiplyScalar(240);
 
   const onDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer.types.includes(SHAPE_DRAG_MIME) && !e.dataTransfer.types.includes('Files')) return;
+    const t = e.dataTransfer.types;
+    if (!t.includes(SHAPE_DRAG_MIME) && !t.includes(ASSET_DRAG_MIME) && !t.includes('Files')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     setDragOver(true);
@@ -145,6 +147,15 @@ export function Viewport() {
       e.preventDefault();
       const hit = screenToWorkplane(e.clientX, e.clientY);
       void handleFiles([...e.dataTransfer.files], hit ? [hit.x, hit.y] : undefined);
+      return;
+    }
+    const assetId = e.dataTransfer.getData(ASSET_DRAG_MIME);
+    if (assetId) {
+      // An asset dragged from the Assets panel: add it where it was dropped.
+      e.preventDefault();
+      const asset = useAssets.getState().assets.find((a) => a.id === assetId);
+      const hit = screenToWorkplane(e.clientX, e.clientY);
+      if (asset) void handleFiles([assetFile(asset)], hit ? [hit.x, hit.y] : undefined, { save: false });
       return;
     }
     const type = e.dataTransfer.getData(SHAPE_DRAG_MIME) as PrimitiveType;
