@@ -215,3 +215,38 @@ No GPL code. Manifold (Apache-2.0) is unchanged.
 
 Adopt **replicad + OpenCascade as a lazy-loaded precise-solid kernel alongside Manifold**, implement in the order
 of §4, starting with the foundation and fillet/chamfer.
+
+## Implementation status
+
+| Step | State | Commit | Tests |
+| --- | --- | --- | --- |
+| 1 Foundation: lazy OpenCascade worker, `solid` shape, exact conversion, schema v3 | Done | d304b7a | `src/cad/brep/build.test.ts`, `e2e-advanced-cad` 1–12 |
+| 2 Fillet & chamfer: edge picking, preview, operations list, edge re-finding | Done | a94c26c | `build.test.ts`, `featureTool.test.ts`, e2e 13–31 |
+| 3 STEP export (exact + faceted) and import (exact, filletable) | Done | 735ce34 | `step.test.ts`, e2e 32–41, phase 4 9b/9c |
+| 4–5 Loft and sweep | Done | 04e2c27 | `loftSweep.test.ts`, e2e 42–58 |
+| 6 Licences page, docs, landing tools, regression | Done | (this commit) | full regression: 16 suites |
+
+### Differences from the plan
+
+* **Sketch planes** were simplified. Loft sections lie flat at a height with an X/Y shift, and sweep paths are drawn
+  upright (XZ) or flat (XY). The profile is placed square to the start of the path automatically. That covers vases,
+  handles, rails and transitions without a 3D plane editor; free sketch planes remain future work.
+* **Sweep twist** was not added. replicad exposes OpenCascade laws for scaling but no simple twist; *Frenet*
+  orientation is offered for spiralling paths. Guide curves for lofts are future work too.
+* **Imported STEP solids** are stored as exact BRep text inside the project (a `brep` recipe base) instead of as separate
+  file assets. They stay exact and filletable with no new storage plumbing; very large parts make large projects and
+  share links.
+* **Tangent propagation:** a fillet or chamfer follows edges that continue smoothly from the chosen ones (OpenCascade's
+  standard behaviour); the panel says so.
+
+### Known limitations
+
+* An operation whose edge can no longer be matched after an edit is skipped and flagged; it is never re-targeted.
+* Sketch-based, loft, sweep and imported solids scale to the object's size like other shapes, so a fillet radius on them
+  is in the solid's own millimetres. STEP export refuses uneven stretching of these rather than distort them.
+  Primitives rebuild at their exact size, so their radii stay exact.
+* Editing a loft or sweep rebuilds it at its natural size.
+* STEP import reads geometry only (no component names or colours: `STEPCAFControl_Reader` is not in this OpenCascade
+  build). Meshes, text and Boolean combinations are exported as faceted solids, up to 150,000 triangles.
+* First use downloads the 7 MB engine; heavy models can use several hundred MB of memory in the worker. If the worker
+  stops, the operation reports it and a fresh worker starts on the next request.

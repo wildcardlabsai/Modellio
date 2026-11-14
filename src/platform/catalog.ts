@@ -131,6 +131,27 @@ export const TOOL_ENTRIES: ToolEntry[] = [
     studio: 'design',
     where: 'Design Studio → Print',
   },
+  {
+    id: 'fillet',
+    name: 'Fillet & Chamfer',
+    line: 'Round or bevel the exact edges you pick, with a live preview.',
+    studio: 'design',
+    where: 'Design Studio → Features',
+  },
+  {
+    id: 'loft',
+    name: 'Loft & Sweep',
+    line: 'Blend between sketched sections, or move a profile along a path.',
+    studio: 'design',
+    where: 'Design Studio → Features',
+  },
+  {
+    id: 'step',
+    name: 'STEP Import & Export',
+    line: 'Exact CAD geometry in and out, for Fusion, SolidWorks, FreeCAD and Onshape.',
+    studio: 'design',
+    where: 'Design Studio → Import / Export',
+  },
   { id: 'lithophane', name: 'Lithophane', line: 'A photo into a panel that shows the picture when lit from behind.' },
   { id: 'thread', name: 'Thread Generator', line: 'Screw threads and nuts that print and fit.' },
 ];

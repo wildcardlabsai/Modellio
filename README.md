@@ -176,6 +176,24 @@ Work on branch `modellio-2-development`; the audit and plan are in [`docs/MODELL
 Not built yet (shown as *Coming soon* or not shown): Lithophane and Thread tools, sketch offset / trim / splines,
 a full feature tree (sweep, loft, fillet history), STEP, assemblies with joints.
 
+## MODELLIO 2.1 — advanced CAD ✅
+
+Branch `modellio-2.1-advanced-cad`; plan and status in [`docs/MODELLIO-2.1-CAD-EXPANSION-PLAN.md`](docs/MODELLIO-2.1-CAD-EXPANSION-PLAN.md).
+
+* **Precise solids:** a second, exact geometry engine (OpenCascade via replicad) alongside Manifold. It loads only the
+  first time it is needed (≈7 MB, in a Web Worker). Boxes, cylinders, cones, spheres, tori, wedges, tubes and sketches
+  convert exactly (Inspector → *Make precise solid*); results are meshed for display, Booleans, print checks and export.
+* **Fillet & Chamfer** (toolbar → Features): pick edges on the part, set a radius or distance, see the engine's preview
+  and exact volume, Apply or Cancel. Operations are listed in the Inspector (edit, suppress, delete) and survive resizing;
+  an operation whose edges disappear is flagged *Needs attention*, never moved to another edge. Tangent-continuous edges
+  are included, as in other CAD tools.
+* **Loft & Sweep** (Features): lofts through two or more sketched sections at chosen heights (smooth or straight);
+  sweeps a sketched profile along a sketched path (upright or flat, round or sharp corners). Live preview; editable later.
+* **STEP:** *Export → STEP* writes precise solids and primitives as exact geometry and other objects as faceted solids
+  (the dialog says which). *Import* reads every solid of a .step/.stp file as an exact solid that can be moved, filleted
+  and chamfered; there is no parametric history for imported parts, and STEP names/colours are not read yet.
+* Project files are version 3 (older files open unchanged). Licences: `?studio=licences`.
+
 ## AI assistant
 
 The assistant runs in a Vercel serverless function (`api/assistant.ts`) so the API key never reaches the browser.
@@ -202,6 +220,7 @@ instance allows 20 requests per IP per 10 minutes; put the route behind sign-in 
 | `/?studio=keytag` | Key Tag Maker |
 | `/?studio=sign` | Sign Maker |
 | `/?studio=privacy` | Privacy |
+| `/?studio=licences` | Open-source licences (OpenCascade LGPL notice) |
 
 The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
 
@@ -293,7 +312,7 @@ The Supabase client is only downloaded when this is configured.
 
 | Phase | Scope |
 | --- | --- |
-| Later | STEP via OpenCascade WASM, real-time collaboration, community gallery, PWA / offline install |
+| Later | Real-time collaboration, community gallery, PWA / offline install, sketch planes and guide curves for lofts, sweep twist |
 | 5 – Refinement | Performance, accessibility, onboarding, polish |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the technical design.

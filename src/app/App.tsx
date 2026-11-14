@@ -49,6 +49,7 @@ const KeyTagStudio = lazy(() => import('@/makers/keytag/KeyTagStudio'));
 const SignStudio = lazy(() => import('@/makers/sign/SignStudio'));
 const Dashboard = lazy(() => import('@/dashboard/Dashboard'));
 const PrivacyPage = lazy(() => import('@/platform/PrivacyPage'));
+const LicencesPage = lazy(() => import('@/platform/LicencesPage'));
 
 /** Workspaces other than the Design Studio, loaded on demand. */
 const WORKSPACES: Partial<Record<StudioId, LazyExoticComponent<ComponentType>>> = {
@@ -135,12 +136,8 @@ export function App() {
   }, []);
 
   if (studio === 'home') return <LandingPage />;
-  if (studio === 'privacy')
-    return (
-      <Suspense fallback={null}>
-        <PrivacyPage />
-      </Suspense>
-    );
+  if (studio === 'privacy' || studio === 'licences')
+    return <Suspense fallback={null}>{studio === 'privacy' ? <PrivacyPage /> : <LicencesPage />}</Suspense>;
   const Workspace = WORKSPACES[studio];
 
   return (

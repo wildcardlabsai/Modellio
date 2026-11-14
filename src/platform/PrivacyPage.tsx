@@ -17,7 +17,7 @@ export default function PrivacyPage() {
             <h2>Your designs stay on your device</h2>
             <p>
               Projects, maker designs and the asset library are saved in your browser’s own storage (IndexedDB and local storage) on this
-              device. Files you open — STL, OBJ, 3MF, SVG and pictures — are processed in your browser and are not uploaded.
+              device. Files you open — STL, OBJ, 3MF, STEP, SVG and pictures — are processed in your browser and are not uploaded.
             </p>
           </section>
           <section>

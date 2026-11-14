@@ -520,6 +520,23 @@ check(
   (await page.getByTestId('loft-sweep-dialog').count()) === 0 && (await S(() => window.modellio.store.getState().doc.rootIds.length)) === 2,
 );
 
+// ---- Step 6: licences page and landing tools ---------------------------------------------------
+await page.goto(`${URL}/?studio=licences`, { waitUntil: 'networkidle' });
+await page.getByTestId('licences').waitFor();
+const lic = await page.getByTestId('licences').textContent();
+check(
+  '59. The licences page credits OpenCascade (LGPL) and explains the replaceable engine file',
+  /Open CASCADE Technology/.test(lic) && /LGPL/.test(lic) && /replace that file/.test(lic),
+);
+await page.goto(`${URL}/`, { waitUntil: 'networkidle' });
+check(
+  '60. The landing page lists Fillet & Chamfer, Loft & Sweep and STEP as live tools in the Design Studio',
+  (await Promise.all(['tool-fillet', 'tool-loft', 'tool-step'].map((t) => page.getByTestId(t).getByRole('link').count()))).every(
+    (n) => n === 1,
+  ),
+);
+check('61. The footer links to the licences', (await page.getByRole('link', { name: 'Open-source licences' }).count()) === 1);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

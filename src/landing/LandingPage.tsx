@@ -20,6 +20,9 @@ import {
   ScanSearch,
   Sun,
   Wrench,
+  Spline,
+  Layers3,
+  FileBox,
 } from 'lucide-react';
 import { useProjects } from '@/store/projectStore';
 import { MAKER_ENTRIES, TOOL_ENTRIES } from '@/platform/catalog';
@@ -35,6 +38,9 @@ const TOOL_ICONS: Record<string, typeof Type> = {
   box: Package,
   underside: FlipVertical2,
   print: ScanSearch,
+  fillet: Spline,
+  loft: Layers3,
+  step: FileBox,
   lithophane: Sun,
   thread: Wrench,
 };
@@ -497,7 +503,7 @@ function FooterLink({
 }: {
   children: ReactNode;
   href?: string;
-  studio?: 'design' | 'dashboard' | 'privacy';
+  studio?: 'design' | 'dashboard' | 'privacy' | 'licences';
   before?: () => void;
 }) {
   const cls = 'text-[14px] text-haze hover:text-white';
@@ -563,6 +569,7 @@ function Footer() {
             </li>
             <li>
               <FooterLink studio="privacy">Privacy Policy</FooterLink>
+              <FooterLink studio="licences">Open-source licences</FooterLink>
             </li>
           </ul>
         </nav>
