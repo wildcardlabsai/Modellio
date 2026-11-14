@@ -5,3 +5,4 @@ dist
 coverage
 *.local
 e2e-results
+__pycache__
