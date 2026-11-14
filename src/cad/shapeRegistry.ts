@@ -7,6 +7,7 @@ import { geometryToMeshData, manifoldToMeshData, meshDataToGeometry, meshDataToM
 import { getMeshAsset } from './assets';
 import { getLoadedFont } from './text/fonts';
 import { buildTextMesh } from './text/textGeometry';
+import { buildProfileMesh, type ProfileOp } from './sketch/profile';
 
 export interface ParamSpec {
   key: string;
@@ -141,6 +142,19 @@ export const SHAPES: ShapeDefinition[] = (
       roundXY: true,
     },
     {
+      type: 'gear',
+      label: 'Gear',
+      defaultSize: [40, 40, 6],
+      defaultParams: { teeth: 20, pressureAngle: 20, bore: 5 },
+      defaultColor: '#64748B',
+      params: [
+        { key: 'teeth', label: 'Teeth', min: 6, max: 200, step: 1, integer: true },
+        { key: 'pressureAngle', label: 'Pressure angle', min: 14.5, max: 30, step: 0.5, unit: '°' },
+        { key: 'bore', label: 'Bore', min: 0, max: 200, step: 0.5, unit: 'mm' },
+      ],
+      roundXY: true,
+    },
+    {
       type: 'paraboloid',
       label: 'Paraboloid',
       defaultSize: [20, 20, 20],
@@ -162,6 +176,14 @@ export const SHAPES: ShapeDefinition[] = (
       params: [{ key: 'segments', label: 'Curve smoothness', min: 2, max: 24, step: 1, integer: true }],
     },
     { type: 'mesh', label: 'Mesh', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#64748B', params: [] },
+    {
+      type: 'profile',
+      label: 'Sketch',
+      defaultSize: [20, 20, 5],
+      defaultParams: { op: 0, depth: 5, angle: 360 },
+      defaultColor: '#0EA5E9',
+      params: [],
+    },
   ]);
 
 export const LIBRARY_SHAPES = SHAPES.filter((s) => s.library);
@@ -240,14 +262,40 @@ export function getTextMesh(o: Pick<ShapeObject, 'text' | 'params'>): MeshData |
   if (!k || !font) return null;
   const fontSize = o.params.fontSize ?? 14;
   const segs = Math.round(o.params.segments ?? 6);
-  const key = `${o.text.font}|${fontSize}|${segs}|${o.text.content}`;
+  const letterSpacing = o.params.letterSpacing ?? 0;
+  const lineHeight = o.params.lineHeight ?? 1.25;
+  const align = (['left', 'center', 'right'] as const)[Math.round(o.params.align ?? 0)] ?? 'left';
+  const key = `${o.text.font}|${fontSize}|${segs}|${letterSpacing}|${lineHeight}|${align}|${o.text.content}`;
   let mesh = textCache.get(key);
   if (!mesh) {
-    mesh = buildTextMesh(k, font, { content: o.text.content, fontSize, depth: 1, curveSegments: segs }) ?? undefined;
+    mesh =
+      buildTextMesh(k, font, { content: o.text.content, fontSize, depth: 1, curveSegments: segs, letterSpacing, lineHeight, align }) ??
+      undefined;
     if (!mesh) return null;
     textCache.set(key, mesh);
     if (textCache.size > TEXT_CACHE_LIMIT) textCache.delete(textCache.keys().next().value!);
   }
+  return mesh;
+}
+
+const profileCache = new Map<string, MeshData | null>();
+
+/** The solid for a profile shape's sketch (extruded or revolved). Null until the kernel loads. */
+export function getProfileMesh(o: Pick<ShapeObject, 'sketch' | 'params'>): MeshData | null {
+  if (!o.sketch) return null;
+  const k = getKernel();
+  if (!k) return null;
+  const op: ProfileOp = { kind: (o.params.op ?? 0) >= 1 ? 'revolve' : 'extrude', depth: o.params.depth ?? 5, angle: o.params.angle ?? 360 };
+  const key = JSON.stringify([o.sketch, op]);
+  if (profileCache.has(key)) return profileCache.get(key)!;
+  let mesh: MeshData | null;
+  try {
+    mesh = buildProfileMesh(k, o.sketch, op);
+  } catch {
+    mesh = null;
+  }
+  profileCache.set(key, mesh);
+  if (profileCache.size > 48) profileCache.delete(profileCache.keys().next().value!);
   return mesh;
 }
 
@@ -259,6 +307,12 @@ export function getTextMesh(o: Pick<ShapeObject, 'text' | 'params'>): MeshData |
 export function buildGeometryForShape(o: ShapeObject): THREE.BufferGeometry | null {
   if (o.shape === 'text') {
     const mesh = getTextMesh(o);
+    if (!mesh) return null;
+    const g = fitToSize(meshDataToGeometry(mesh, (40 * Math.PI) / 180), safeSize(o.size));
+    return o.mirror ? mirrorGeometry(g, o.mirror) : g;
+  }
+  if (o.shape === 'profile') {
+    const mesh = getProfileMesh(o);
     if (!mesh) return null;
     const g = fitToSize(meshDataToGeometry(mesh, (40 * Math.PI) / 180), safeSize(o.size));
     return o.mirror ? mirrorGeometry(g, o.mirror) : g;

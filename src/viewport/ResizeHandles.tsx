@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { frameThrottle } from './frameThrottle';
+import { viewScaleAt } from './viewportBridge';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { useEditor } from '@/store/editorStore';
 import type { ModelDocument, ObjectId, Vec3 } from '@/types/document';
@@ -123,7 +124,7 @@ function Handles({ id, doc }: { id: ObjectId; doc: ModelDocument }) {
     refs.current.forEach((m) => {
       if (!m) return;
       m.getWorldPosition(wp);
-      m.scale.setScalar(camera.position.distanceTo(wp) * HANDLE_PX);
+      m.scale.setScalar(viewScaleAt(camera, wp) * HANDLE_PX);
     });
   });
 

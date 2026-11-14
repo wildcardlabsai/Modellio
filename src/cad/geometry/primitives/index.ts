@@ -13,7 +13,7 @@ import { fitToSize, flipGeometry, mergeParts, polyhedron, yUpToZUp } from '../ge
 type Builder = (size: Vec3, params: ShapeParams) => THREE.BufferGeometry;
 
 /** Shapes built purely from size + numeric params (text and mesh need more context). */
-export type ParametricType = Exclude<PrimitiveType, 'text' | 'mesh'>;
+export type ParametricType = Exclude<PrimitiveType, 'text' | 'mesh' | 'profile'>;
 
 const seg = (params: ShapeParams, fallback = 48) => Math.round(clamp(params.segments ?? fallback, 3, 256));
 
@@ -179,6 +179,66 @@ const star: Builder = (size, p) => {
   return fitToSize(new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false, steps: 1 }), size);
 };
 
+/**
+ * Involute spur gear. The outside diameter is the X size, so the module follows it:
+ * m = D / (teeth + 2). Standard proportions: addendum m, dedendum 1.25 m, pressure angle
+ * `pressureAngle` (20° default). `bore` is a centre hole diameter in millimetres (0 = none).
+ */
+const gear: Builder = (size, p) => {
+  const z = Math.round(clamp(p.teeth ?? 20, 6, 200));
+  const alpha = THREE.MathUtils.degToRad(clamp(p.pressureAngle ?? 20, 14.5, 30));
+  const D = Math.max(size[0], 1);
+  const m = D / (z + 2);
+  const r = (m * z) / 2;
+  const rb = r * Math.cos(alpha);
+  const ra = r + m;
+  const rf = Math.max(r - 1.25 * m, m * 0.5);
+  const inv = (phi: number) => Math.tan(phi) - phi;
+  const psi = Math.PI / (2 * z);
+  const start = Math.max(rb, rf);
+  /** Half the tooth's angular width at radius R. */
+  const beta = (R: number) => psi + inv(alpha) - inv(Math.acos(Math.min(1, rb / Math.max(R, rb))));
+  const N = 8;
+  const shape = new THREE.Shape();
+  const at = (R: number, a: number): [number, number] => [R * Math.cos(a), R * Math.sin(a)];
+  let first = true;
+  const pt = (R: number, a: number) => {
+    const [x, y] = at(R, a);
+    if (first) {
+      shape.moveTo(x, y);
+      first = false;
+    } else shape.lineTo(x, y);
+  };
+  for (let k = 0; k < z; k++) {
+    const c = (2 * Math.PI * k) / z;
+    const b0 = beta(start);
+    pt(rf, c - b0);
+    for (let i = 0; i <= N; i++) {
+      const R = start + ((ra - start) * i) / N;
+      pt(R, c - beta(R));
+    }
+    const bt = beta(ra);
+    for (let i = 1; i < 4; i++) pt(ra, c - bt + (2 * bt * i) / 4);
+    for (let i = N; i >= 0; i--) {
+      const R = start + ((ra - start) * i) / N;
+      pt(R, c + beta(R));
+    }
+    pt(rf, c + b0);
+    // Root arc to the next tooth.
+    const next = (2 * Math.PI * (k + 1)) / z - b0;
+    for (let i = 1; i < 4; i++) pt(rf, c + b0 + ((next - c - b0) * i) / 4);
+  }
+  shape.closePath();
+  const bore = clamp(p.bore ?? 0, 0, rf * 1.6);
+  if (bore > 0.2) {
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, bore / 2, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+  }
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(size[2], 0.1), bevelEnabled: false, steps: 1, curveSegments: 32 });
+  return fitToSize(geo, size);
+};
+
 /** Capsule (cylinder with hemispherical ends) along Z. */
 const capsule: Builder = (size, p) => {
   const s = seg(p, 48);
@@ -217,4 +277,5 @@ export const PRIMITIVE_BUILDERS: Record<ParametricType, Builder> = {
   star,
   capsule,
   paraboloid,
+  gear,
 };

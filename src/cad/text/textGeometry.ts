@@ -12,18 +12,30 @@ export interface TextLayout {
   depth: number;
   /** Curve flattening segments per Bézier. */
   curveSegments?: number;
+  /** Extra space between letters, in ems (0 = the font's own spacing). */
+  letterSpacing?: number;
+  /** Distance between lines as a multiple of the font size (default 1.25). */
+  lineHeight?: number;
+  /** Alignment of multi-line text. */
+  align?: 'left' | 'center' | 'right';
 }
 
 /**
- * Convert font outlines to 2D contours (mm, Y up). Multi-line text is laid
- * out left-aligned with 1.25× line spacing.
+ * Convert font outlines to 2D contours (mm, Y up). Multi-line text is laid out with the
+ * given line height and alignment; letter spacing is added between glyphs.
  */
 export function textContours(font: opentype.Font, layout: TextLayout): SimplePolygon[] {
   const seg = Math.max(2, Math.round(layout.curveSegments ?? 6));
   const lines = layout.content.split('\n');
   const contours: SimplePolygon[] = [];
+  const opts = { letterSpacing: layout.letterSpacing ?? 0 };
+  const widths = lines.map((l) => font.getAdvanceWidth(l, layout.fontSize, opts));
+  const widest = Math.max(0, ...widths);
+  const lineStep = layout.fontSize * (layout.lineHeight ?? 1.25);
   lines.forEach((line, li) => {
-    const path = font.getPath(line, 0, li * layout.fontSize * 1.25, layout.fontSize);
+    const free = widest - widths[li];
+    const x0 = layout.align === 'center' ? free / 2 : layout.align === 'right' ? free : 0;
+    const path = font.getPath(line, x0, li * lineStep, layout.fontSize, opts);
     let current: [number, number][] = [];
     let x = 0;
     let y = 0;

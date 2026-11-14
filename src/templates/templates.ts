@@ -1,4 +1,4 @@
-import type { EditorState } from '@/store/editorStore';
+import { useEditor, type EditorState } from '@/store/editorStore';
 import type { ObjectId } from '@/types/document';
 
 /**
@@ -16,7 +16,7 @@ export interface Template {
 }
 
 /** Add a primitive with exact size and position (mm). */
-function part(
+export function part(
   e: EditorState,
   type: Parameters<EditorState['addShape']>[0],
   size: [number, number, number],
@@ -34,10 +34,11 @@ function part(
   return id;
 }
 
-function combine(e: EditorState, ids: ObjectId[], name: string): ObjectId {
+export function combine(e: EditorState, ids: ObjectId[], name: string): ObjectId {
   e.select(ids);
   e.combineSelected('union');
-  const gid = e.selection[0];
+  // `e` is a snapshot: read the new group from the live store.
+  const gid = useEditor.getState().selection[0];
   e.rename(gid, name);
   return gid;
 }
@@ -72,7 +73,7 @@ export const TEMPLATES: Template[] = [
       const text = await e.addText('MAKER', [6, 0]);
       if (text) {
         await e.setText(text, { fontSize: 11 });
-        const t = e.doc.objects[text];
+        const t = useEditor.getState().doc.objects[text];
         if (t?.kind === 'shape') {
           e.setSize(text, [t.size[0], t.size[1], 1.6]);
           e.setPosition(text, [6, 0, 3.8]);
@@ -93,7 +94,7 @@ export const TEMPLATES: Template[] = [
       const lip = part(e, 'box', [80, 6, 14], [0, -24, 7], { name: 'Front lip', color: '#10B981' });
       const cable = part(e, 'box', [14, 30, 20], [0, -20, 6], { name: 'Cable slot', hole: true });
       combine(e, [base, back, lip, cable], 'Phone stand');
-      e.dropToWorkplane(e.selection);
+      e.dropToWorkplane(useEditor.getState().selection);
     },
   },
   {

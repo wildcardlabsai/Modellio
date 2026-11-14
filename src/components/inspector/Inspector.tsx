@@ -28,6 +28,7 @@ import {
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
+import { meshReport } from '@/cad/operations/meshTools';
 import { useCadReady } from '@/viewport/cadReady';
 import type { CombineMode, FontId } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
@@ -36,6 +37,7 @@ import { getShapeDefinition } from '@/cad/shapeRegistry';
 import { proportionalSize } from '@/cad/document';
 import { canScaleNonUniform, descendantShapes, groupLocalBounds, isEffectivelyLocked } from '@/cad/hierarchy';
 import { NumberField } from '@/components/ui/NumberField';
+import { useSketchSession } from '@/components/sketch/sketchSession';
 import { IconButton } from '@/components/ui/IconButton';
 import { Toggle } from '@/components/ui/Toggle';
 import { ObjectTree } from '@/components/hierarchy/ObjectTree';
@@ -370,10 +372,11 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               />
             </Section>
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
-            {object.kind === 'shape' && object.shape !== 'text' && object.shape !== 'mesh' && (
+            {object.kind === 'shape' && object.shape !== 'text' && object.shape !== 'mesh' && object.shape !== 'profile' && (
               <HollowSection object={object} locked={locked} />
             )}
             {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape === 'profile' && <ProfileSection object={object} locked={locked} />}
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
               <Toggle
@@ -557,7 +560,7 @@ function TextSection({ object, locked }: { object: ShapeObject; locked: boolean 
         aria-label="Text content"
         value={draft}
         disabled={locked}
-        rows={2}
+        rows={Math.min(5, Math.max(2, draft.split('\n').length))}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -592,7 +595,52 @@ function TextSection({ object, locked }: { object: ShapeObject; locked: boolean 
           onCommit={(v) => void s.setText(object.id, { fontSize: v })}
         />
       </div>
-      <p className="mt-1.5 text-[11px] text-muted">Depth is the Z size. Ctrl/⌘+Enter applies text changes.</p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <label className="text-[11px] text-muted">
+          Letter spacing
+          <NumberField
+            ariaLabel="Letter spacing (em)"
+            value={object.params.letterSpacing ?? 0}
+            min={-0.3}
+            max={2}
+            step={0.02}
+            decimals={2}
+            suffix="em"
+            disabled={locked}
+            onCommit={(v) => void s.setText(object.id, { letterSpacing: v })}
+          />
+        </label>
+        <label className="text-[11px] text-muted">
+          Line spacing
+          <NumberField
+            ariaLabel="Line spacing"
+            value={object.params.lineHeight ?? 1.25}
+            min={0.6}
+            max={4}
+            step={0.05}
+            decimals={2}
+            suffix="×"
+            disabled={locked}
+            onCommit={(v) => void s.setText(object.id, { lineHeight: v })}
+          />
+        </label>
+      </div>
+      <div role="radiogroup" aria-label="Text alignment" className="mt-2 grid grid-cols-3 rounded-lg bg-canvas p-1">
+        {(['Left', 'Centre', 'Right'] as const).map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            role="radio"
+            aria-checked={Math.round(object.params.align ?? 0) === i}
+            disabled={locked}
+            onClick={() => void s.setText(object.id, { align: i })}
+            className={`rounded-md py-1 text-[12px] font-medium ${Math.round(object.params.align ?? 0) === i ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted">Enter adds a line. Depth is the Z size. Ctrl/⌘+Enter applies text changes.</p>
     </Section>
   );
 }
@@ -600,11 +648,53 @@ function TextSection({ object, locked }: { object: ShapeObject; locked: boolean 
 function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
   const s = useEditor.getState();
   const asset = object.meshId ? getMeshAsset(object.meshId) : undefined;
+  const report = useMemo(() => (asset ? meshReport(asset) : null), [asset]);
+  const [detail, setDetail] = useState(0.2);
+  const closed = report && report.boundaryEdges === 0 && report.nonManifoldEdges === 0;
+  const tool =
+    'flex h-8 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50';
   return (
     <Section title="Mesh">
-      <p className="text-[12px] text-muted">
-        {asset ? `${(asset.indices.length / 3).toLocaleString()} triangles · watertight` : 'Mesh data missing'}
-      </p>
+      {report ? (
+        <p className={`flex items-start gap-1.5 text-[12px] ${closed ? 'text-emerald-700' : 'text-amber-700'}`} data-testid="mesh-report">
+          {closed ? <CircleCheck size={14} className="mt-px shrink-0" /> : <CircleAlert size={14} className="mt-px shrink-0" />}
+          {report.triangles.toLocaleString()} triangles ·{' '}
+          {closed
+            ? 'closed solid'
+            : `${report.boundaryEdges.toLocaleString()} open edges, ${report.nonManifoldEdges.toLocaleString()} non-manifold — try Repair`}
+        </p>
+      ) : (
+        <p className="text-[12px] text-muted">Mesh data missing</p>
+      )}
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button type="button" className={tool} disabled={locked} onClick={() => s.applyMeshTool(object.id, 'repair', 0.01)}>
+          Repair
+        </button>
+        <button type="button" className={tool} disabled={locked} onClick={() => s.applyMeshTool(object.id, 'smooth', 2)}>
+          Smooth
+        </button>
+        <button type="button" className={tool} disabled={locked} onClick={() => s.applyMeshTool(object.id, 'subdivide', 2)}>
+          Subdivide
+        </button>
+        <button type="button" className={tool} disabled={locked} onClick={() => s.applyMeshTool(object.id, 'simplify', detail)}>
+          Simplify
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2 text-[12px] text-muted">
+        <span>Simplify: remove detail under</span>
+        <div className="w-[104px]">
+          <NumberField
+            value={detail}
+            onCommit={setDetail}
+            min={0.01}
+            max={10}
+            step={0.05}
+            decimals={2}
+            suffix="mm"
+            ariaLabel="Simplify tolerance (mm)"
+          />
+        </div>
+      </div>
       <button
         type="button"
         disabled={locked}
@@ -613,6 +703,76 @@ function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean 
       >
         <Scissors size={15} /> Separate parts
       </button>
+    </Section>
+  );
+}
+
+/** A sketched solid: reopen its sketch, or switch between extrude and revolve. */
+function ProfileSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const revolve = (object.params.op ?? 0) >= 1;
+  const depth = object.params.depth ?? 5;
+  const angle = object.params.angle ?? 360;
+  const update = (op: { kind: 'extrude' | 'revolve'; depth: number; angle: number }) => {
+    if (object.sketch) void useEditor.getState().saveSketch(object.id, object.sketch, op);
+  };
+  const base = { kind: revolve ? ('revolve' as const) : ('extrude' as const), depth, angle };
+  return (
+    <Section title="Sketch">
+      <div role="radiogroup" aria-label="Sketch operation" className="grid grid-cols-2 rounded-lg bg-canvas p-1">
+        {(['extrude', 'revolve'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={base.kind === k}
+            disabled={locked}
+            onClick={() => base.kind !== k && update({ ...base, kind: k })}
+            className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${base.kind === k ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+          >
+            {k}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-[1fr_120px] items-center gap-3">
+        <span className="text-[13px] text-[#344054]">{revolve ? 'Revolve angle' : 'Extrude depth'}</span>
+        {revolve ? (
+          <NumberField
+            value={angle}
+            min={1}
+            max={360}
+            step={15}
+            decimals={0}
+            suffix="°"
+            ariaLabel="Revolve angle"
+            disabled={locked}
+            onCommit={(v) => update({ ...base, angle: v })}
+          />
+        ) : (
+          <NumberField
+            value={depth}
+            min={0.1}
+            max={1000}
+            step={0.5}
+            decimals={2}
+            suffix="mm"
+            ariaLabel="Extrude depth"
+            disabled={locked}
+            onCommit={(v) => update({ ...base, depth: v })}
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => useSketchSession.getState().open(object.id)}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+        data-testid="edit-sketch"
+      >
+        Edit sketch
+      </button>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+        Changing the sketch or these settings rebuilds the solid at its sketched size.
+      </p>
     </Section>
   );
 }

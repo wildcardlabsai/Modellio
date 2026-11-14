@@ -1,5 +1,7 @@
 import { Suspense, type ComponentType, type LazyExoticComponent, lazy, useEffect, useState } from 'react';
 import { ReturnBar } from '@/components/layout/ReturnBar';
+import { HistoryTimeline } from '@/components/layout/HistoryTimeline';
+import { SketchHost } from '@/components/sketch/SketchHost';
 import { TopBar } from '@/components/layout/TopBar';
 import { Toolbar } from '@/components/toolbar/Toolbar';
 import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
@@ -221,20 +223,24 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
             </Suspense>
           </div>
         )}
-        <main className="relative min-w-0 flex-1">
-          <ErrorBoundary
-            fallback={(error, reset) => (
-              <ViewportCrash
-                error={error}
-                reset={() => {
-                  useDebug.setState({ crashViewport: false });
-                  reset();
-                }}
-              />
-            )}
-          >
-            <Viewport />
-          </ErrorBoundary>
+        <main className="relative flex min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
+            <ErrorBoundary
+              fallback={(error, reset) => (
+                <ViewportCrash
+                  error={error}
+                  reset={() => {
+                    useDebug.setState({ crashViewport: false });
+                    reset();
+                  }}
+                />
+              )}
+            >
+              <Viewport />
+            </ErrorBoundary>
+          </div>
+          {!compact && <HistoryTimeline />}
+          <SketchHost />
         </main>
         {(!compact || inspectorOpen) && (
           <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">

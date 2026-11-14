@@ -3,7 +3,7 @@ import { Trash2, Upload } from 'lucide-react';
 import { ASSET_ACCEPT, ASSET_DRAG_MIME, assetFile, useAssets, type AssetRecord } from '@/assets/library';
 import { handleFiles } from '@/components/files/fileIntake';
 
-const KIND_LABEL: Record<AssetRecord['kind'], string> = { svg: 'SVG', image: 'Picture', stl: 'STL', obj: 'OBJ', '3mf': '3MF' };
+const KIND_LABEL: Record<AssetRecord['kind'], string> = { svg: 'SVG', image: 'Picture', stl: 'STL', obj: 'OBJ', '3mf': '3MF', glb: 'glTF' };
 
 /** Add a saved asset to the design (at a workplane point, or a free spot). */
 export function addAssetToDesign(a: AssetRecord, at?: [number, number]) {
@@ -60,7 +60,7 @@ export function AssetsPanel() {
         >
           <Upload size={18} />
           Upload files
-          <span className="text-[11px] font-normal text-muted">SVG, PNG, JPG, STL, OBJ or 3MF</span>
+          <span className="text-[11px] font-normal text-muted">SVG, PNG, JPG, STL, OBJ, 3MF or GLB</span>
         </button>
         {loaded && !assets.length && (
           <p className="mt-4 text-[12px] leading-relaxed text-muted">

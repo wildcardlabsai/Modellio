@@ -109,3 +109,17 @@ describe('primitive geometry', () => {
     for (let i = 0; i < p.count; i++) expect(Number.isFinite(p.getX(i))).toBe(true);
   });
 });
+
+describe('gear', () => {
+  it('follows standard proportions: the pitch circle area sits between root and tip, and the bore removes material', () => {
+    const solid = analyzeMesh(buildShapeGeometry('gear', [44, 44, 5], { teeth: 20, pressureAngle: 20, bore: 0 }));
+    const bored = analyzeMesh(buildShapeGeometry('gear', [44, 44, 5], { teeth: 20, pressureAngle: 20, bore: 8 }));
+    // m = 44 / 22 = 2 → pitch radius 20, root radius 17.5, tip radius 22.
+    const root = Math.PI * 17.5 * 17.5 * 5;
+    const tip = Math.PI * 22 * 22 * 5;
+    expect(solid.watertight).toBe(true);
+    expect(solid.volume).toBeGreaterThan(root);
+    expect(solid.volume).toBeLessThan(tip);
+    expect(solid.volume - bored.volume).toBeCloseTo(Math.PI * 4 * 4 * 5, -1);
+  });
+});

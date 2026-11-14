@@ -17,7 +17,7 @@ export interface ImportedPart {
 
 export interface ParsedFile {
   fileName: string;
-  format: 'stl' | 'obj' | '3mf';
+  format: 'stl' | 'obj' | '3mf' | 'gltf';
   parts: ImportedPart[];
   triangles: number;
   /** Raw extents (file units). */

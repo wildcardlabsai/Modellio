@@ -1,3 +1,4 @@
+import type { Sketch } from '@/cad/sketch/types';
 /**
  * MODELLIO document model.
  *
@@ -36,10 +37,14 @@ export type PrimitiveType =
   | 'star'
   | 'capsule'
   | 'paraboloid'
+  /** Involute spur gear (teeth, pressure angle, bore). */
+  | 'gear'
   /** 3D text: outlines from `text` extruded by the kernel. */
   | 'text'
   /** Arbitrary mesh from the asset store (Boolean bakes, separated parts, imports). */
-  | 'mesh';
+  | 'mesh'
+  /** A 2D sketch extruded or revolved (`sketch` + params op/depth/angle). */
+  | 'profile';
 
 export type FontId = 'inter-bold' | 'inter' | 'roboto-slab' | 'bebas-neue' | 'pacifico' | 'space-mono';
 
@@ -86,6 +91,8 @@ export interface ShapeObject extends BaseObject {
   text?: TextContent;
   /** Mesh shapes only: id in the immutable asset store (mesh is centred on its bounds). */
   meshId?: string;
+  /** Profile shapes only: the editable 2D sketch the solid is made from. */
+  sketch?: Sketch;
 }
 
 /**

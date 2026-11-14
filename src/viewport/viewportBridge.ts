@@ -4,10 +4,12 @@ import * as THREE from 'three';
  * A narrow bridge between DOM-side UI (toolbars, drag & drop) and the
  * R3F scene. The CameraController registers the live implementations.
  */
-export type ViewName = 'home' | 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right';
+export type ViewName = 'home' | 'iso' | 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right';
 
 export const VIEW_DIRECTIONS: Record<ViewName, THREE.Vector3> = {
   home: new THREE.Vector3(1, -1.25, 0.95).normalize(),
+  /** True isometric: equal angles to all three axes. */
+  iso: new THREE.Vector3(1, -1, 1).normalize(),
   top: new THREE.Vector3(0, -1e-4, 1).normalize(),
   bottom: new THREE.Vector3(0, 1e-4, -1).normalize(),
   front: new THREE.Vector3(0, -1, 0),
@@ -162,4 +164,14 @@ export function heightUnder(points: [number, number][], exclude?: (name: string)
     if (hit) top = Math.max(top, hit.point.z);
   }
   return top;
+}
+
+/**
+ * The camera distance that would show the same scale at `point` with the 40° perspective camera.
+ * Lets screen-sized things (handles) keep their size in the orthographic view too.
+ */
+export function viewScaleAt(camera: THREE.Camera, point: THREE.Vector3): number {
+  const o = camera as THREE.OrthographicCamera;
+  if (o.isOrthographicCamera) return (o.top - o.bottom) / o.zoom / (2 * Math.tan(THREE.MathUtils.degToRad(20)));
+  return camera.position.distanceTo(point);
 }

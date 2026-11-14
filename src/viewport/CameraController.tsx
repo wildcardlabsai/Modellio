@@ -18,6 +18,12 @@ interface Animation {
 }
 
 const DURATION = 0.45; // seconds
+/** Orthographic cameras sit this far from the target (inside the fog range; the frustum, not the distance, sets the scale, and the near plane is negative so nothing is clipped). */
+const ORTHO_DISTANCE = 500;
+const PERSP_FOV = 40;
+/** Orbit target to restore after the camera (and so the controls) are replaced. */
+let pendingTarget: THREE.Vector3 | null = null;
+const isOrtho = (c: THREE.Camera): c is THREE.OrthographicCamera => (c as THREE.OrthographicCamera).isOrthographicCamera === true;
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 /**
@@ -26,7 +32,7 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
  */
 export function CameraController() {
   const controls = useRef<OrbitControlsImpl>(null);
-  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera | THREE.OrthographicCamera;
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const invalidate = useThree((s) => s.invalidate);
@@ -39,6 +45,13 @@ export function CameraController() {
     viewport.renderer = gl;
     viewport.scene = scene;
     viewport.orbitControls = controls.current;
+    // The camera was just swapped (projection change): keep looking at the same point.
+    if (pendingTarget && controls.current) {
+      controls.current.target.copy(pendingTarget);
+      controls.current.update();
+      pendingTarget = null;
+      invalidate();
+    }
 
     const start = (toDir: THREE.Vector3, toTarget: THREE.Vector3, toDist: number) => {
       const c = controls.current;
@@ -116,6 +129,14 @@ export function CameraController() {
       const b = box && !box.isEmpty() ? box : new THREE.Box3(new THREE.Vector3(-60, -60, 0), new THREE.Vector3(60, 60, 20));
       const sphere = b.getBoundingSphere(new THREE.Sphere());
       const radius = Math.max(sphere.radius, 5);
+      if (isOrtho(camera)) {
+        // Orthographic: fit by zoom, keep the view direction.
+        const fit = Math.min(camera.top - camera.bottom, camera.right - camera.left) / (2 * radius * 1.15);
+        camera.zoom = fit;
+        camera.updateProjectionMatrix();
+        start(camera.position.clone().sub(c.target), sphere.center, ORTHO_DISTANCE);
+        return;
+      }
       const fov = (camera.fov * Math.PI) / 180;
       const fitH = radius / Math.sin(fov / 2);
       const fitW = radius / Math.sin(Math.atan(Math.tan(fov / 2) * camera.aspect));
@@ -152,20 +173,82 @@ export function CameraController() {
   });
 
   return (
-    <OrbitControls
-      ref={controls}
-      makeDefault
-      enableDamping
-      dampingFactor={0.12}
-      zoomToCursor
-      screenSpacePanning
-      minDistance={2}
-      maxDistance={5000}
-      rotateSpeed={0.8}
-      mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
-      onStart={() => {
-        anim.current = null;
-      }}
-    />
+    <>
+      <ProjectionSwitch controls={controls} />
+      <OrbitControls
+        ref={controls}
+        makeDefault
+        enableDamping
+        dampingFactor={0.12}
+        zoomToCursor
+        screenSpacePanning
+        minDistance={2}
+        maxDistance={5000}
+        rotateSpeed={0.8}
+        mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
+        onStart={() => {
+          anim.current = null;
+        }}
+      />
+    </>
   );
+}
+
+/**
+ * Perspective ⇄ orthographic. Swaps the scene camera for one of the other kind showing the same
+ * view at the same scale (at the orbit target), so switching never jumps.
+ */
+function ProjectionSwitch({ controls }: { controls: React.RefObject<OrbitControlsImpl | null> }) {
+  const projection = useEditor((s) => s.projection);
+  const camera = useThree((s) => s.camera);
+  const set = useThree((s) => s.set);
+  const size = useThree((s) => s.size);
+  const invalidate = useThree((s) => s.invalidate);
+  const perspective = useRef<THREE.PerspectiveCamera | null>(null);
+
+  useEffect(() => {
+    const c = controls.current;
+    if (!c) return;
+    const target = c.target.clone();
+    const dir = camera.position.clone().sub(target).normalize();
+    if (projection === 'orthographic' && !isOrtho(camera)) {
+      const p = camera as THREE.PerspectiveCamera;
+      perspective.current = p;
+      const h = 2 * camera.position.distanceTo(target) * Math.tan(THREE.MathUtils.degToRad(p.fov) / 2);
+      const aspect = size.width / Math.max(1, size.height);
+      const o = new THREE.OrthographicCamera((-h * aspect) / 2, (h * aspect) / 2, h / 2, -h / 2, -20000, 20000);
+      (o as unknown as { manual: boolean }).manual = true;
+      o.up.set(0, 0, 1);
+      o.position.copy(target).addScaledVector(dir, ORTHO_DISTANCE);
+      o.lookAt(target);
+      o.updateProjectionMatrix();
+      pendingTarget = target;
+      set({ camera: o });
+    } else if (projection === 'perspective' && isOrtho(camera)) {
+      const p = perspective.current ?? new THREE.PerspectiveCamera(PERSP_FOV, size.width / Math.max(1, size.height), 0.5, 20000);
+      p.up.set(0, 0, 1);
+      const h = (camera.top - camera.bottom) / camera.zoom;
+      const dist = h / 2 / Math.tan(THREE.MathUtils.degToRad(p.fov) / 2);
+      p.aspect = size.width / Math.max(1, size.height);
+      p.position.copy(target).addScaledVector(dir, dist);
+      p.lookAt(target);
+      p.updateProjectionMatrix();
+      pendingTarget = target;
+      set({ camera: p });
+    }
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projection]);
+
+  // Keep the orthographic frustum's shape when the view is resized.
+  useEffect(() => {
+    if (!isOrtho(camera)) return;
+    const h = camera.top - camera.bottom;
+    const aspect = size.width / Math.max(1, size.height);
+    camera.left = (-h * aspect) / 2;
+    camera.right = (h * aspect) / 2;
+    camera.updateProjectionMatrix();
+    invalidate();
+  }, [camera, size.width, size.height, invalidate]);
+  return null;
 }

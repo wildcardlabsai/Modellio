@@ -1,7 +1,8 @@
-import { Move, Rotate3d, Scaling, Focus, Home, Magnet, ChevronDown, Box } from 'lucide-react';
+import { Move, Rotate3d, Scaling, Focus, Home, Magnet, ChevronDown, Box, ScanSearch } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { IconButton } from '@/components/ui/IconButton';
 import { VIEW_DIRECTIONS, viewport, type ViewName } from './viewportBridge';
+import { sceneBounds } from './bounds';
 import type { TransformMode } from '@/types/document';
 import { useEffect, useState } from 'react';
 import { SNAP_PRESETS, formatLength } from '@/utils/units';
@@ -13,6 +14,7 @@ const TOOLS: { mode: TransformMode; label: string; key: string; Icon: typeof Mov
 ];
 
 const VIEWS: { view: ViewName; label: string }[] = [
+  { view: 'iso', label: 'Isometric' },
   { view: 'top', label: 'Top' },
   { view: 'front', label: 'Front' },
   { view: 'right', label: 'Right' },
@@ -28,6 +30,9 @@ export function ViewportOverlay() {
   const snap = useEditor((s) => s.snap);
   const setSnap = useEditor((s) => s.setSnap);
   const requestFrame = useEditor((s) => s.requestFrame);
+  const projection = useEditor((s) => s.projection);
+  const setProjection = useEditor((s) => s.setProjection);
+  const hasSelection = useEditor((s) => s.selection.length > 0);
   const selection = useEditor((s) => s.selection);
   const lastAction = useEditor((s) => s.lastAction);
   const actionSeq = useEditor((s) => s.actionSeq);
@@ -182,7 +187,26 @@ export function ViewportOverlay() {
             </div>
           )}
         </div>
-        <IconButton label="Fit all" shortcut="F" tooltipSide="top" onClick={requestFrame}>
+        <IconButton
+          label={
+            projection === 'orthographic'
+              ? 'ORTHO: orthographic view (switch to perspective)'
+              : 'PERSP: perspective view (switch to orthographic)'
+          }
+          tooltipSide="top"
+          active={projection === 'orthographic'}
+          aria-pressed={projection === 'orthographic'}
+          onClick={() => setProjection(projection === 'orthographic' ? 'perspective' : 'orthographic')}
+          data-testid="projection-toggle"
+        >
+          <span className="text-[11px] font-bold tracking-wide">{projection === 'orthographic' ? 'ORTHO' : 'PERSP'}</span>
+        </IconButton>
+        {hasSelection && (
+          <IconButton label="Focus selected" shortcut="F" tooltipSide="top" onClick={requestFrame}>
+            <ScanSearch size={17} />
+          </IconButton>
+        )}
+        <IconButton label="Fit all" tooltipSide="top" onClick={() => viewport.frame(sceneBounds(useEditor.getState().doc))}>
           <Focus size={17} />
         </IconButton>
       </div>

@@ -173,10 +173,8 @@ await rz.click();
 await rz.fill('45');
 await rz.press('Enter');
 const rotatedBounds = await bounds([boxId, cylId]);
-await page
-  .locator('body')
-  .click({ position: { x: 800, y: 870 } })
-  .catch(() => {});
+// Blur the field (the bottom of the window is now the History timeline, so don't click there).
+await rz.blur();
 await page.evaluate((id) => window.modellio.store.getState().select([id]), gid);
 await page.keyboard.press('Control+Shift+g');
 s = await state();

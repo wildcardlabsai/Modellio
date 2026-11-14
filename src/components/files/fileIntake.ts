@@ -72,6 +72,9 @@ export async function handleFiles(files: File[], at?: [number, number], opts: { 
           suggestedUnit: 'mm',
           suggestedUp: 'z',
         };
+      } else if (name.endsWith('.glb') || name.endsWith('.gltf')) {
+        const { parseGltf } = await import('@/cad/import/gltf');
+        parsed = await parseGltf(file.name, await file.arrayBuffer());
       } else {
         const { parseMeshFile } = await import('@/cad/import/importMesh');
         parsed = parseMeshFile(file.name, await file.arrayBuffer());

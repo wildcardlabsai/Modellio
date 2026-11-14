@@ -47,7 +47,11 @@ import { bakeGroupDraft, computeCombined, separateDraft } from '@/cad/operations
 import { initKernel } from '@/cad/kernel/kernel';
 import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
 import { centerMeshData, meshDataBounds, type MeshData } from '@/cad/kernel/meshData';
-import { addMeshAsset } from '@/cad/assets';
+import { addMeshAsset, getMeshAsset } from '@/cad/assets';
+import { applyMeshTool as applyMeshToolGeometry, type MeshTool } from '@/cad/operations/meshTools';
+import { getKernel } from '@/cad/kernel/kernel';
+import { buildProfileMesh, type ProfileOp } from '@/cad/sketch/profile';
+import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
 import type { CombineMode, TextContent } from '@/types/document';
 import { matrixToTransform } from '@/cad/transforms/transform';
@@ -81,6 +85,9 @@ export interface EditorState {
   snap: SnapSettings;
   lockProportions: boolean;
   showGrid: boolean;
+  /** Camera projection in the 3D view. */
+  projection: 'perspective' | 'orthographic';
+  setProjection: (p: 'perspective' | 'orthographic') => void;
   /** Active viewport tool. */
   tool: 'select' | 'measure' | 'layflat';
   /** Measure tool: up to two picked world points (mm). */
@@ -112,6 +119,8 @@ export interface EditorState {
   cancelTransaction: () => void;
   undo: () => void;
   redo: () => void;
+  /** Step through history: negative undoes that many steps, positive redoes. One update. */
+  jumpHistory: (steps: number) => void;
   loadDocument: (doc: ModelDocument) => void;
   /** Replace the whole document as one undoable step (e.g. restoring a version). */
   replaceDocument: (doc: ModelDocument, label: string) => void;
@@ -174,6 +183,14 @@ export interface EditorState {
   bakeSelected: () => void;
   /** Split a mesh into its disconnected parts. */
   separateSelected: () => void;
+  /**
+   * Create (id null) or update a sketched solid from a sketch and how to make it solid.
+   * Its size follows the sketch's real dimensions. Returns the object id, or null (with a
+   * message) when the sketch has no closed outline.
+   */
+  saveSketch: (id: ObjectId | null, sketch: Sketch, op: ProfileOp) => Promise<ObjectId | null>;
+  /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
+  applyMeshTool: (id: ObjectId, tool: MeshTool, amount: number) => void;
   addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
   /**
    * Add imported meshes (already in mm, Z-up) as mesh shapes, resting on the
@@ -183,7 +200,10 @@ export interface EditorState {
     parts: { name: string; mesh: MeshData; color?: string }[],
     opts?: { at?: [number, number]; groupName?: string },
   ) => ObjectId[];
-  setText: (id: ObjectId, patch: Partial<TextContent> & { fontSize?: number }) => Promise<void>;
+  setText: (
+    id: ObjectId,
+    patch: Partial<TextContent> & { fontSize?: number; letterSpacing?: number; lineHeight?: number; align?: number },
+  ) => Promise<void>;
 }
 
 const DUPLICATE_OFFSET: Vec3 = [10, 10, 0];
@@ -222,6 +242,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     snap: { enabled: true, translate: 1, rotate: 15 },
     lockProportions: false,
     showGrid: true,
+    projection: 'perspective',
+    setProjection: (projection) => set({ projection }),
     tool: 'select',
     measurePoints: [],
     collapsed: {},
@@ -311,6 +333,26 @@ export const useEditor = create<EditorState>()((set, get) => {
         history: r.history,
         selection: validSelection(r.state, selection),
         lastAction: `Undo ${r.label}`,
+        actionSeq: get().actionSeq + 1,
+      });
+    },
+
+    jumpHistory: (steps) => {
+      if (!steps) return;
+      get().commitTransaction();
+      let { history, doc } = get();
+      let label = '';
+      for (let i = 0; i < Math.abs(steps); i++) {
+        const r = steps < 0 ? undoHistory(history, doc) : redoHistory(history, doc);
+        if (!r) break;
+        ({ history, state: doc, label } = r);
+      }
+      if (doc === get().doc) return;
+      set({
+        doc,
+        history,
+        selection: validSelection(doc, get().selection),
+        lastAction: `${steps < 0 ? 'Back to before' : 'Forward to'} ${label}`,
         actionSeq: get().actionSeq + 1,
       });
     },
@@ -636,6 +678,81 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selection: created });
     },
 
+    saveSketch: async (id, sketch, op) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      const k = await initKernel();
+      const mesh = buildProfileMesh(k, sketch, op);
+      if (!mesh) {
+        get().notify(
+          op.kind === 'revolve'
+            ? 'Nothing to revolve: draw a closed outline to the right of the Y axis.'
+            : 'Draw a closed outline first: lines and arcs that join up, or a circle.',
+        );
+        return null;
+      }
+      const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());
+      const size: Vec3 = [roundTo(ext.x), roundTo(ext.y), roundTo(ext.z)];
+      const params = { op: op.kind === 'revolve' ? 1 : 0, depth: op.depth, angle: op.angle };
+      const existing = id ? get().doc.objects[id] : undefined;
+      if (existing?.kind === 'shape' && existing.shape === 'profile') {
+        get().apply('Edit sketch', (d) => {
+          const t = d.objects[existing.id];
+          if (t?.kind !== 'shape') return;
+          t.sketch = sketch;
+          t.params = { ...t.params, ...params };
+          t.size = size;
+        });
+        return existing.id;
+      }
+      const doc = get().doc;
+      const pos = findFreePosition(doc, size, [0, 0]);
+      const obj = { ...createShape(doc, 'profile', [pos[0], pos[1], size[2] / 2]), sketch, params, size, name: uniqueName(doc, 'Sketch') };
+      get().apply('Sketch', (d) => addObjectDraft(d, obj));
+      set({ selection: [obj.id] });
+      return obj.id;
+    },
+
+    applyMeshTool: (id, tool, amount) => {
+      const { doc, notify } = get();
+      const o = doc.objects[id];
+      if (o?.kind !== 'shape' || o.shape !== 'mesh' || !o.meshId) return;
+      const src = getMeshAsset(o.meshId);
+      const k = getKernel();
+      if (!src || !k) return notify('The geometry engine is still loading. Try again in a moment.');
+      let out: MeshData;
+      try {
+        out = applyMeshToolGeometry(k, src, tool, amount);
+      } catch (e) {
+        return notify(e instanceof Error ? e.message : String(e));
+      }
+      const before = src.indices.length / 3;
+      const c = centerMeshData(out);
+      const srcSize = meshDataBounds(src).getSize(new THREE.Vector3());
+      // Keep the object's scale: its size is the mesh's bounds stretched by these factors.
+      const f = [0, 1, 2].map((i) => (srcSize.getComponent(i) > 1e-9 ? o.size[i] / srcSize.getComponent(i) : 1));
+      const size = [0, 1, 2].map((i) => roundTo(c.size.getComponent(i) * f[i])) as Vec3;
+      const shift = new THREE.Vector3(c.center.x * f[0], c.center.y * f[1], c.center.z * f[2]).applyEuler(
+        new THREE.Euler(...(o.transform.rotation.map((d) => (d * Math.PI) / 180) as [number, number, number])),
+      );
+      const meshId = addMeshAsset(c.mesh);
+      const label = { repair: 'Repair mesh', simplify: 'Simplify mesh', smooth: 'Smooth mesh', subdivide: 'Subdivide mesh' }[tool];
+      get().apply(label, (d) => {
+        const t = d.objects[id];
+        if (t?.kind !== 'shape') return;
+        t.meshId = meshId;
+        t.size = size;
+        t.transform.position = [
+          roundTo(t.transform.position[0] + shift.x),
+          roundTo(t.transform.position[1] + shift.y),
+          roundTo(t.transform.position[2] + shift.z),
+        ];
+      });
+      notify(`${label}: ${before.toLocaleString()} → ${(out.indices.length / 3).toLocaleString()} triangles`);
+    },
+
     separateSelected: () => {
       const { doc, selection } = get();
       const meshes = selection.filter((id) => {
@@ -753,7 +870,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         return;
       }
       await Promise.all([initKernel(), loadFont(text.font)]);
-      const params = { ...o.params, ...(patch.fontSize ? { fontSize: patch.fontSize } : {}) };
+      const params: Record<string, number> = { ...o.params, ...(patch.fontSize ? { fontSize: patch.fontSize } : {}) };
+      for (const k of ['letterSpacing', 'lineHeight', 'align'] as const) if (patch[k] !== undefined) params[k] = patch[k]!;
       const mesh = getTextMesh({ text, params });
       if (!mesh) return;
       const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());

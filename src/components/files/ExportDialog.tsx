@@ -7,12 +7,13 @@ import { useProjects } from '@/store/projectStore';
 import { collectExportBodies } from '@/cad/export/collect';
 import { writeAsciiStl, writeBinaryStl, writeObj, type UpAxis } from '@/cad/export/writers';
 import { write3mf } from '@/cad/export/threemf';
+import { writeGlb } from '@/cad/export/glb';
 import { topLevel } from '@/cad/hierarchy';
 import { downloadBlob, safeFileName } from '@/utils/download';
 import { formatLength } from '@/utils/units';
 import { useCadReady } from '@/viewport/cadReady';
 
-type Format = 'stl' | 'stl-ascii' | '3mf' | 'obj';
+type Format = 'stl' | 'stl-ascii' | '3mf' | 'obj' | 'glb';
 
 export function ExportDialog() {
   const open = useFileUi((s) => s.exportOpen);
@@ -55,7 +56,12 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
       else if (format === 'stl-ascii') downloadBlob(writeAsciiStl(collection.bodies, up), `${base}.stl`, 'model/stl');
       else if (format === '3mf')
         downloadBlob(write3mf(collection.bodies, projectName) as Uint8Array<ArrayBuffer>, `${base}.3mf`, 'model/3mf');
-      else {
+      else if (format === 'glb') {
+        void writeGlb(collection.bodies, projectName).then(
+          (buf) => downloadBlob(buf, `${base}.glb`, 'model/gltf-binary'),
+          (e) => useEditor.getState().notify(`Export failed: ${e instanceof Error ? e.message : e}`),
+        );
+      } else {
         const { obj, mtl } = writeObj(collection.bodies, up, withMtl ? `${base}.mtl` : undefined);
         downloadBlob(obj, `${base}.obj`, 'model/obj');
         if (withMtl) setTimeout(() => downloadBlob(mtl, `${base}.mtl`, 'text/plain'), 300);
@@ -81,7 +87,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
             Cancel
           </button>
           <button type="button" className={primaryBtn} disabled={empty} onClick={doExport}>
-            <Download size={16} /> Download {format === 'obj' ? 'OBJ' : format === '3mf' ? '3MF' : 'STL'}
+            <Download size={16} /> Download {format === 'obj' ? 'OBJ' : format === '3mf' ? '3MF' : format === 'glb' ? 'GLB' : 'STL'}
           </button>
         </>
       }
@@ -96,6 +102,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
           { value: 'stl-ascii', label: 'STL (text)' },
           { value: '3mf', label: '3MF' },
           { value: 'obj', label: 'OBJ' },
+          { value: 'glb', label: 'GLB' },
         ]}
       />
       <h3 className="mb-2 mt-4 text-[13px] font-semibold text-ink">What to export</h3>

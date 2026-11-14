@@ -8,7 +8,7 @@ import type { ColouredPart } from './threemf';
  * can be reused in the Design Studio and in every maker. Stored in IndexedDB; if that is
  * unavailable (private windows), the library still works for the session.
  */
-export type AssetKind = 'svg' | 'image' | 'stl' | 'obj' | '3mf';
+export type AssetKind = 'svg' | 'image' | 'stl' | 'obj' | '3mf' | 'glb';
 
 export interface AssetRecord {
   id: string;
@@ -25,14 +25,15 @@ export interface AssetRecord {
 /** Drag type for assets dragged from the Assets panel onto the 3D view. */
 export const ASSET_DRAG_MIME = 'application/x-modellio-asset';
 
-export const ASSET_ACCEPT = '.svg,.png,.jpg,.jpeg,.webp,.stl,.obj,.3mf';
+export const ASSET_ACCEPT = '.svg,.png,.jpg,.jpeg,.webp,.stl,.obj,.3mf,.glb,.gltf';
 const MAX_BYTES = 200 * 1024 * 1024;
 
 export function assetKind(name: string, type = ''): AssetKind | null {
   if (isSvgFile(name, type)) return 'svg';
   if (isPictureFile(name, type)) return 'image';
   const ext = name.toLowerCase().split('.').pop();
-  return ext === 'stl' || ext === 'obj' || ext === '3mf' ? ext : null;
+  if (ext === 'gltf') return 'glb';
+  return ext === 'stl' || ext === 'obj' || ext === '3mf' || ext === 'glb' ? ext : null;
 }
 export const isOutlineAsset = (a: AssetRecord) => a.kind === 'svg' || a.kind === 'image';
 export const assetFile = (a: AssetRecord) => new File([a.blob], a.name, { type: a.type });
@@ -169,12 +170,16 @@ export function meshThumb(parts: { mesh: MeshData; color?: string }[]): string {
 }
 
 /** Meshes from a mesh file (STL, OBJ: raw file units; 3MF: millimetres with colours). */
-export async function meshPartsFromFile(file: File): Promise<{ parts: ColouredPart[]; format: 'stl' | 'obj' | '3mf' }> {
+export async function meshPartsFromFile(file: File): Promise<{ parts: ColouredPart[]; format: 'stl' | 'obj' | '3mf' | 'gltf' }> {
   if (/\.3mf$/i.test(file.name)) {
     const [{ importInWorker }, { threeMfParts }] = await Promise.all([import('@/split/worker/client'), import('./threemf')]);
     const parts = threeMfParts(await importInWorker(file));
     if (!parts.length) throw new Error(`"${file.name}" has no objects to add.`);
     return { parts, format: '3mf' };
+  }
+  if (/\.(glb|gltf)$/i.test(file.name)) {
+    const { parseGltf } = await import('@/cad/import/gltf');
+    return { parts: (await parseGltf(file.name, await file.arrayBuffer())).parts, format: 'gltf' };
   }
   const { parseMeshFile } = await import('@/cad/import/importMesh');
   const parsed = parseMeshFile(file.name, await file.arrayBuffer());
