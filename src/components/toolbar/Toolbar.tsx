@@ -57,7 +57,7 @@ export function Toolbar() {
   };
 
   return (
-    <div className="scrollbar-thin flex h-[52px] shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line bg-white px-3">
+    <div className="scrollbar-thin flex h-[52px] shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line bg-panel px-3">
       <Popover
         trigger={({ open, toggle }) => (
           <IconButton label="File menu" active={open} onClick={toggle}>
@@ -164,7 +164,7 @@ export function Toolbar() {
       <button
         type="button"
         onClick={() => setShareOpen(true)}
-        className="ml-1 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-[#344054] hover:bg-canvas"
+        className="ml-1 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-[13px] font-semibold text-ink-2 hover:bg-canvas"
       >
         <Share2 size={16} /> <span className="hidden lg:inline">Share</span>
       </button>

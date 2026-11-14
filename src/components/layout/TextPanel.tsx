@@ -18,7 +18,7 @@ export function TextPanel() {
   };
 
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Text">
+    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-panel" aria-label="Text">
       <div className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
         <h2 className="text-[15px] font-semibold text-ink">3D Text</h2>
         <p className="mt-1 text-[12px] text-muted">Solid, printable lettering. Make it a hole to engrave it into another shape.</p>

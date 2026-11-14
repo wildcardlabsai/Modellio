@@ -141,7 +141,8 @@ export function App() {
   const Workspace = WORKSPACES[studio];
 
   return (
-    <div className="flex h-full flex-col">
+    // The Design Studio uses the dark professional shell; the makers keep their light look.
+    <div className="flex h-full flex-col" data-ui={Workspace ? undefined : 'studio-dark'}>
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <ReturnBar />
       {Workspace ? (
@@ -266,5 +267,5 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
 }
 
 function PanelLoading() {
-  return <aside className="w-[264px] shrink-0 border-r border-line bg-white" aria-busy="true" />;
+  return <aside className="w-[264px] shrink-0 border-r border-line bg-panel" aria-busy="true" />;
 }

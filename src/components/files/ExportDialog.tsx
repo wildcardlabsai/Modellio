@@ -185,8 +185,8 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
         </p>
       )}
       {format === 'obj' && (
-        <label className="mt-3 flex items-center gap-2 text-[13px] text-[#344054]">
-          <input type="checkbox" checked={withMtl} onChange={(e) => setWithMtl(e.target.checked)} className="h-4 w-4 accent-[#2463EB]" />
+        <label className="mt-3 flex items-center gap-2 text-[13px] text-ink-2">
+          <input type="checkbox" checked={withMtl} onChange={(e) => setWithMtl(e.target.checked)} className="h-4 w-4 accent-brand" />
           Also download colours (.mtl)
         </label>
       )}

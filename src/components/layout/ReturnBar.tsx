@@ -11,7 +11,7 @@ export function ReturnBar() {
   if (!returnTo || studio !== 'design') return null;
   return (
     <div
-      className="flex h-10 shrink-0 items-center gap-3 border-b border-brand/20 bg-brand-50 px-3 text-[13px] text-[#1d2939] sm:px-5"
+      className="flex h-10 shrink-0 items-center gap-3 border-b border-brand/20 bg-brand-50 px-3 text-[13px] text-ink sm:px-5"
       role="region"
       aria-label="Return to maker"
       data-testid="return-bar"
@@ -30,7 +30,7 @@ export function ReturnBar() {
       <button
         type="button"
         onClick={() => useStudio.getState().clearReturn()}
-        className="rounded-md p-1 text-muted hover:bg-white hover:text-ink"
+        className="rounded-md p-1 text-muted hover:bg-panel hover:text-ink"
         aria-label="Hide this bar"
       >
         <X size={15} />

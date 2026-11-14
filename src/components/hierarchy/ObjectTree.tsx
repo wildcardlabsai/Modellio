@@ -205,7 +205,7 @@ export function ObjectTree() {
               onClick={(e) => onRowClick(id, e)}
               onDoubleClick={() => setRenaming(id)}
               className={`group flex h-9 cursor-pointer items-center gap-1.5 rounded-lg pr-1.5 text-[13px] ${
-                active ? 'bg-brand-50 font-medium text-brand' : 'text-[#344054] hover:bg-canvas'
+                active ? 'bg-brand-50 font-medium text-brand-ink' : 'text-ink-2 hover:bg-canvas'
               } ${dropHere === 'into' ? 'ring-2 ring-brand/50' : ''} ${o.visible ? '' : 'opacity-50'}`}
               style={{ paddingLeft: 6 + depth * 16 }}
             >
@@ -218,7 +218,7 @@ export function ObjectTree() {
                     e.stopPropagation();
                     s.toggleCollapsed(id);
                   }}
-                  className="rounded p-0.5 text-muted hover:bg-white"
+                  className="rounded p-0.5 text-muted hover:bg-panel"
                 >
                   <ChevronRight size={14} className={`transition-transform ${collapsed[id] ? '' : 'rotate-90'}`} />
                 </button>
@@ -227,7 +227,7 @@ export function ObjectTree() {
               )}
               {isGroup ? (
                 o.combine ? (
-                  <Combine size={15} className="shrink-0 text-brand" />
+                  <Combine size={15} className="shrink-0 text-brand-ink" />
                 ) : collapsed[id] ? (
                   <FolderClosed size={15} className="shrink-0 text-muted" />
                 ) : (
@@ -259,7 +259,7 @@ export function ObjectTree() {
                     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                     if (e.key === 'Escape') setRenaming(null);
                   }}
-                  className="min-w-0 flex-1 rounded border border-brand bg-white px-1 py-0.5 text-[13px] text-ink outline-none"
+                  className="min-w-0 flex-1 rounded border border-brand bg-panel px-1 py-0.5 text-[13px] text-ink outline-none"
                 />
               ) : (
                 <span className="min-w-0 flex-1 truncate" title="Double-click to rename">
@@ -277,7 +277,7 @@ export function ObjectTree() {
                   s.select([id]);
                   s.deleteSelected();
                 }}
-                className="rounded p-1 text-muted opacity-0 hover:bg-white hover:text-red-600 group-hover:opacity-100 disabled:hidden"
+                className="rounded p-1 text-muted opacity-0 hover:bg-panel hover:text-red-600 group-hover:opacity-100 disabled:hidden"
               >
                 <Trash2 size={14} />
               </button>
@@ -290,7 +290,7 @@ export function ObjectTree() {
                   e.stopPropagation();
                   s.setLocked(id, !o.locked);
                 }}
-                className={`rounded p-1 hover:bg-white ${
+                className={`rounded p-1 hover:bg-panel ${
                   o.locked ? 'text-amber-600' : inheritedLock ? 'text-amber-600/40' : 'text-muted opacity-0 group-hover:opacity-100'
                 }`}
               >
@@ -304,7 +304,7 @@ export function ObjectTree() {
                   e.stopPropagation();
                   s.setVisible(id, !o.visible);
                 }}
-                className={`rounded p-1 hover:bg-white ${o.visible ? 'text-muted opacity-0 group-hover:opacity-100' : 'text-muted'}`}
+                className={`rounded p-1 hover:bg-panel ${o.visible ? 'text-muted opacity-0 group-hover:opacity-100' : 'text-muted'}`}
               >
                 {o.visible ? <Eye size={14} /> : <EyeOff size={14} />}
               </button>

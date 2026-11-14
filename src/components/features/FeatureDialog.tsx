@@ -32,7 +32,7 @@ export function FeatureDialog() {
   const n = session.edges.length;
   return (
     <div
-      className="pointer-events-auto absolute left-1/2 top-3 z-20 w-[340px] -translate-x-1/2 rounded-xl border border-line bg-white p-3 shadow-float"
+      className="pointer-events-auto absolute left-1/2 top-3 z-20 w-[340px] -translate-x-1/2 rounded-xl border border-line bg-panel p-3 shadow-float"
       role="dialog"
       aria-label={`${c.title} edges`}
       data-testid="feature-dialog"
@@ -47,7 +47,7 @@ export function FeatureDialog() {
               role="radio"
               aria-checked={session.kind === k}
               onClick={() => t.setKind(k)}
-              className={`rounded-md px-2.5 py-1 text-[12px] font-medium ${session.kind === k ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+              className={`rounded-md px-2.5 py-1 text-[12px] font-medium ${session.kind === k ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`}
             >
               {COPY[k].title}
             </button>
@@ -59,7 +59,7 @@ export function FeatureDialog() {
         edge are included too.
       </p>
       <div className="mt-2 grid grid-cols-[1fr_130px] items-center gap-2">
-        <span className="text-[13px] font-medium text-[#344054]" data-testid="feature-edge-count">
+        <span className="text-[13px] font-medium text-ink-2" data-testid="feature-edge-count">
           {n ? `${n} edge${n === 1 ? '' : 's'} selected` : 'No edges selected'}
         </span>
         <NumberField
@@ -99,7 +99,7 @@ export function FeatureDialog() {
         <button
           type="button"
           onClick={t.cancel}
-          className="h-8 rounded-lg border border-line px-3 text-[13px] font-medium text-[#344054] hover:bg-canvas"
+          className="h-8 rounded-lg border border-line px-3 text-[13px] font-medium text-ink-2 hover:bg-canvas"
         >
           Cancel
         </button>

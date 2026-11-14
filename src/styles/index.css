@@ -14,6 +14,13 @@
   --color-line: #e3e8f0;
   --color-muted: #667085;
   --color-ink: #101828;
+  /* Semantic surfaces and text (light by default; the Design Studio switches them to dark below). */
+  --color-panel: #ffffff;
+  --color-ink-2: #344054;
+  --color-ink-3: #475467;
+  --color-line-strong: #c9d2e0;
+  /* Accent-coloured text (links, active items): separate from --color-brand so it can stay readable on dark panels. */
+  --color-brand-ink: #2463eb;
 
   /* Darkened from the 3D axis colours so text and badges meet WCAG AA (≥ 4.5:1). */
   --color-axis-x: #ce2c31;
@@ -83,6 +90,52 @@ input[type='number']::-webkit-outer-spin-button {
 :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 1px;
+}
+
+/*
+ * MODELLIO 2.2 Design Studio: dark professional shell. Only the Studio sets this attribute, so the
+ * makers (which share many controls) keep their light look. Values are checked for WCAG AA contrast.
+ */
+[data-ui='studio-dark'] {
+  color-scheme: dark;
+  --color-panel: #111833;
+  --color-canvas: #0a1026;
+  --color-line: #222c52;
+  --color-line-strong: #34407a;
+  --color-ink: #eef1fb;
+  --color-ink-2: #cfd5ec;
+  --color-ink-3: #a9b2cf;
+  --color-muted: #939cbf;
+  --color-brand: #7c3aed;
+  --color-brand-600: #6d28d9;
+  --color-brand-50: rgb(124 58 237 / 0.18);
+  --color-brand-100: rgb(124 58 237 / 0.3);
+  --color-brand-ink: #b8a3ff;
+  --shadow-float: 0 2px 8px rgb(0 0 0 / 0.35), 0 16px 40px rgb(0 0 0 / 0.45);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+/* Status colours made for light panels, re-tuned for the dark shell (WCAG AA on #111833). */
+[data-ui='studio-dark'] {
+  --color-amber-50: rgb(245 158 11 / 0.12);
+  --color-amber-100: rgb(245 158 11 / 0.2);
+  --color-amber-300: rgb(245 158 11 / 0.45);
+  --color-amber-500: #fbbf24;
+  --color-amber-600: #fbbf24;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-amber-900: #fef3c7;
+  --color-emerald-50: rgb(16 185 129 / 0.12);
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-red-50: rgb(239 68 68 / 0.14);
+}
+/* Red is also a button background (white text), so only red *text* is lightened. */
+[data-ui='studio-dark'] :is(.text-red-600, .text-red-700, .text-red-800, .hover\:text-red-600:hover) {
+  color: #fca5a5;
+}
+[data-ui='studio-dark'] .scrollbar-thin {
+  scrollbar-color: #34407a transparent;
 }
 
 /* Respect the user's reduced-motion preference. */

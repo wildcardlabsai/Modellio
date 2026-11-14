@@ -21,7 +21,7 @@ const onePath = (s: Sketch) => {
   return typeof p === 'string' ? p : null;
 };
 
-const segBtn = (on: boolean) => `rounded-md px-2.5 py-1 text-[12px] font-medium ${on ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`;
+const segBtn = (on: boolean) => `rounded-md px-2.5 py-1 text-[12px] font-medium ${on ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`;
 
 function Choice<T extends string>({
   label,
@@ -36,7 +36,7 @@ function Choice<T extends string>({
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[12px] text-[#344054]">{label}</span>
+      <span className="text-[12px] text-ink-2">{label}</span>
       <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-canvas p-0.5">
         {options.map((o) => (
           <button
@@ -64,7 +64,7 @@ export function LoftSweepDialog() {
   return (
     <>
       <div
-        className="pointer-events-auto absolute left-16 top-3 z-20 flex max-h-[calc(100%-24px)] w-[360px] flex-col rounded-xl border border-line bg-white shadow-float"
+        className="pointer-events-auto absolute left-16 top-3 z-20 flex max-h-[calc(100%-24px)] w-[360px] flex-col rounded-xl border border-line bg-panel shadow-float"
         role="dialog"
         aria-label={isLoft ? 'Loft' : 'Sweep'}
         data-testid="loft-sweep-dialog"
@@ -114,7 +114,7 @@ function LoftFields({ base }: { base: LoftBase }) {
                   <button
                     type="button"
                     onClick={() => b.startSketch({ kind: 'section', index: i })}
-                    className="rounded px-1.5 text-[12px] text-brand hover:bg-brand-50"
+                    className="rounded px-1.5 text-[12px] text-brand-ink hover:bg-brand-50"
                   >
                     Edit sketch
                   </button>
@@ -123,7 +123,7 @@ function LoftFields({ base }: { base: LoftBase }) {
                       type="button"
                       aria-label={`Remove section ${i + 1}`}
                       onClick={() => b.setSections(base.sections.filter((_, k) => k !== i))}
-                      className="rounded p-1 text-[#475467] hover:text-red-600"
+                      className="rounded p-1 text-ink-3 hover:text-red-600"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -173,7 +173,7 @@ function LoftFields({ base }: { base: LoftBase }) {
           const last = base.sections[base.sections.length - 1];
           b.setSections([...base.sections, { sketch: structuredClone(last.sketch), height: last.height + 10, offset: [...last.offset] }]);
         }}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-1.5 text-[12px] font-medium text-[#344054] hover:border-brand hover:text-brand"
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-1.5 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink"
         data-testid="loft-add-section"
       >
         <Plus size={14} /> Add section
@@ -202,7 +202,7 @@ function SweepFields({ base }: { base: SweepBase }) {
         <button
           type="button"
           onClick={() => b.startSketch({ kind: target })}
-          className="mt-1 rounded px-1.5 text-[12px] text-brand hover:bg-brand-50"
+          className="mt-1 rounded px-1.5 text-[12px] text-brand-ink hover:bg-brand-50"
           data-testid={testId}
         >
           Edit sketch
@@ -278,7 +278,7 @@ function Footer({ session, onCancel, onApply }: { session: BuilderSession; onCan
         <button
           type="button"
           onClick={onCancel}
-          className="h-8 rounded-lg border border-line px-3 text-[13px] font-medium text-[#344054] hover:bg-canvas"
+          className="h-8 rounded-lg border border-line px-3 text-[13px] font-medium text-ink-2 hover:bg-canvas"
         >
           Cancel
         </button>

@@ -17,7 +17,7 @@ export function SaveStatus() {
   const readOnly = useEditor((s) => s.readOnly);
   if (readOnly)
     return (
-      <span role="status" data-testid="save-status" className="flex items-center gap-1.5 text-[13px] font-medium text-brand">
+      <span role="status" data-testid="save-status" className="flex items-center gap-1.5 text-[13px] font-medium text-brand-ink">
         <Eye size={16} /> <span className="hidden lg:inline">View only</span>
       </span>
     );

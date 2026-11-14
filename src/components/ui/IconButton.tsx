@@ -31,10 +31,10 @@ export function IconButton({
     variant === 'floating'
       ? active
         ? 'bg-brand text-white shadow-sm'
-        : 'text-[#344054] hover:bg-brand-50 hover:text-brand'
+        : 'text-ink-2 hover:bg-brand-50 hover:text-brand-ink'
       : active
-        ? 'bg-brand-50 text-brand'
-        : 'text-[#344054] hover:bg-[#f2f4f7]';
+        ? 'bg-brand-50 text-brand-ink'
+        : 'text-ink-2 hover:bg-canvas';
   return (
     <button
       type="button"

@@ -61,7 +61,7 @@ export function ViewportOverlay() {
       {/* Transform tools */}
       <div
         data-tour="tools"
-        className="absolute left-3 top-3 flex flex-col gap-1 rounded-xl border border-line bg-white/95 p-1 shadow-float backdrop-blur"
+        className="absolute left-3 top-3 flex flex-col gap-1 rounded-xl border border-line bg-panel/95 p-1 shadow-float backdrop-blur"
       >
         {TOOLS.map(({ mode: m, label, key, Icon }) => (
           <IconButton
@@ -110,7 +110,7 @@ export function ViewportOverlay() {
 
       {/* Units + snapping */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2">
-        <label className="flex h-9 items-center rounded-lg border border-line bg-white px-2 text-[13px] font-semibold text-ink shadow-panel">
+        <label className="flex h-9 items-center rounded-lg border border-line bg-panel px-2 text-[13px] font-semibold text-ink shadow-panel">
           <span className="sr-only">Units</span>
           <select
             aria-label="Units"
@@ -122,7 +122,7 @@ export function ViewportOverlay() {
             <option value="in">inch</option>
           </select>
         </label>
-        <div className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white pl-1 pr-2 text-[13px] text-ink shadow-panel">
+        <div className="flex h-9 items-center gap-1 rounded-lg border border-line bg-panel pl-1 pr-2 text-[13px] text-ink shadow-panel">
           <IconButton
             label={snap.enabled ? 'Snapping on' : 'Snapping off'}
             tooltipSide="top"
@@ -166,7 +166,7 @@ export function ViewportOverlay() {
       </div>
 
       {/* Camera */}
-      <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-xl border border-line bg-white p-1 shadow-panel">
+      <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-xl border border-line bg-panel p-1 shadow-panel">
         <IconButton label="Home view" tooltipSide="top" onClick={() => viewport.setView(VIEW_DIRECTIONS.home)}>
           <Home size={17} />
         </IconButton>
@@ -176,7 +176,7 @@ export function ViewportOverlay() {
             <ChevronDown size={13} />
           </IconButton>
           {viewsOpen && (
-            <div className="absolute bottom-full right-0 mb-2 grid w-40 grid-cols-2 gap-1 rounded-xl border border-line bg-white p-1.5 shadow-float">
+            <div className="absolute bottom-full right-0 mb-2 grid w-40 grid-cols-2 gap-1 rounded-xl border border-line bg-panel p-1.5 shadow-float">
               {VIEWS.map(({ view, label }) => (
                 <button
                   key={view}
@@ -185,7 +185,7 @@ export function ViewportOverlay() {
                     viewport.setView(VIEW_DIRECTIONS[view]);
                     setViewsOpen(false);
                   }}
-                  className="rounded-md px-2 py-1.5 text-left text-[13px] font-medium text-[#344054] hover:bg-brand-50 hover:text-brand"
+                  className="rounded-md px-2 py-1.5 text-left text-[13px] font-medium text-ink-2 hover:bg-brand-50 hover:text-brand-ink"
                 >
                   {label}
                 </button>
@@ -220,7 +220,7 @@ export function ViewportOverlay() {
       {/* Empty state */}
       {isEmpty && !building && (
         <div className="pointer-events-none absolute inset-x-0 top-[18%] flex justify-center">
-          <div className="rounded-2xl border border-line bg-white/90 px-6 py-4 text-center shadow-float backdrop-blur">
+          <div className="rounded-2xl border border-line bg-panel/90 px-6 py-4 text-center shadow-float backdrop-blur">
             <p className="text-[15px] font-semibold text-ink">Start shaping</p>
             <p className="mt-1 text-[13px] text-muted">Click a shape on the left, or drag it onto the workplane.</p>
           </div>

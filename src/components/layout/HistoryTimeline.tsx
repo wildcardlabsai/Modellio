@@ -36,13 +36,13 @@ export function HistoryTimeline() {
   const ahead = [...future].reverse();
   const steps = past.length + ahead.length;
   return (
-    <section className="shrink-0 border-t border-line bg-white" aria-label="History" data-testid="history-timeline">
+    <section className="shrink-0 border-t border-line bg-panel" aria-label="History" data-testid="history-timeline">
       <div className="flex h-9 items-center gap-2 px-3">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-semibold text-[#344054] hover:bg-canvas"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-semibold text-ink-2 hover:bg-canvas"
         >
           <History size={14} /> History
           <span className="font-normal text-muted">({steps})</span>
@@ -85,7 +85,7 @@ function Step({ label, state, onClick }: { label: string; state: 'done' | 'curre
         state === 'current'
           ? 'border-brand bg-brand text-white'
           : state === 'done'
-            ? 'border-line bg-white text-[#344054] hover:border-brand hover:text-brand'
+            ? 'border-line bg-panel text-ink-2 hover:border-brand hover:text-brand-ink'
             : 'border-dashed border-line bg-canvas text-muted hover:text-ink'
       }`}
       data-testid="history-step"

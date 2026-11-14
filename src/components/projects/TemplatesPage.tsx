@@ -25,10 +25,10 @@ export function TemplatesPage() {
           {TEMPLATES.map((t) => (
             <li
               key={t.id}
-              className="flex flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-panel"
+              className="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel shadow-panel"
               data-testid="template-card"
             >
-              <div className="flex aspect-[16/10] items-center justify-center bg-[#eef3fb]">
+              <div className="flex aspect-[16/10] items-center justify-center bg-canvas">
                 <img
                   src={`/templates/${t.id}.jpg`}
                   alt=""
@@ -45,7 +45,7 @@ export function TemplatesPage() {
                 <p className="mt-1 flex-1 text-[13px] leading-snug text-muted">{t.description}</p>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {t.tags.map((tag) => (
-                    <span key={tag} className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand">
+                    <span key={tag} className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-ink">
                       {tag}
                     </span>
                   ))}

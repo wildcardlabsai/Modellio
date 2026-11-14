@@ -39,7 +39,7 @@ export function FeaturesMenu({ onDone }: { onDone: () => void }) {
           className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-brand-50 disabled:pointer-events-none disabled:opacity-40"
           data-testid={`feature-${kind}`}
         >
-          <Icon size={18} className="mt-0.5 shrink-0 text-brand" />
+          <Icon size={18} className="mt-0.5 shrink-0 text-brand-ink" />
           <span>
             <span className="block text-[13px] font-semibold text-ink">{label}</span>
             <span className="block text-[12px] leading-snug text-muted">{hint}</span>
@@ -65,7 +65,7 @@ export function FeaturesMenu({ onDone }: { onDone: () => void }) {
           className="flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-brand-50"
           data-testid={`feature-${kind}`}
         >
-          <Icon size={18} className="mt-0.5 shrink-0 text-brand" />
+          <Icon size={18} className="mt-0.5 shrink-0 text-brand-ink" />
           <span>
             <span className="block text-[13px] font-semibold text-ink">{label}</span>
             <span className="block text-[12px] leading-snug text-muted">{hint}</span>

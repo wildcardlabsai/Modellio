@@ -331,7 +331,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
   const selected = sel.map((id) => sketch.entities.find((e) => e.id === id) ?? sketch.points.find((p) => p.id === id)).filter(Boolean);
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-white"
+      className="fixed inset-0 z-50 flex flex-col bg-panel"
       role="dialog"
       aria-modal="true"
       aria-label="Sketch"
@@ -350,7 +350,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
                 setTool(t.id);
                 setPending([]);
               }}
-              className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium ${tool === t.id ? 'bg-brand-50 text-brand' : 'text-[#344054] hover:bg-canvas'}`}
+              className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium ${tool === t.id ? 'bg-brand-50 text-brand-ink' : 'text-ink-2 hover:bg-canvas'}`}
             >
               <t.Icon size={15} /> {t.label}
             </button>
@@ -360,12 +360,12 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
               <NumberField value={sides} onCommit={setSides} min={3} max={64} step={1} integer ariaLabel="Polygon sides" suffix="sides" />
             </div>
           )}
-          <label className="ml-2 flex items-center gap-1.5 text-[13px] text-[#344054]">
+          <label className="ml-2 flex items-center gap-1.5 text-[13px] text-ink-2">
             <input
               type="checkbox"
               checked={construction}
               onChange={(e) => setConstruction(e.target.checked)}
-              className="h-4 w-4 accent-[#2463EB]"
+              className="h-4 w-4 accent-brand"
             />
             Construction
           </label>
@@ -376,7 +376,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
           aria-label="Undo"
           onClick={undo}
           disabled={!past.length}
-          className="rounded-lg p-2 text-[#344054] hover:bg-canvas disabled:opacity-30"
+          className="rounded-lg p-2 text-ink-2 hover:bg-canvas disabled:opacity-30"
         >
           <Undo2 size={17} />
         </button>
@@ -385,7 +385,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
           aria-label="Redo"
           onClick={redo}
           disabled={!future.length}
-          className="rounded-lg p-2 text-[#344054] hover:bg-canvas disabled:opacity-30"
+          className="rounded-lg p-2 text-ink-2 hover:bg-canvas disabled:opacity-30"
         >
           <Redo2 size={17} />
         </button>
@@ -393,7 +393,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
           type="button"
           aria-label="Close sketch without saving"
           onClick={onClose}
-          className="rounded-lg p-2 text-[#344054] hover:bg-canvas"
+          className="rounded-lg p-2 text-ink-2 hover:bg-canvas"
         >
           <X size={18} />
         </button>
@@ -444,7 +444,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
             ))}
             {pending.length > 0 && hover && <Preview tool={tool} sketch={sketch} pending={pending} hover={hover} px={px} sides={sides} />}
           </svg>
-          <p className="pointer-events-none absolute bottom-2 left-3 font-mono text-[11px] text-[#5B6270]">
+          <p className="pointer-events-none absolute bottom-2 left-3 font-mono text-[11px] text-ink-3">
             {TOOLS.find((t) => t.id === tool)!.hint} · Scroll to zoom
             {hover ? ` · ${hover[0].toFixed(1)}, ${hover[1].toFixed(1)} mm` : ''}
           </p>
@@ -511,7 +511,7 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
                     role="radio"
                     aria-checked={op.kind === k}
                     onClick={() => setOp({ ...op, kind: k })}
-                    className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${op.kind === k ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+                    className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${op.kind === k ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`}
                   >
                     {k}
                   </button>
@@ -587,7 +587,7 @@ function SelectionPanel({
     commit({ ...sketch, constraints: has ? sketch.constraints.map((c) => (c === has ? make() : c)) : [...sketch.constraints, make()] });
   };
   const P = (id: string) => sketch.points.find((p) => p.id === id)!;
-  const btn = 'h-8 rounded-md border border-line px-2 text-[12px] font-medium text-[#344054] hover:border-brand hover:text-brand';
+  const btn = 'h-8 rounded-md border border-line px-2 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink';
   return (
     <section className="border-b border-line p-4" aria-label="Selection" data-testid="sketch-selection">
       <h3 className="mb-2 text-[13px] font-semibold text-ink">

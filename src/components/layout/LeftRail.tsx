@@ -14,14 +14,14 @@ const PANELS: { id: LeftPanel; label: string; Icon: typeof Shapes }[] = [
 
 const itemCls = (active: boolean, enabled = true) =>
   `relative flex w-[64px] flex-col items-center gap-1 rounded-xl py-2.5 text-[11px] font-medium transition-colors ${
-    active ? 'bg-brand-50 text-brand' : enabled ? 'text-[#475467] hover:bg-canvas' : 'text-[#475467] opacity-45'
+    active ? 'bg-brand-50 text-brand-ink' : enabled ? 'text-ink-3 hover:bg-canvas' : 'text-ink-3 opacity-45'
   }`;
 
 export function LeftRail({ panel, onChange }: { panel: LeftPanel; onChange: (p: LeftPanel) => void }) {
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
   return (
-    <nav className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-white py-3" aria-label="Tools">
+    <nav className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-3" aria-label="Tools">
       {PANELS.map(({ id, label, Icon }) => {
         const active = id === panel;
         return (

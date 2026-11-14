@@ -164,11 +164,11 @@ export function Tour() {
         aria-modal="true"
         aria-labelledby="tour-title"
         aria-describedby="tour-body"
-        className="absolute rounded-2xl bg-white p-5 shadow-float outline-none"
+        className="absolute rounded-2xl bg-panel p-5 shadow-float outline-none"
         style={{ left, top, width: cardW }}
       >
         <div className="flex items-start justify-between gap-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-brand">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-ink">
             Step {step + 1} of {TOUR_STEPS.length}
           </p>
           <button type="button" aria-label="Skip tour" onClick={close} className="-mr-1 -mt-1 rounded-lg p-1 text-muted hover:bg-canvas">
@@ -178,7 +178,7 @@ export function Tour() {
         <h2 id="tour-title" className="mt-1 text-[17px] font-semibold text-ink">
           {s.title}
         </h2>
-        <p id="tour-body" className="mt-1.5 text-[13px] leading-relaxed text-[#475467]">
+        <p id="tour-body" className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
           {s.body}
         </p>
         <div className="mt-4 flex items-center justify-between">
@@ -189,11 +189,7 @@ export function Tour() {
           </div>
           <div className="flex gap-2">
             {step > 0 && (
-              <button
-                type="button"
-                onClick={back}
-                className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-[#344054] hover:bg-canvas"
-              >
+              <button type="button" onClick={back} className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:bg-canvas">
                 Back
               </button>
             )}

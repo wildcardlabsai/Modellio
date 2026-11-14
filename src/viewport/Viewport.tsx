@@ -267,7 +267,7 @@ export function Viewport() {
       )}
       {dragOver && (
         <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5">
-          <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[13px] font-medium text-brand shadow-panel">
+          <span className="rounded-lg bg-panel/90 px-3 py-1.5 text-[13px] font-medium text-brand-ink shadow-panel">
             Drop to add · STL, OBJ or .modellio files
           </span>
         </div>

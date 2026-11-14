@@ -42,7 +42,7 @@ export function FileMenu({ onDone, onVersions }: { onDone: () => void; onVersion
                 run();
                 onDone();
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-[#344054] hover:bg-brand-50 hover:text-brand"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-ink-2 hover:bg-brand-50 hover:text-brand-ink"
             >
               <Icon size={16} className="shrink-0" />
               <span className="flex-1">{label}</span>
