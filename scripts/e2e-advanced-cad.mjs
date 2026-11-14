@@ -394,6 +394,132 @@ const toast = await until(async () => {
 }, 30000);
 check('41. A damaged or wrong file gets a clear message', toast);
 
+// ---- Steps 4 and 5: loft and sweep ------------------------------------------------------------
+await S(() => {
+  const s = window.modellio.store.getState();
+  s.selectAll();
+  s.deleteSelected();
+});
+const previewText = () => page.getByTestId('loft-sweep-status').textContent();
+const waitPreview = (re = /Preview:/) => until(async () => re.test(await previewText()) && (await previewText()));
+await page.getByTestId('features-menu').click();
+await page.getByTestId('feature-loft').click();
+await page.getByTestId('loft-sweep-dialog').waitFor();
+let pv = await waitPreview();
+check(
+  '42. Features → Loft opens with two sections and a live preview',
+  (await page.getByTestId('loft-section').count()) === 2 && /30\.0 × 30\.0 × 30\.0 mm/.test(pv),
+  pv,
+);
+check(
+  '43. The preview is drawn in the 3D view',
+  await until(() => S(() => !!window.modellio.viewport.scene.getObjectByName('solid-preview'))),
+);
+await page.getByLabel('Section 2 height (mm)').fill('40');
+await page.getByLabel('Section 2 height (mm)').press('Enter');
+pv = await waitPreview(/× 40\.0 mm/);
+check('44. Changing a section height rebuilds the preview', !!pv, pv);
+await page.getByTestId('loft-add-section').click();
+pv = await waitPreview(/× 50\.0 mm/);
+check('45. Adding a section stacks it 10 mm higher', (await page.getByTestId('loft-section').count()) === 3 && !!pv, pv);
+await page.getByRole('radio', { name: 'Straight' }).click();
+await waitPreview();
+await page.screenshot({ path: `${OUT}/advanced-06-loft-preview.png` });
+check('46. Nothing is added before Create', (await S(() => window.modellio.store.getState().doc.rootIds.length)) === 0);
+await page.getByTestId('loft-sweep-apply').click();
+const loft = await until(() =>
+  S(() => Object.values(window.modellio.store.getState().doc.objects).find((o) => o.feature?.base?.kind === 'loft')),
+);
+check(
+  '47. Create adds a loft solid with its three sections, sized like the preview',
+  loft && loft.feature.base.sections.length === 3 && loft.feature.base.ruled === true && Math.abs(loft.size[2] - 50) < 1e-6,
+  JSON.stringify(loft?.size),
+);
+await S(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+await page.keyboard.press('Control+z');
+check('48. Undo removes it in one step', (await S(() => window.modellio.store.getState().doc.rootIds.length)) === 0);
+await page.keyboard.press('Control+Shift+z');
+await S((id) => window.modellio.store.getState().select([id]), loft.id);
+await page.getByTestId('solid-edit-base').click();
+await page.getByTestId('loft-sweep-dialog').waitFor();
+check('49. Edit loft reopens its sections', (await page.getByTestId('loft-section').count()) === 3);
+await page.getByRole('button', { name: 'Remove section 3' }).click();
+await waitPreview(/× 40\.0 mm/);
+await page.getByTestId('loft-sweep-apply').click();
+const loft2 = await until(async () => {
+  const o = await obj(loft.id);
+  return o.feature.base.sections.length === 2 && o;
+});
+check(
+  '50. Update changes the loft in place (now two sections, 40 mm tall)',
+  !!loft2 && Math.abs(loft2.size[2] - 40) < 1e-6,
+  JSON.stringify(loft2?.size),
+);
+
+// Sweep
+await page.getByTestId('features-menu').click();
+await page.getByTestId('feature-sweep').click();
+await page.getByTestId('loft-sweep-dialog').waitFor();
+pv = await waitPreview();
+check('51. Features → Sweep previews a profile moved along a path', /33\.0 × 6\.0 × 33\.0 mm/.test(pv), pv);
+await page.getByRole('radio', { name: 'Flat' }).click();
+pv = await waitPreview(/33\.0 × 33\.0 × 6\.0 mm/);
+check('52. Drawing the path flat lays the sweep on the plate', !!pv, pv);
+// The profile editor refuses an empty sketch.
+await page.getByTestId('sweep-edit-profile').click();
+await page.getByTestId('sketch-editor').waitFor();
+check(
+  '53. The profile opens in the sketch editor, ready to use',
+  !(await page.getByTestId('sketch-use').isDisabled()) && /Sweep profile/.test(await page.getByTestId('sketch-editor').textContent()),
+);
+await page.getByTestId('sketch-editor').getByRole('button', { name: 'Select', exact: true }).click();
+const circ = await S(() => {
+  const c = document.querySelector('[data-testid="sketch-circle"]');
+  const b = c.getBoundingClientRect();
+  return { x: b.left + b.width / 2, y: b.top + 1 };
+});
+await page.mouse.click(circ.x, circ.y);
+await page.keyboard.press('Delete');
+check(
+  '54. An empty profile cannot be used (and says why)',
+  (await page.getByTestId('sketch-use').isDisabled()) && (await page.getByTestId('sketch-use-problem').count()) === 1,
+);
+check(
+  '54b. …and Delete in the sketch editor does not delete anything in the design behind it',
+  (await S(() => window.modellio.store.getState().doc.rootIds.length)) === 1,
+);
+await page.getByRole('button', { name: 'Close sketch without saving' }).click();
+pv = await waitPreview();
+check('55. Closing without using keeps the old profile', /33\.0 × 33\.0 × 6\.0 mm/.test(pv), pv);
+await page.getByTestId('sweep-edit-path').click();
+await page.getByTestId('sketch-editor').waitFor();
+await page.getByTestId('sketch-use').click();
+await page.getByTestId('sketch-editor').waitFor({ state: 'detached' });
+await page.getByRole('radio', { name: 'Sharp' }).click();
+await waitPreview();
+await page.screenshot({ path: `${OUT}/advanced-07-sweep-preview.png` });
+await page.getByTestId('loft-sweep-apply').click();
+const sweepObj = await until(() =>
+  S(() => Object.values(window.modellio.store.getState().doc.objects).find((o) => o.feature?.base?.kind === 'sweep')),
+);
+check('56. Create adds the sweep solid', sweepObj && sweepObj.feature.base.pathPlane === 'XY' && sweepObj.feature.base.corners === 'sharp');
+await S((id) => window.modellio.store.getState().select([id]), sweepObj.id);
+const sv = await until(async () => {
+  const t = await page.getByTestId('solid-volume').textContent();
+  return /cm³/.test(t) && t;
+});
+check('57. The sweep is an exact solid with a volume', parseFloat(sv) > 1.5 && parseFloat(sv) < 1.8, sv);
+
+// Cancel leaves nothing behind.
+await page.getByTestId('features-menu').click();
+await page.getByTestId('feature-loft').click();
+await page.getByTestId('loft-sweep-dialog').waitFor();
+await page.getByRole('button', { name: 'Cancel' }).click();
+check(
+  '58. Cancel closes the panel without adding anything',
+  (await page.getByTestId('loft-sweep-dialog').count()) === 0 && (await S(() => window.modellio.store.getState().doc.rootIds.length)) === 2,
+);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

@@ -4,6 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { ShapeObject } from '@/types/document';
 import { buildGeometryForShape, geometryFromBuild } from '@/cad/shapeRegistry';
 import { useFeatureTool } from '@/components/features/featureTool';
+import { useSolidBuilder } from '@/components/features/solidBuilder';
 import { featureKey } from '@/cad/brep/types';
 import { useEditor } from '@/store/editorStore';
 import { rootAncestor } from '@/cad/hierarchy';
@@ -43,8 +44,10 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
   useEffect(() => () => geometry?.dispose(), [geometry]);
 
   const [hovered, setHovered] = useState(false);
+  // Editing this loft / sweep: its preview is drawn instead.
+  const replaced = useSolidBuilder((s) => s.session?.editingId === object.id && s.session.preview.state === 'ok');
 
-  if (!geometry) return null;
+  if (!geometry || replaced) return null;
   if (ghost && !selected) return null;
 
   /** Click selects the outermost group; Shift/Ctrl/⌘ toggles it in the selection. */

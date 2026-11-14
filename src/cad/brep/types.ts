@@ -23,7 +23,24 @@ export type FeatureBase =
    * An exact solid stored as it is (OpenCascade BRep text), e.g. one solid from a STEP file. Its
    * shape has no parametric history; it can be moved, filleted and chamfered.
    */
-  | { kind: 'brep'; data: string; source: string };
+  | { kind: 'brep'; data: string; source: string }
+  /**
+   * A solid through cross-sections: each section is a sketch (one closed outline) lying flat at a
+   * height (mm) above the first, optionally shifted in X/Y. Smooth or ruled (straight) between them.
+   */
+  | { kind: 'loft'; sections: LoftSection[]; ruled: boolean }
+  /**
+   * A closed profile moved along a path. The path is a sketch (one connected chain of lines and arcs,
+   * open or closed) drawn on the XZ plane (upright) or the XY plane (flat). The profile is placed
+   * square to the start of the path.
+   */
+  | { kind: 'sweep'; profile: Sketch; path: Sketch; pathPlane: 'XZ' | 'XY'; orientation: 'follow' | 'frenet'; corners: 'round' | 'sharp' };
+
+export interface LoftSection {
+  sketch: Sketch;
+  height: number;
+  offset: [number, number];
+}
 
 /**
  * Where an edge is, independent of the solid's size: the edge's kind, its midpoint and direction
@@ -98,6 +115,19 @@ export function validateRecipe(raw: unknown): string | null {
     if (typeof base.sketch !== 'object' || base.sketch === null || !Array.isArray(base.sketch.points)) return 'Invalid sketch.';
     if (base.op !== 'extrude' && base.op !== 'revolve') return 'Invalid sketch operation.';
     if (!finite(base.depth) || !finite(base.angle)) return 'Invalid sketch depth or angle.';
+  } else if (base.kind === 'loft') {
+    if (!Array.isArray(base.sections) || base.sections.length < 2) return 'A loft needs at least two sections.';
+    for (const sec of base.sections) {
+      if (typeof sec !== 'object' || sec === null || typeof sec.sketch !== 'object' || !finite(sec.height)) return 'Invalid loft section.';
+      if (!Array.isArray(sec.offset) || sec.offset.length !== 2 || !sec.offset.every(finite)) return 'Invalid loft section offset.';
+    }
+    if (typeof base.ruled !== 'boolean') return 'Invalid loft option.';
+  } else if (base.kind === 'sweep') {
+    if (typeof base.profile !== 'object' || base.profile === null || typeof base.path !== 'object' || base.path === null)
+      return 'A sweep needs a profile and a path.';
+    if (base.pathPlane !== 'XZ' && base.pathPlane !== 'XY') return 'Invalid sweep path plane.';
+    if (base.orientation !== 'follow' && base.orientation !== 'frenet') return 'Invalid sweep orientation.';
+    if (base.corners !== 'round' && base.corners !== 'sharp') return 'Invalid sweep corners.';
   } else if (base.kind === 'brep') {
     if (typeof base.data !== 'string' || !base.data.length) return 'Stored solid is missing.';
     if (typeof base.source !== 'string') return 'Stored solid has no source.';

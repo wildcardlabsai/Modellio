@@ -1,4 +1,6 @@
 import { FeatureDialog } from '@/components/features/FeatureDialog';
+import { LoftSweepDialog } from '@/components/features/LoftSweepDialog';
+import { useSolidBuilder } from '@/components/features/solidBuilder';
 import { Move, Rotate3d, Scaling, Focus, Home, Magnet, ChevronDown, Box, ScanSearch } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { IconButton } from '@/components/ui/IconButton';
@@ -38,6 +40,7 @@ export function ViewportOverlay() {
   const lastAction = useEditor((s) => s.lastAction);
   const actionSeq = useEditor((s) => s.actionSeq);
   const isEmpty = useEditor((s) => s.doc.rootIds.length === 0);
+  const building = useSolidBuilder((s) => !!s.session);
   const [viewsOpen, setViewsOpen] = useState(false);
   const units = useEditor((s) => s.units);
   const setUnits = useEditor((s) => s.setUnits);
@@ -80,6 +83,7 @@ export function ViewportOverlay() {
       </div>
 
       <FeatureDialog />
+      <LoftSweepDialog />
       {tool === 'layflat' && (
         <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-navy/95 py-1.5 pl-3 pr-1.5 text-xs font-medium text-white shadow-float">
           <span>Lay flat: click the face that should rest on the build plate</span>
@@ -214,7 +218,7 @@ export function ViewportOverlay() {
       </div>
 
       {/* Empty state */}
-      {isEmpty && (
+      {isEmpty && !building && (
         <div className="pointer-events-none absolute inset-x-0 top-[18%] flex justify-center">
           <div className="rounded-2xl border border-line bg-white/90 px-6 py-4 text-center shadow-float backdrop-blur">
             <p className="text-[15px] font-semibold text-ink">Start shaping</p>

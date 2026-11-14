@@ -142,13 +142,7 @@ export function Toolbar() {
       </Popover>
       <Popover
         trigger={({ open, toggle }) => (
-          <IconButton
-            label="Features: fillet and chamfer"
-            active={open}
-            disabled={!hasSelection}
-            onClick={toggle}
-            data-testid="features-menu"
-          >
+          <IconButton label="Features: fillet, chamfer, loft and sweep" active={open} onClick={toggle} data-testid="features-menu">
             <Spline size={17} />
             <span className="hidden xl:inline">Features</span>
             <ChevronDown size={13} />

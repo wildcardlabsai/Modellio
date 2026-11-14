@@ -21,6 +21,9 @@ export function useKeyboardShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
+      // A modal (the sketch editor, a dialog) has its own keys: Delete or Ctrl+Z there must not
+      // also delete or undo in the design behind it.
+      if (document.querySelector('[aria-modal="true"]')) return;
       // Editor shortcuts act on the design document, so they only apply in the Design studio.
       if (useStudio.getState().studio !== 'design') return;
       const s = useEditor.getState();

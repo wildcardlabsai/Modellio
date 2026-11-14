@@ -42,9 +42,23 @@ const statusTone = (s: SketchStatus) =>
  * type exact dimensions; add constraints the solver keeps true; then Extrude or Revolve into a
  * solid. Editing an existing sketched solid reopens its sketch.
  */
-export function SketchEditor({ objectId, onClose }: { objectId: string | null; onClose: () => void }) {
+/**
+ * Sketching for another tool (a loft section, a sweep profile or path): edit `initial` and hand
+ * the result back, instead of making a solid from it.
+ */
+export interface SketchUse {
+  title: string;
+  initial: Sketch;
+  /** What the sketch should be, shown in the panel. */
+  hint: string;
+  /** Why the sketch cannot be used yet, or null. */
+  check: (s: Sketch) => string | null;
+  onDone: (s: Sketch) => void;
+}
+
+export function SketchEditor({ objectId, onClose, use }: { objectId: string | null; onClose: () => void; use?: SketchUse }) {
   const existing = useEditor((s) => (objectId ? s.doc.objects[objectId] : undefined));
-  const start = existing?.kind === 'shape' && existing.sketch ? existing.sketch : emptySketch();
+  const start = use ? use.initial : existing?.kind === 'shape' && existing.sketch ? existing.sketch : emptySketch();
   const [sketch, setSketchRaw] = useState<Sketch>(start);
   const [past, setPast] = useState<Sketch[]>([]);
   const [future, setFuture] = useState<Sketch[]>([]);
@@ -63,6 +77,7 @@ export function SketchEditor({ objectId, onClose }: { objectId: string | null; o
   const drag = useRef<{ id: string; moved: boolean } | null>(null);
   const status = useMemo(() => solveSketch(sketch).status, [sketch]);
   const loops = useMemo(() => sketchLoops(sketch), [sketch]);
+  const useProblem = useMemo(() => (use ? use.check(sketch) : null), [use, sketch]);
 
   /** Commit a change: solve it, and record it for undo (unless it is part of a drag). */
   const commit = (next: Sketch, opts: { pinned?: string[]; transient?: boolean } = {}) => {
@@ -323,7 +338,7 @@ export function SketchEditor({ objectId, onClose }: { objectId: string | null; o
       data-testid="sketch-editor"
     >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
-        <h2 className="mr-2 text-[14px] font-semibold text-ink">Sketch</h2>
+        <h2 className="mr-2 text-[14px] font-semibold text-ink">{use?.title ?? 'Sketch'}</h2>
         <div role="toolbar" aria-label="Sketch tools" className="flex items-center gap-1">
           {TOOLS.map((t) => (
             <button
@@ -467,62 +482,82 @@ export function SketchEditor({ objectId, onClose }: { objectId: string | null; o
               <p className="text-[12px] text-muted">Select lines, points or circles to add dimensions and constraints.</p>
             )}
           </section>
-          <section className="p-4">
-            <h3 className="mb-2 text-[13px] font-semibold text-ink">Make it solid</h3>
-            <div role="radiogroup" aria-label="Operation" className="grid grid-cols-2 rounded-lg bg-canvas p-1">
-              {(['extrude', 'revolve'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="radio"
-                  aria-checked={op.kind === k}
-                  onClick={() => setOp({ ...op, kind: k })}
-                  className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${op.kind === k ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
-            <div className="mt-2">
-              {op.kind === 'extrude' ? (
-                <NumberField
-                  value={op.depth}
-                  onCommit={(v) => setOp({ ...op, depth: v })}
-                  min={0.1}
-                  max={1000}
-                  step={0.5}
-                  decimals={2}
-                  suffix="mm"
-                  ariaLabel="Extrude depth (mm)"
-                  label="D"
-                />
-              ) : (
-                <NumberField
-                  value={op.angle}
-                  onCommit={(v) => setOp({ ...op, angle: v })}
-                  min={1}
-                  max={360}
-                  step={15}
-                  decimals={0}
-                  suffix="°"
-                  ariaLabel="Revolve angle (degrees)"
-                  label="∠"
-                />
+          {use ? (
+            <section className="p-4">
+              <p className="text-[12px] leading-relaxed text-muted">{use.hint}</p>
+              {useProblem && (
+                <p className="mt-2 text-[12px] text-amber-800" data-testid="sketch-use-problem">
+                  {useProblem}
+                </p>
               )}
-            </div>
-            {op.kind === 'revolve' && (
-              <p className="mt-1.5 text-[11px] text-muted">Revolves around the green Y axis; draw the profile to its right.</p>
-            )}
-            <button
-              type="button"
-              onClick={() => void finish()}
-              disabled={!loops.loops.length}
-              className="mt-3 h-10 w-full rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-              data-testid="sketch-finish"
-            >
-              {objectId ? 'Update solid' : 'Create solid'}
-            </button>
-          </section>
+              <button
+                type="button"
+                onClick={() => use.onDone(sketch)}
+                disabled={!!useProblem}
+                className="mt-3 h-10 w-full rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                data-testid="sketch-use"
+              >
+                Use this sketch
+              </button>
+            </section>
+          ) : (
+            <section className="p-4">
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Make it solid</h3>
+              <div role="radiogroup" aria-label="Operation" className="grid grid-cols-2 rounded-lg bg-canvas p-1">
+                {(['extrude', 'revolve'] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    role="radio"
+                    aria-checked={op.kind === k}
+                    onClick={() => setOp({ ...op, kind: k })}
+                    className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${op.kind === k ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2">
+                {op.kind === 'extrude' ? (
+                  <NumberField
+                    value={op.depth}
+                    onCommit={(v) => setOp({ ...op, depth: v })}
+                    min={0.1}
+                    max={1000}
+                    step={0.5}
+                    decimals={2}
+                    suffix="mm"
+                    ariaLabel="Extrude depth (mm)"
+                    label="D"
+                  />
+                ) : (
+                  <NumberField
+                    value={op.angle}
+                    onCommit={(v) => setOp({ ...op, angle: v })}
+                    min={1}
+                    max={360}
+                    step={15}
+                    decimals={0}
+                    suffix="°"
+                    ariaLabel="Revolve angle (degrees)"
+                    label="∠"
+                  />
+                )}
+              </div>
+              {op.kind === 'revolve' && (
+                <p className="mt-1.5 text-[11px] text-muted">Revolves around the green Y axis; draw the profile to its right.</p>
+              )}
+              <button
+                type="button"
+                onClick={() => void finish()}
+                disabled={!loops.loops.length}
+                className="mt-3 h-10 w-full rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                data-testid="sketch-finish"
+              >
+                {objectId ? 'Update solid' : 'Create solid'}
+              </button>
+            </section>
+          )}
         </aside>
       </div>
     </div>

@@ -207,6 +207,10 @@ export interface EditorState {
     parts: { name: string; recipe: FeatureRecipe; size: Vec3; centre: Vec3 }[],
     opts?: { groupName?: string; at?: [number, number] },
   ) => ObjectId[];
+  /** Add a new precise solid from a recipe (e.g. a loft or sweep), at a free spot on the plate. */
+  addSolid: (recipe: FeatureRecipe, size: Vec3, name: string) => ObjectId | null;
+  /** Replace a precise solid's base (e.g. edit a loft's sections); its fillets and chamfers stay. */
+  setSolidBase: (id: ObjectId, base: FeatureRecipe['base'], size: Vec3, label: string) => void;
   /** Replace a precise solid's operation list (fillets, chamfers): add, edit, reorder, suppress, delete. */
   setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string) => void;
   /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
@@ -826,6 +830,39 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selection: sel });
       get().requestFrame();
       return sel;
+    },
+
+    addSolid: (recipe, size, name) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      const doc = get().doc;
+      const obj = {
+        ...createShape(doc, 'box', findFreePosition(doc, size)),
+        shape: 'solid' as const,
+        feature: recipe,
+        params: {},
+        size: [...size] as Vec3,
+        name: uniqueName(doc, name),
+        color: '#7C3AED',
+      };
+      get().apply(name, (d) => addObjectDraft(d, obj));
+      set({ selection: [obj.id] });
+      return obj.id;
+    },
+
+    setSolidBase: (id, base, size, label) => {
+      if (isEffectivelyLocked(get().doc, id)) {
+        get().notify('This object is locked.');
+        return;
+      }
+      get().apply(label, (d) => {
+        const t = d.objects[id];
+        if (t?.kind !== 'shape' || t.shape !== 'solid' || !t.feature) return;
+        t.feature.base = base;
+        t.size = [...size] as Vec3;
+      });
     },
 
     setFeatureOps: (id, ops, label) => {

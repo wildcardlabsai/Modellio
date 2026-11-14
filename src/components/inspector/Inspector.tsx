@@ -31,6 +31,7 @@ import {
 import { useBrepEngine } from '@/cad/brep/client';
 import { solidConversion } from '@/cad/brep/convert';
 import { useFeatureTool } from '@/components/features/featureTool';
+import { useSolidBuilder } from '@/components/features/solidBuilder';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
@@ -845,7 +846,11 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
         ? `Sketch (${base.op})`
         : base?.kind === 'brep'
           ? `Imported solid (${base.source})`
-          : 'Unknown';
+          : base?.kind === 'loft'
+            ? `Loft (${base.sections.length} sections)`
+            : base?.kind === 'sweep'
+              ? 'Sweep'
+              : 'Unknown';
   return (
     <Section title="Precise solid">
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]" data-testid="solid-info">
@@ -862,6 +867,17 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
                 : 'Building…'}
         </dd>
       </dl>
+      {(base?.kind === 'loft' || base?.kind === 'sweep') && (
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => useSolidBuilder.getState().open(base.kind as 'loft' | 'sweep', object.id)}
+          className="mt-3 flex w-full items-center justify-center rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+          data-testid="solid-edit-base"
+        >
+          Edit {base.kind}
+        </button>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-1.5">
         {(['fillet', 'chamfer'] as const).map((k) => (
           <button

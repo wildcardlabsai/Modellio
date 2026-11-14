@@ -196,6 +196,95 @@ function brepBase(r: R, data: string): Shape3D {
   return s as Shape3D;
 }
 
+/** One closed outline (no holes), as a drawing: what loft sections and sweep profiles need. */
+export function singleOutline(r: R, s: Sketch, what: string): Drawing {
+  const { chains, circles } = sketchOutlines(s);
+  const n = chains.length + circles.length;
+  if (n === 0) throw new BrepError(`${what} has no closed outline.`);
+  if (n > 1) throw new BrepError(`${what} must be a single closed outline (it has ${n}).`);
+  return sketchDrawing(r, s)!;
+}
+
+/**
+ * A sweep path: one connected chain of lines and arcs (open or closed), or a single circle.
+ * Returns an error message when the sketch is not one chain.
+ */
+export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } | { circle: { c: [number, number]; r: number } } | string {
+  const pts = new Map(s.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
+  const edges = s.entities.filter(
+    (e): e is Extract<SketchEntity, { kind: 'line' | 'arc' }> => (e.kind === 'line' || e.kind === 'arc') && !e.construction,
+  );
+  const circles = s.entities.filter((e): e is Extract<SketchEntity, { kind: 'circle' }> => e.kind === 'circle' && !e.construction);
+  if (!edges.length && circles.length === 1 && pts.has(circles[0].c)) return { circle: { c: pts.get(circles[0].c)!, r: circles[0].r } };
+  if (circles.length) return 'A path is one chain of lines and arcs (or a single circle).';
+  if (!edges.length) return 'Draw a path: connected lines and arcs.';
+  const degree = new Map<string, number>();
+  for (const e of edges) for (const id of [e.a, e.b]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  if ([...degree.values()].some((d) => d > 2)) return 'The path branches; it must be a single chain.';
+  const ends = [...degree].filter(([, d]) => d === 1).map(([id]) => id);
+  if (ends.length !== 0 && ends.length !== 2) return 'The path must be one connected chain.';
+  const closed = ends.length === 0;
+  let from = closed ? edges[0].a : ends[0];
+  const used = new Set<string>();
+  const segments: Segment[] = [];
+  for (let guard = 0; guard < edges.length; guard++) {
+    const e = edges.find((x) => !used.has(x.id) && (x.a === from || x.b === from));
+    if (!e) break;
+    used.add(e.id);
+    const to = e.a === from ? e.b : e.a;
+    const pa = pts.get(from)!;
+    const pb = pts.get(to)!;
+    if (e.kind === 'arc') {
+      const c = pts.get(e.c)!;
+      const [ea, eb] = [pts.get(e.a)!, pts.get(e.b)!];
+      const a0 = Math.atan2(ea[1] - c[1], ea[0] - c[0]);
+      let sweep = Math.atan2(eb[1] - c[1], eb[0] - c[0]) - a0;
+      while (sweep <= 0) sweep += 2 * Math.PI;
+      const rad = Math.hypot(ea[0] - c[0], ea[1] - c[1]);
+      segments.push({ kind: 'arc', from: pa, to: pb, mid: [c[0] + rad * Math.cos(a0 + sweep / 2), c[1] + rad * Math.sin(a0 + sweep / 2)] });
+    } else segments.push({ kind: 'line', from: pa, to: pb });
+    from = to;
+  }
+  if (used.size !== edges.length) return 'The path must be one connected chain.';
+  return { segments, closed };
+}
+
+function loftBase(r: R, base: Extract<FeatureBase, { kind: 'loft' }>): Shape3D {
+  if (base.sections.length < 2) throw new BrepError('A loft needs at least two sections.');
+  const sketches = base.sections.map((sec, i) =>
+    asSketch(
+      singleOutline(r, sec.sketch, `Section ${i + 1}`)
+        .translate(sec.offset[0], sec.offset[1])
+        .sketchOnPlane('XY', [0, 0, sec.height]),
+    ),
+  );
+  for (let i = 1; i < base.sections.length; i++)
+    if (Math.abs(base.sections[i].height - base.sections[i - 1].height) < 1e-6)
+      throw new BrepError(`Sections ${i} and ${i + 1} are at the same height.`);
+  return as3d(sketches[0].loftWith(sketches.slice(1), { ruled: base.ruled }));
+}
+
+function sweepBase(r: R, base: Extract<FeatureBase, { kind: 'sweep' }>): Shape3D {
+  const path = sketchPath(base.path);
+  if (typeof path === 'string') throw new BrepError(path);
+  singleOutline(r, base.profile, 'The profile'); // validates before the (slower) sweep
+  let pathDrawing: Drawing;
+  if ('circle' in path) pathDrawing = r.drawCircle(path.circle.r).translate(path.circle.c[0], path.circle.c[1]);
+  else {
+    let pen = r.draw(path.segments[0].from);
+    for (const seg of path.segments) pen = seg.kind === 'line' ? pen.lineTo(seg.to) : pen.threePointsArcTo(seg.to, seg.mid);
+    pathDrawing = path.closed ? pen.close() : pen.done();
+  }
+  const pathSketch = asSketch(pathDrawing.sketchOnPlane(base.pathPlane));
+  return as3d(
+    // The plane replicad passes is already placed at the start of the path, square to it.
+    pathSketch.sweepSketch((plane) => asSketch(singleOutline(r, base.profile, 'The profile').sketchOnPlane(plane)), {
+      frenet: base.orientation === 'frenet',
+      transitionMode: base.corners === 'round' ? 'round' : 'right',
+    }),
+  );
+}
+
 function sketchBase(r: R, base: Extract<FeatureBase, { kind: 'sketch' }>): Shape3D {
   let d = sketchDrawing(r, base.sketch);
   if (!d) throw new BrepError('The sketch has no closed outline.');
@@ -327,7 +416,11 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
         ? primitive(r, recipe.base, req.size)
         : recipe.base.kind === 'brep'
           ? brepBase(r, recipe.base.data)
-          : sketchBase(r, recipe.base);
+          : recipe.base.kind === 'loft'
+            ? loftBase(r, recipe.base)
+            : recipe.base.kind === 'sweep'
+              ? sweepBase(r, recipe.base)
+              : sketchBase(r, recipe.base);
   } catch (e) {
     if (e instanceof BrepError) throw e;
     throw new BrepError(friendly(e, 'The base shape'));
