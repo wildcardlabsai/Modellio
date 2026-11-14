@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMakerPane, paneClass } from '../shell/mobilePane';
+import { MobilePaneTabs } from '../shell/MobilePaneTabs';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
 import { capturePreview } from '../shell/capture';
 import { useProjects } from '@/store/projectStore';
@@ -70,16 +72,18 @@ export default function VaseStudio() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  const pane = useMakerPane((s) => s.pane);
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid="vase-studio">
       <Header />
       <div className="relative flex min-h-0 flex-1">
         <LeftPanel />
-        <main className="relative min-w-0 flex-1" aria-label="Preview">
+        <main className={`relative min-w-0 flex-1 ${paneClass(pane, 'canvas')}`} aria-label="Preview">
           <Preview />
         </main>
         <RightPanel />
       </div>
+      <MobilePaneTabs labels={{ tools: 'Shape', canvas: 'Preview', settings: 'Export' }} />
     </div>
   );
 }
@@ -156,10 +160,11 @@ function Header() {
 
 function LeftPanel() {
   const tab = useVase((s) => s.tab);
+  const pane = useMakerPane((s) => s.pane);
   const setTab = useVase((s) => s.setTab);
   return (
     <aside
-      className="flex w-[300px] shrink-0 flex-col border-r border-line bg-white xl:w-[330px]"
+      className={`flex w-[300px] shrink-0 flex-col border-r border-line bg-white xl:w-[330px] ${paneClass(pane, 'tools')}`}
       aria-label="Vase design"
       data-testid="vase-left"
     >
@@ -648,6 +653,7 @@ function download(bytes: Uint8Array, name: string, type: string) {
 }
 
 function RightPanel() {
+  const pane = useMakerPane((s) => s.pane);
   const result = useVase((s) => s.result);
   const error = useVase((s) => s.error);
   const building = useVase((s) => s.building);
@@ -691,7 +697,7 @@ function RightPanel() {
         : 'text-[#067647]';
   return (
     <aside
-      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px]"
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Result"
       data-testid="vase-right"
     >

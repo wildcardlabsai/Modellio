@@ -1,7 +1,7 @@
-import { Shapes, Type, Ruler, Grid3x3, Package, Printer } from 'lucide-react';
+import { Shapes, Type, Ruler, Grid3x3, Package, Printer, Sparkles } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 
-export type LeftPanel = 'shapes' | 'text' | 'assets' | 'workplane' | 'print';
+export type LeftPanel = 'shapes' | 'text' | 'assets' | 'workplane' | 'print' | 'assistant';
 
 const PANELS: { id: LeftPanel; label: string; Icon: typeof Shapes }[] = [
   { id: 'shapes', label: 'Shapes', Icon: Shapes },
@@ -9,6 +9,7 @@ const PANELS: { id: LeftPanel; label: string; Icon: typeof Shapes }[] = [
   { id: 'assets', label: 'Assets', Icon: Package },
   { id: 'workplane', label: 'Workplane', Icon: Grid3x3 },
   { id: 'print', label: 'Print', Icon: Printer },
+  { id: 'assistant', label: 'Assistant', Icon: Sparkles },
 ];
 
 const itemCls = (active: boolean, enabled = true) =>

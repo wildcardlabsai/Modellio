@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMakerPane, paneClass } from '../shell/mobilePane';
+import { MobilePaneTabs } from '../shell/MobilePaneTabs';
 import { Box, CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, Shapes, TriangleAlert } from 'lucide-react';
 import type { KeyringParams, KeyringPart, KeyringRole } from '../keyring/geometry';
 import { usePlaque, type PlaqueConfig } from './config';
@@ -63,6 +65,7 @@ export function PlaqueStudio() {
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const pane = useMakerPane((s) => s.pane);
   const [tab, setTab] = useState<'templates' | 'design'>('design');
   const [view, setView] = useState<'design' | '3d'>('design');
   return (
@@ -70,7 +73,7 @@ export function PlaqueStudio() {
       <Header view={view} setView={setView} />
       <div className="relative flex min-h-0 flex-1">
         <aside
-          className="flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px]"
+          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
           aria-label={`${cfg.title} design`}
           data-testid={`${cfg.id}-left`}
         >
@@ -89,13 +92,13 @@ export function PlaqueStudio() {
             {tab === 'templates' ? <Gallery onOpen={() => setTab('design')} /> : <DesignTab />}
           </div>
         </aside>
-        <main className="relative min-w-0 flex-1" aria-label="Design">
+        <main className={`relative min-w-0 flex-1 ${paneClass(pane, 'canvas')}`} aria-label="Design">
           {view === 'design' ? <Canvas2D /> : <Preview3D large />}
           {view === 'design' && (
             <button
               type="button"
               onClick={() => setView('3d')}
-              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden rounded-xl border border-line bg-white shadow-panel"
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-white shadow-panel"
               aria-label="Show the 3D preview larger"
               data-testid={`${cfg.id}-mini-preview`}
             >
@@ -108,6 +111,7 @@ export function PlaqueStudio() {
         </main>
         <RightPanel />
       </div>
+      <MobilePaneTabs labels={{ tools: 'Templates & tools', canvas: 'Design', settings: 'Settings & export' }} />
     </div>
   );
 }
@@ -535,6 +539,7 @@ function designName(cfg: PlaqueConfig) {
 }
 
 function RightPanel() {
+  const pane = useMakerPane((s) => s.pane);
   const cfg = usePlaque();
   const useKeyring = cfg.store;
   const result = useKeyring((s) => s.result);
@@ -558,7 +563,7 @@ function RightPanel() {
   };
   return (
     <aside
-      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px]"
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Tag settings and result"
       data-testid={`${cfg.id}-right`}
     >

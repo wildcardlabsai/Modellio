@@ -54,3 +54,22 @@ The keyring and cookie makers share `src/makers/canvas` (model, store, canvas, p
 3. Design Studio: orthographic / isometric views, a history timeline, GLB/GLTF, gear and box generators, mesh tools, text spacing, sketch-based profiles.
 4. AI Design Assistant: validated, structured modelling plans applied as one undo step.
 5. Performance, responsive layouts, documentation.
+
+## Status
+
+| Stage | State | Tests |
+| --- | --- | --- |
+| 1 Audit | Done (this document) | — |
+| 2 Design system, landing, dashboard | Done | `e2e-landing`, `e2e-platform` |
+| 3 Projects, maker shell, Key Tag and Sign makers | Done | `platform.test.ts`, `sign.test.ts`, maker e2e suites |
+| 4–6 Studio views, history, GLB, gear, box & lid, mesh tools, text spacing, sketch & profiles | Done | `e2e-studio2`, sketch / mesh-tool / gear unit tests |
+| 7 AI Design Assistant | Done; needs `ANTHROPIC_API_KEY` on the server to answer | `src/ai/*.test.ts`, `e2e-assistant` (API intercepted; no live model call in CI) |
+| 8 Responsive makers, docs | Done | `e2e-mobile` |
+
+**Decisions:** Manifold remains the only solid kernel; the sketch solver is a small Levenberg–Marquardt solver
+(`src/cad/sketch/solver.ts`) rather than a dependency; the assistant uses structured outputs with a strict command
+schema plus a second validation pass, never generated code; one new runtime dependency (`@anthropic-ai/sdk`, server only).
+
+**Remaining:** sketch offset / trim / extend / splines; a feature tree (sweep, loft, fillet with history); assemblies
+with joints; STEP; lithophane and thread tools; sign-in-gated access for the assistant; a live-model evaluation set for
+assistant prompts.

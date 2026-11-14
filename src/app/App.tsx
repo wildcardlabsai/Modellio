@@ -8,6 +8,7 @@ import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
 const WorkplanePanel = lazy(() => import('@/components/layout/WorkplanePanel').then((m) => ({ default: m.WorkplanePanel })));
 const TextPanel = lazy(() => import('@/components/layout/TextPanel').then((m) => ({ default: m.TextPanel })));
 const AssetsPanel = lazy(() => import('@/components/layout/AssetsPanel').then((m) => ({ default: m.AssetsPanel })));
+const AssistantPanel = lazy(() => import('@/components/assistant/AssistantPanel').then((m) => ({ default: m.AssistantPanel })));
 const PrintPanel = lazy(() => import('@/components/print/PrintPanel').then((m) => ({ default: m.PrintPanel })));
 import { ShapeLibrary } from '@/components/shapes/ShapeLibrary';
 import { Inspector } from '@/components/inspector/Inspector';
@@ -217,6 +218,8 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
                 <AssetsPanel />
               ) : panel === 'print' ? (
                 <PrintPanel />
+              ) : panel === 'assistant' ? (
+                <AssistantPanel />
               ) : (
                 <WorkplanePanel />
               )}

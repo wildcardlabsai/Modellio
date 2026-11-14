@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/assistant.ts": { "maxDuration": 60 }
+  }
+}

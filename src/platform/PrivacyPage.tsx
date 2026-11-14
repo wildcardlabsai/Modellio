@@ -39,7 +39,8 @@ export default function PrivacyPage() {
             <h2>AI assistant</h2>
             <p>
               When you use the AI design assistant (where it is switched on), the request you type and a summary of the objects in your
-              design are sent to the AI service to plan the model. Nothing is sent unless you press Send.
+              design are sent through MODELLIO’s server to Anthropic’s Claude API to plan the model. Nothing is sent unless you press Send,
+              and nothing changes in your design until you press Apply.
             </p>
           </section>
           <section>

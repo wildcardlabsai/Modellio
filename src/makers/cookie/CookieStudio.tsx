@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
+import { useMakerPane, paneClass } from '../shell/mobilePane';
+import { MobilePaneTabs } from '../shell/MobilePaneTabs';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
 import { capturePreview } from '../shell/capture';
 import { useProjects } from '@/store/projectStore';
@@ -61,6 +63,7 @@ const roleStyle = (role: string) => ROLE_STYLE[role as CookieRole] ?? ROLE_STYLE
 export default function CookieStudio() {
   const [dragging, setDragging] = useState(false);
   const [tab, setTab] = useState<'templates' | 'design'>('design');
+  const pane = useMakerPane((s) => s.pane);
   const [view, setView] = useState<'design' | '3d'>('design');
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -118,7 +121,7 @@ export default function CookieStudio() {
       <Header view={view} setView={setView} />
       <div className="relative flex min-h-0 flex-1">
         <aside
-          className="flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px]"
+          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
           aria-label="Cookie design"
           data-testid="cookie-left"
         >
@@ -137,13 +140,13 @@ export default function CookieStudio() {
             {tab === 'templates' ? <Gallery onOpen={() => setTab('design')} /> : <DesignTab error={error} setError={setError} />}
           </div>
         </aside>
-        <main className="relative min-w-0 flex-1" aria-label="Design">
+        <main className={`relative min-w-0 flex-1 ${paneClass(pane, 'canvas')}`} aria-label="Design">
           {view === 'design' ? <Canvas2D /> : <Preview3D large />}
           {view === 'design' && (
             <button
               type="button"
               onClick={() => setView('3d')}
-              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden rounded-xl border border-line bg-white shadow-panel"
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-white shadow-panel"
               aria-label="Show the 3D preview larger"
               data-testid="cookie-mini-preview"
             >
@@ -156,6 +159,7 @@ export default function CookieStudio() {
         </main>
         <RightPanel />
       </div>
+      <MobilePaneTabs labels={{ tools: 'Templates & tools', canvas: 'Design', settings: 'Settings & export' }} />
       {dragging && (
         <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand">
           Drop an SVG or picture to add it to the cookie
@@ -453,6 +457,7 @@ function designName() {
 }
 
 function RightPanel() {
+  const pane = useMakerPane((s) => s.pane);
   const result = useCookie((s) => s.result);
   const error = useCookie((s) => s.error);
   const building = useCookie((s) => s.building);
@@ -467,7 +472,7 @@ function RightPanel() {
   };
   return (
     <aside
-      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px]"
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Cookie settings and result"
       data-testid="cookie-right"
     >

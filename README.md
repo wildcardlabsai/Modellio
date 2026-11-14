@@ -151,19 +151,57 @@ Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 * **Smoother dragging:** selection outlines, guides and edges no longer recompile their shaders on every mouse move
   (`src/viewport/FastLine.tsx`); drags and resizes update once per frame.
 
-## Landing page and studios
+## MODELLIO 2.0 ✅
 
-`/` is the landing page: product overview, the live studios, the coming-soon studios (Sign Generator,
-Organiser Generator, Box & Lid Maker, Lithophane Studio), features, templates and FAQ.
+Work on branch `modellio-2-development`; the audit and plan are in [`docs/MODELLIO-2-AUDIT.md`](docs/MODELLIO-2-AUDIT.md).
+
+* **Platform:** navy / violet / electric-blue design system (`src/styles/index.css`, `src/components/ui/platform.tsx`),
+  new landing page, dashboard with real recent projects (open, duplicate, delete), privacy page.
+* **Projects:** every maker can *Save project*; projects remember their workspace and maker settings (project file v2,
+  older files migrate) and reopen in the maker from the dashboard. *Open in Design Studio* copies real meshes.
+* **Makers:** shared header (undo/redo, save, help); new **Key Tag Maker** (numbered batches, one multi-tag 3MF) and
+  **Sign Maker** (plaque shapes, multi-line text, screw / keyhole mounting, desk stand). On phones each maker shows one
+  pane at a time behind a bottom tab bar.
+* **Design Studio:** perspective / orthographic toggle, isometric view, fit all / focus selected; a clickable History
+  timeline; GLB export and GLB/glTF import; involute **Gear** primitive; **Box & Lid** generator; mesh tools (repair,
+  smooth, subdivide, simplify, open-edge report); text letter/line spacing and alignment.
+* **Sketch:** draw lines, rectangles, circles, arcs and polygons (with construction geometry), type dimensions and add
+  constraints (horizontal, vertical, length, diameter, coincident, parallel, perpendicular, equal, fixed point, X/Y) —
+  solved live with an under / fully / over-constrained or conflicting status — then extrude or revolve. The solid stays
+  editable: *Edit sketch* reopens it and changes rebuild it (`src/cad/sketch`, `src/components/sketch`).
+* **AI Design Assistant** (Studio → Assistant): describe a part or a change; Claude returns a plan of ordinary editor
+  commands (JSON-schema constrained, `src/ai/plan.ts`), validated on the server and again in the browser, previewed
+  step by step, and applied as a single undo step. No code is ever generated or run. See *AI assistant* below.
+
+Not built yet (shown as *Coming soon* or not shown): Lithophane and Thread tools, sketch offset / trim / splines,
+a full feature tree (sweep, loft, fillet history), STEP, assemblies with joints.
+
+## AI assistant
+
+The assistant runs in a Vercel serverless function (`api/assistant.ts`) so the API key never reaches the browser.
+
+1. In the Vercel project settings add `ANTHROPIC_API_KEY` (server environment variable, not `VITE_…`).
+2. Redeploy. The Studio's Assistant panel checks `GET /api/assistant`; without a key it says the assistant is not set
+   up and everything else keeps working.
+3. Local development: put `ANTHROPIC_API_KEY=…` in `.env.local` (git-ignored); `npm run dev` serves the same handler.
+
+Requests carry the prompt and a summary of the top-level objects (ids, names, sizes, positions). Each deployment
+instance allows 20 requests per IP per 10 minutes; put the route behind sign-in before promoting it widely.
+
+## Landing page and studios
 
 | URL | Opens |
 | --- | --- |
 | `/` | Landing page |
+| `/?studio=dashboard` | Dashboard: entry points, makers, recent projects |
 | `/?studio=design` | Design Studio (the editor). Share links (`#share=…`) open here too |
 | `/?studio=split` | Split Studio |
 | `/?studio=cookie` | Cookie Cutter & Stamp Maker |
-| `/?studio=vase` | Vase Maker |
+| `/?studio=vase` | Vase & Planter Maker |
 | `/?studio=keyring` | Keyring & Name Tag Maker |
+| `/?studio=keytag` | Key Tag Maker |
+| `/?studio=sign` | Sign Maker |
+| `/?studio=privacy` | Privacy |
 
 The landing screenshots are real captures of the app: `node scripts/render-landing-images.mjs` (against `vite preview`).
 
@@ -262,4 +300,4 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the technical design.
 
 ## Tech stack
 
-React 19 · TypeScript · Vite · Three.js · React Three Fiber · drei · Manifold (WASM) · opentype.js · fflate · Zustand + Immer · Tailwind CSS v4 · Lucide · Supabase (optional) · Vitest · Playwright · axe-core · ESLint · Prettier
+React 19 · TypeScript · Vite · Three.js · React Three Fiber · drei · Manifold (WASM) · opentype.js · fflate · Zustand + Immer · Tailwind CSS v4 · Lucide · Supabase (optional) · Anthropic SDK (server only, AI assistant) · Vitest · Playwright · axe-core · ESLint · Prettier
