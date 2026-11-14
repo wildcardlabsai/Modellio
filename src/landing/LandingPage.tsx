@@ -4,11 +4,8 @@ import {
   Boxes,
   ChevronLeft,
   ChevronRight,
-  GraduationCap,
   Menu,
   PlayCircle,
-  Printer,
-  Sparkles,
   Users,
   X,
   Check,
@@ -18,15 +15,16 @@ import {
   Package,
   FlipVertical2,
   ScanSearch,
-  Sun,
-  Wrench,
   Spline,
   Layers3,
   FileBox,
+  Zap,
+  Layers,
+  Box,
 } from 'lucide-react';
 import { useProjects } from '@/store/projectStore';
 import { MAKER_ENTRIES, TOOL_ENTRIES } from '@/platform/catalog';
-import { SectionHeading, StudioLink, buttonClass } from '@/components/ui/platform';
+import { StudioLink, buttonClass } from '@/components/ui/platform';
 import { AccountButton } from '@/components/layout/AccountButton';
 import { cloudConfigured } from '@/cad/serialization/supabaseRepository';
 import { FAQ } from './content';
@@ -41,8 +39,6 @@ const TOOL_ICONS: Record<string, typeof Type> = {
   fillet: Spline,
   loft: Layers3,
   step: FileBox,
-  lithophane: Sun,
-  thread: Wrench,
 };
 
 /** Open the Design Studio on its template gallery. */
@@ -112,40 +108,42 @@ function NavItem({ item, onDone, className }: { item: (typeof NAV)[number]; onDo
 function Header() {
   const [open, setOpen] = useState(false);
   return (
-    <header id="top" className="sticky top-0 z-30 border-b border-white/5 bg-night-950/75 px-4 backdrop-blur-xl sm:px-6">
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-6">
+    <header id="top" className="sticky top-0 z-30 border-b border-white/5 bg-night-950/80 px-4 backdrop-blur-xl sm:px-6">
+      <div className="mx-auto flex h-[68px] max-w-7xl items-center gap-6">
         <a href="/" aria-label="Modellio home" className="flex shrink-0 items-center">
-          <img src="/logo-light.png" alt="modellio" className="h-[26px] w-auto" draggable={false} />
+          <img src="/logo-light.png" alt="modellio" className="h-[28px] w-auto" draggable={false} />
         </a>
-        <nav className="hidden flex-1 items-center gap-1 lg:flex" aria-label="Main">
-          {NAV.map((n) => (
+        <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex" aria-label="Main">
+          {NAV.map((n, i) => (
             <NavItem
               key={n.label}
               item={n}
-              className="rounded-lg px-3 py-2 text-[14px] font-medium text-haze transition-colors hover:bg-white/5 hover:text-white"
+              className={`rounded-full px-4 py-2 text-[15px] font-medium transition-colors ${
+                i === 0 ? 'bg-violet/15 text-white ring-1 ring-inset ring-violet-400/40' : 'text-haze hover:bg-white/5 hover:text-white'
+              }`}
             />
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 lg:ml-0">
           {cloudConfigured() && (
             <span className="hidden sm:block">
               <AccountButton />
             </span>
           )}
           <span className="hidden sm:block">
-            <StudioLink to="dashboard" className={buttonClass('primary', 'sm')} testId="get-started">
+            <StudioLink to="dashboard" className={buttonClass('primary', 'md')} testId="get-started">
               Get Started Free
             </StudioLink>
           </span>
           <button
             type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-fog hover:bg-white/10 lg:hidden"
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-fog hover:bg-white/10 lg:hidden"
             aria-label={open ? 'Close menu' : 'Open menu'}
             aria-expanded={open}
             aria-controls="mobile-menu"
             onClick={() => setOpen((v) => !v)}
           >
-            {open ? <X size={22} /> : <Menu size={22} />}
+            {open ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
       </div>
@@ -161,7 +159,7 @@ function Header() {
               key={n.label}
               item={n}
               onDone={() => setOpen(false)}
-              className="block rounded-lg px-3 py-3 text-[16px] font-medium text-fog hover:bg-white/5"
+              className="block rounded-xl px-3 py-3 text-[17px] font-medium text-fog hover:bg-white/5"
             />
           ))}
           <StudioLink to="dashboard" className={buttonClass('primary', 'md', 'mt-3 w-full')}>
@@ -173,30 +171,24 @@ function Header() {
   );
 }
 
-const HERO_VISUALS = [
-  { src: '/landing/hero-keyring.webp', alt: 'A personalised two-colour keyring', label: 'Keyring', className: 'col-start-1 row-start-1' },
-  { src: '/landing/hero-vase.webp', alt: 'A twisted sculptural vase', label: 'Vase', className: 'col-start-2 row-span-2 row-start-1' },
-  { src: '/landing/hero-sign.webp', alt: 'A custom house-number sign', label: 'Sign', className: 'col-start-1 row-start-2' },
-  { src: '/landing/hero-planter.webp', alt: 'A ribbed planter with a saucer', label: 'Planter', className: 'col-span-2 row-start-3' },
-];
-
 function Hero({ onOverview }: { onOverview: () => void }) {
   return (
-    <section className="relative px-4 pb-20 pt-14 sm:px-6 lg:pb-28 lg:pt-20" aria-labelledby="hero-title">
-      <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
-        <div>
-          <p className="inline-flex items-center gap-2 rounded-pill border border-violet-400/30 bg-violet/10 px-3.5 py-1.5 text-[13px] font-medium text-violet-300">
-            <Sparkles size={14} aria-hidden /> Design · Create · Customise · 3D Print
+    <section className="relative px-4 pb-8 pt-8 sm:px-6 lg:pb-12 lg:pt-10" aria-labelledby="hero-title">
+      <div className="mx-auto grid max-w-7xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-6">
+        <div className="relative z-10">
+          <p className="text-[15px] font-semibold tracking-wide text-violet-300 sm:text-[16px]">
+            Design <span className="text-violet-400/70">•</span> Create <span className="text-violet-400/70">•</span> Customise{' '}
+            <span className="text-violet-400/70">•</span> 3D Print
           </p>
-          <h1 id="hero-title" className="mt-6">
-            <span className="text-gradient block text-[56px] font-extrabold leading-none tracking-tight sm:text-[76px] lg:text-[88px]">
+          <h1 id="hero-title" className="mt-4">
+            <span className="block text-[54px] font-extrabold leading-[0.95] tracking-tight text-white sm:text-[76px] lg:text-[88px]">
               MODELLIO
             </span>
-            <span className="mt-4 block text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[38px]">
+            <span className="mt-3 block text-[30px] font-bold leading-[1.1] tracking-tight text-white sm:text-[40px] lg:text-[44px]">
               The Complete 3D Creation Platform
             </span>
           </h1>
-          <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-haze sm:text-[18px]">
+          <p className="mt-5 max-w-[34rem] text-[17px] leading-relaxed text-haze sm:text-[18px]">
             Create, customise and design amazing 3D models with powerful makers, a full design studio and professional tools — all in your
             browser.
           </p>
@@ -204,106 +196,129 @@ function Hero({ onOverview }: { onOverview: () => void }) {
             <StudioLink to="dashboard" className={buttonClass('primary', 'lg')} testId="hero-get-started">
               Get Started Free <ArrowRight size={18} />
             </StudioLink>
-            <button type="button" onClick={onOverview} className={buttonClass('secondary', 'lg')}>
+            <button
+              type="button"
+              onClick={onOverview}
+              className="inline-flex h-12 items-center gap-2 rounded-xl border border-violet-400/60 px-5 text-[16px] font-semibold text-white transition-colors hover:border-violet-300 hover:bg-violet/10"
+            >
               <PlayCircle size={19} /> Watch Overview
             </button>
           </div>
           <p className="mt-5 text-[13px] text-mist">Free · No install · No account needed</p>
         </div>
-        <div className="relative grid grid-cols-2 grid-rows-[repeat(3,minmax(0,auto))] gap-4 overflow-visible" data-testid="hero-visuals">
+        <div className="relative" data-testid="hero-visuals">
           <div
-            className="pointer-events-none absolute -inset-4 -z-10 rounded-[3rem] sm:-inset-8 bg-[radial-gradient(closest-side,rgb(124_58_237/0.28),transparent)]"
+            className="pointer-events-none absolute inset-x-[-10%] inset-y-[-25%] -z-0 bg-[radial-gradient(closest-side,rgb(124_58_237/0.35),rgb(59_130_246/0.12)_55%,transparent)]"
             aria-hidden
           />
-          {HERO_VISUALS.map((v, i) => (
-            <figure key={v.label} className={`card-night flex items-center justify-center overflow-hidden p-3 ${v.className}`}>
-              <img
-                src={v.src}
-                alt={v.alt}
-                className="float-slow max-h-[260px] w-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,0.45)]"
-                style={{ animationDelay: `${i * -1.7}s` }}
-                draggable={false}
-              />
-            </figure>
-          ))}
+          <img
+            src="/landing/art/modellio-hero-products.webp"
+            alt="Things you can make with MODELLIO: a name keyring, a planter, a welcome sign and a twisted vase"
+            width={1600}
+            height={863}
+            className="relative w-full object-contain drop-shadow-[0_30px_40px_rgba(0,0,0,0.5)]"
+            draggable={false}
+          />
         </div>
       </div>
     </section>
   );
 }
 
+/** A gentle tint behind each maker's product, as in the design. */
+const MAKER_TINT: Record<string, string> = {
+  keyring: 'from-violet-600/30',
+  keytag: 'from-electric/20',
+  sign: 'from-amber-600/20',
+  vase: 'from-emerald-500/15',
+  split: 'from-fuchsia-500/20',
+  cookie: 'from-pink-500/20',
+};
+
 function MakersSection() {
   return (
-    <section id="makers" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="makers-title">
+    <section id="makers" className="scroll-mt-20 px-4 py-10 sm:px-6 lg:py-14" aria-labelledby="makers-title">
       <div className="mx-auto max-w-7xl">
-        <SectionHeading
-          id="makers-title"
-          eyebrow="Makers"
-          title="Specialist Makers"
-          intro="Create ready-to-print models in minutes with our dedicated makers."
-        />
-        <ul className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 id="makers-title" className="text-[32px] font-bold leading-tight tracking-tight text-white sm:text-[40px]">
+              Specialist Makers
+            </h2>
+            <p className="mt-2 max-w-md text-[17px] leading-relaxed text-haze">
+              Create ready-to-print models in minutes with our dedicated makers.
+            </p>
+          </div>
+          <StudioLink
+            to="dashboard"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-violet-400/60 px-4 text-[15px] font-semibold text-white hover:bg-violet/10"
+          >
+            Explore All Makers <ArrowRight size={16} />
+          </StudioLink>
+        </div>
+        <ul className="mt-8 grid gap-5 min-[560px]:grid-cols-2 lg:grid-cols-3" data-testid="maker-grid">
           {MAKER_ENTRIES.map((m) => (
             <li key={m.id}>
               <StudioLink
                 to={m.studio}
-                className="card-night card-night-hover group flex h-full flex-col overflow-hidden"
+                className="group relative flex h-full flex-col overflow-hidden rounded-[1.25rem] border border-white/10 bg-night-850/80 transition duration-200 hover:-translate-y-1 hover:border-violet-400/50 hover:shadow-[0_18px_50px_-12px_rgb(124_58_237/0.45)]"
                 testId={`studio-card-${m.id}`}
                 label={`Open ${m.name}`}
               >
-                <div className="flex h-48 items-center justify-center bg-[radial-gradient(closest-side,rgb(59_130_246/0.16),transparent)] p-4">
+                <div className={`relative aspect-[16/9] bg-gradient-to-b ${MAKER_TINT[m.id] ?? 'from-violet-600/20'} to-transparent`}>
+                  {/* Absolutely placed so every card's image area is the same size, whatever the picture's shape. */}
                   <img
-                    src={m.image}
+                    src={m.art ?? m.image}
                     alt=""
-                    className="max-h-full w-auto object-contain drop-shadow-[0_14px_24px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:scale-[1.04]"
+                    className="absolute inset-0 h-full w-full object-contain px-6 pb-1 pt-5 drop-shadow-[0_16px_24px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:scale-[1.04]"
                     draggable={false}
+                    data-testid="maker-art"
                   />
                 </div>
-                <div className="flex flex-1 flex-col p-5 pt-2">
+                <div className="flex flex-1 flex-col items-center px-5 pb-5 pt-3 text-center">
                   <h3 className="text-[19px] font-semibold text-white">{m.name}</h3>
                   <p className="mt-1.5 flex-1 text-[14px] leading-relaxed text-haze">{m.line}</p>
-                  <span className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-semibold text-violet-300 group-hover:text-white">
-                    Open maker <ArrowRight size={15} />
+                  <span
+                    className="mt-4 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-electric text-white shadow-[0_6px_18px_-4px_rgb(124_58_237/0.7)] transition-transform group-hover:translate-x-0.5"
+                    aria-hidden
+                  >
+                    <ArrowRight size={17} />
                   </span>
+                  <span className="sr-only">Open maker</span>
                 </div>
               </StudioLink>
             </li>
           ))}
         </ul>
-        <div className="mt-10 text-center">
-          <StudioLink to="dashboard" className={buttonClass('secondary', 'md')}>
-            Explore All Makers <ArrowRight size={16} />
-          </StudioLink>
-        </div>
       </div>
     </section>
   );
 }
 
 const STUDIO_BENEFITS = [
-  'Build from scratch or customise existing models.',
-  'Precise modelling with sketch, extrude and more.',
-  'Edit, combine and refine with advanced tools.',
-  'Prepare and export models for 3D printing.',
+  'Build from scratch or customise existing models',
+  'Precise modelling with sketch, extrude, fillet and loft',
+  'Edit, combine and refine with advanced tools',
+  'Prepare and export models for 3D printing',
 ];
 
 function StudioSection() {
   return (
-    <section id="design-studio" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="studio-title">
-      <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.9fr_1.4fr]">
+    <section id="design-studio" className="scroll-mt-20 px-4 py-10 sm:px-6 lg:py-14" aria-labelledby="studio-title">
+      <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.85fr_1.25fr] lg:gap-14">
         <div>
-          <p className="text-[13px] font-semibold uppercase tracking-[0.18em] text-violet-300">Design Studio</p>
-          <h2 id="studio-title" className="mt-2 text-[32px] font-bold leading-tight tracking-tight text-white sm:text-[40px]">
-            The MODELLIO Design Studio
+          <h2 id="studio-title" className="text-[34px] font-bold leading-[1.1] tracking-tight text-white sm:text-[44px]">
+            The MODELLIO
+            <br />
+            Design Studio
           </h2>
-          <p className="mt-3 text-[17px] leading-relaxed text-haze">
+          <p className="mt-4 text-[18px] leading-relaxed text-haze">
             A powerful, flexible 3D modelling environment for anything you can imagine.
           </p>
-          <ul className="mt-6 space-y-3">
+          <ul className="mt-6 space-y-3.5">
             {STUDIO_BENEFITS.map((b) => (
-              <li key={b} className="flex gap-3 text-[15px] text-fog">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-electric/20 text-electric-300">
-                  <Check size={13} aria-hidden />
+              <li key={b} className="flex gap-3 text-[16px] text-fog">
+                <span className="mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-violet-600 text-white">
+                  <Check size={14} strokeWidth={3} aria-hidden />
                 </span>
                 {b}
               </li>
@@ -313,58 +328,61 @@ function StudioSection() {
             Open Design Studio <ArrowRight size={18} />
           </StudioLink>
         </div>
-        <figure className="card-night overflow-hidden p-2" data-testid="studio-card-design">
-          <img
-            src="/landing/design-studio.jpg"
-            alt="The MODELLIO Design Studio with a model, the shape library and the inspector"
-            className="w-full rounded-[0.9rem]"
+        <figure className="relative" data-testid="studio-card-design">
+          <div
+            className="pointer-events-none absolute inset-[-12%] bg-[radial-gradient(closest-side,rgb(124_58_237/0.28),transparent)]"
+            aria-hidden
           />
+          {/* A laptop frame around a real screenshot of the Design Studio. */}
+          <div className="relative rounded-[1.4rem] border border-white/15 bg-[#0b0f1d] p-[2.2%] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.8)]">
+            <img
+              src="/landing/design-studio-2026.jpg"
+              alt="The MODELLIO Design Studio with a gear selected, the shape library and the inspector"
+              width={1600}
+              height={1000}
+              className="w-full rounded-[0.6rem]"
+            />
+          </div>
+          <div className="relative mx-[-4%] h-3 rounded-b-[1.2rem] bg-gradient-to-b from-[#c7cbd6] to-[#7c8294]" aria-hidden />
         </figure>
       </div>
     </section>
   );
 }
 
+const LIVE_TOOLS = TOOL_ENTRIES.filter((t) => t.studio);
+
 function ToolsSection() {
   return (
-    <section id="tools" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="tools-title">
+    <section id="tools" className="scroll-mt-20 px-4 py-10 sm:px-6 lg:py-14" aria-labelledby="tools-title">
       <div className="mx-auto max-w-7xl">
-        <SectionHeading
-          id="tools-title"
-          eyebrow="Tools"
-          title="Powerful Design Tools"
-          intro="Focused tools inside the Design Studio for the jobs that come up again and again."
-        />
-        <ul className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {TOOL_ENTRIES.map((t) => {
+        <div>
+          <h2 id="tools-title" className="text-[32px] font-bold leading-tight tracking-tight text-white sm:text-[40px]">
+            Powerful Design Tools
+          </h2>
+          <p className="mt-2 text-[17px] leading-relaxed text-haze">
+            Specialised tools inside the Design Studio to take your ideas further.
+          </p>
+        </div>
+        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {LIVE_TOOLS.map((t) => {
             const Icon = TOOL_ICONS[t.id] ?? Boxes;
-            const body = (
-              <>
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet/25 to-electric/25 text-violet-300">
-                  <Icon size={21} aria-hidden />
-                </span>
-                <h3 className="mt-4 text-[16px] font-semibold text-white">{t.name}</h3>
-                <p className="mt-1 flex-1 text-[14px] leading-relaxed text-haze">{t.line}</p>
-                <span className={`mt-4 text-[12px] font-medium ${t.studio ? 'text-electric-300' : 'text-mist'}`}>
-                  {t.studio ? t.where : 'Coming soon'}
-                </span>
-              </>
-            );
             return (
-              <li key={t.id} data-testid={t.studio ? `tool-${t.id}` : `soon-card-${t.id}`}>
-                {t.studio ? (
-                  <StudioLink
-                    to={t.studio}
-                    className="card-night card-night-hover flex h-full flex-col p-5"
-                    label={`${t.name}: ${t.where}`}
-                  >
-                    {body}
-                  </StudioLink>
-                ) : (
-                  <div className="card-night flex h-full flex-col p-5 opacity-70" aria-disabled="true">
-                    {body}
-                  </div>
-                )}
+              <li key={t.id} data-testid={`tool-${t.id}`}>
+                <StudioLink
+                  to={t.studio!}
+                  className="group flex h-full gap-4 rounded-2xl border border-white/10 bg-night-850/70 p-5 transition hover:border-violet-400/50 hover:bg-night-800"
+                  label={`${t.name}: ${t.where}`}
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-violet-400/30 bg-violet-600/15 text-violet-300 group-hover:text-white">
+                    <Icon size={24} aria-hidden />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-[17px] font-semibold text-white">{t.name}</span>
+                    <span className="mt-1 text-[14px] leading-relaxed text-haze">{t.line}</span>
+                    <span className="mt-2 text-[12px] font-medium text-electric-300">{t.where}</span>
+                  </span>
+                </StudioLink>
               </li>
             );
           })}
@@ -375,39 +393,27 @@ function ToolsSection() {
 }
 
 const WHY = [
-  {
-    Icon: Boxes,
-    title: 'All in One Platform',
-    text: 'Makers, a full design studio and print tools share one project system, so nothing gets stuck in one place.',
-  },
-  {
-    Icon: GraduationCap,
-    title: 'Beginner Friendly',
-    text: 'Start from a template or a maker; every size is a number you can type, and every change can be undone.',
-  },
-  {
-    Icon: Printer,
-    title: 'Designed for 3D Printing',
-    text: 'Closed solids, real millimetres, print checks, colours kept in 3MF, and parts laid out for your plate.',
-  },
-  {
-    Icon: Users,
-    title: 'For Everyone',
-    text: 'Gifts and keyrings, signs and planters, enclosures and replacement parts — from your first print onwards.',
-  },
+  { Icon: Zap, title: 'All in One Platform', text: 'Makers, a design studio and print tools in one place, sharing one project system.' },
+  { Icon: Layers, title: 'Beginner Friendly', text: 'Start from a template or a maker; type any size, undo any change.' },
+  { Icon: Box, title: 'Designed for 3D Printing', text: 'Closed solids in real millimetres, print checks, and colours kept in 3MF.' },
+  { Icon: Users, title: 'For Everyone', text: 'From first keyrings to enclosures and replacement parts.' },
 ];
 
 function WhySection() {
   return (
-    <section id="why" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="why-title">
+    <section id="why" className="scroll-mt-20 px-4 py-10 sm:px-6 lg:py-14" aria-labelledby="why-title">
       <div className="mx-auto max-w-7xl">
-        <SectionHeading id="why-title" title="Why Choose MODELLIO?" />
-        <ul className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {WHY.map(({ Icon, title, text }) => (
-            <li key={title} className="card-night p-6">
-              <Icon size={26} className="text-electric-400" aria-hidden />
-              <h3 className="mt-4 text-[17px] font-semibold text-white">{title}</h3>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-haze">{text}</p>
+        <h2 id="why-title" className="text-[32px] font-bold leading-tight tracking-tight text-white sm:text-[40px]">
+          Why Choose MODELLIO?
+        </h2>
+        <ul className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-0">
+          {WHY.map(({ Icon, title, text }, i) => (
+            <li key={title} className={`flex gap-4 ${i ? 'lg:border-l lg:border-white/10 lg:pl-6' : ''} lg:pr-6`}>
+              <Icon size={34} strokeWidth={1.6} className="shrink-0 text-violet-400" aria-hidden />
+              <div>
+                <h3 className="text-[17px] font-semibold text-white">{title}</h3>
+                <p className="mt-1 text-[14px] leading-relaxed text-haze">{text}</p>
+              </div>
             </li>
           ))}
         </ul>
@@ -418,36 +424,36 @@ function WhySection() {
 
 function PricingSection() {
   return (
-    <section id="pricing" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="pricing-title">
-      <div className="mx-auto max-w-3xl">
-        <SectionHeading
-          id="pricing-title"
-          eyebrow="Pricing"
-          title="Free while we build"
-          intro="Every maker and tool on this page is free to use. No install, no card, no account needed."
-        />
-        <div className="card-night mt-10 p-7 sm:p-9">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-[15px] font-semibold text-violet-300">Free</p>
-              <p className="mt-1 text-[44px] font-extrabold leading-none text-white">£0</p>
-            </div>
-            <StudioLink to="dashboard" className={buttonClass('primary', 'md')}>
-              Get Started Free
-            </StudioLink>
-          </div>
-          <ul className="mt-6 grid gap-2.5 sm:grid-cols-2">
+    <section id="pricing" className="scroll-mt-20 px-4 py-10 sm:px-6 lg:py-12" aria-labelledby="pricing-title">
+      <div className="mx-auto grid max-w-7xl items-center gap-8 rounded-[1.5rem] border border-white/10 bg-night-850/60 p-7 sm:p-10 lg:grid-cols-[1fr_1.2fr]">
+        <div>
+          <p className="text-[14px] font-semibold uppercase tracking-[0.16em] text-violet-300">Pricing</p>
+          <h2 id="pricing-title" className="mt-2 text-[30px] font-bold tracking-tight text-white sm:text-[36px]">
+            Free while we build
+          </h2>
+          <p className="mt-2 text-[16px] leading-relaxed text-haze">
+            Every maker and tool on this page is free to use. No install, no card, no account needed.
+          </p>
+        </div>
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <ul className="grid gap-2.5">
             {[
               'All makers and the Design Studio',
-              'STL, OBJ and 3MF export',
+              'STL, OBJ, 3MF and STEP export',
               'Projects saved in your browser',
               'Version history and share links',
             ].map((f) => (
-              <li key={f} className="flex gap-2.5 text-[14px] text-fog">
-                <Check size={16} className="mt-0.5 shrink-0 text-electric-400" aria-hidden /> {f}
+              <li key={f} className="flex gap-2.5 text-[15px] text-fog">
+                <Check size={17} className="mt-0.5 shrink-0 text-violet-400" aria-hidden /> {f}
               </li>
             ))}
           </ul>
+          <div className="shrink-0 text-left sm:text-right">
+            <p className="text-[44px] font-extrabold leading-none text-white">£0</p>
+            <StudioLink to="dashboard" className={buttonClass('primary', 'md', 'mt-3')}>
+              Get Started Free
+            </StudioLink>
+          </div>
         </div>
       </div>
     </section>
@@ -456,12 +462,17 @@ function PricingSection() {
 
 function FaqSection() {
   return (
-    <section id="faq" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="faq-title">
-      <div className="mx-auto max-w-3xl">
-        <SectionHeading id="faq-title" title="Questions" />
-        <div className="mt-10 space-y-3">
+    <section id="faq" className="scroll-mt-20 px-4 py-10 sm:px-6 lg:py-12" aria-labelledby="faq-title">
+      <div className="mx-auto max-w-7xl">
+        <h2 id="faq-title" className="text-center text-[30px] font-bold tracking-tight text-white sm:text-[36px]">
+          Questions
+        </h2>
+        <div className="mt-8 grid items-start gap-3 lg:grid-cols-2">
           {FAQ.map((f) => (
-            <details key={f.q} className="card-night group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+            <details
+              key={f.q}
+              className="group rounded-2xl border border-white/10 bg-night-850/60 px-5 py-4 [&_summary::-webkit-details-marker]:hidden"
+            >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[16px] font-semibold text-white">
                 {f.q}
                 <ChevronRight size={18} className="shrink-0 text-violet-300 transition-transform group-open:rotate-90" aria-hidden />
@@ -477,17 +488,22 @@ function FaqSection() {
 
 function FinalCta() {
   return (
-    <section className="px-4 py-20 sm:px-6" aria-labelledby="cta-title">
-      <div className="card-night mx-auto max-w-5xl overflow-hidden px-6 py-14 text-center sm:px-12">
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(40rem_16rem_at_50%_0%,rgb(124_58_237/0.25),transparent)]"
-          aria-hidden
-        />
-        <h2 id="cta-title" className="relative text-[30px] font-bold tracking-tight text-white sm:text-[40px]">
-          Ready to bring your ideas to life?
-        </h2>
-        <p className="relative mt-3 text-[17px] text-haze">Join MODELLIO today and start creating in 3D — for free.</p>
-        <StudioLink to="dashboard" className={buttonClass('primary', 'lg', 'relative mt-8')}>
+    <section className="px-4 py-10 sm:px-6 lg:py-12" aria-labelledby="cta-title">
+      <div className="relative mx-auto flex max-w-7xl flex-col items-center gap-6 overflow-hidden rounded-[1.5rem] border border-violet-300/30 bg-gradient-to-r from-violet-700 via-violet-600 to-electric px-6 py-10 text-center shadow-[0_30px_80px_-30px_rgb(124_58_237/0.8)] sm:px-10 md:flex-row md:text-left">
+        <span className="hidden h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-white/10 md:flex" aria-hidden>
+          <Box size={44} strokeWidth={1.5} className="text-white" />
+        </span>
+        <span className="hidden h-16 w-px bg-white/25 md:block" aria-hidden />
+        <div className="flex-1">
+          <h2 id="cta-title" className="text-[28px] font-bold tracking-tight text-white sm:text-[34px]">
+            Ready to bring your ideas to life?
+          </h2>
+          <p className="mt-1.5 text-[17px] text-white/85">Join MODELLIO today and start creating in 3D — for free.</p>
+        </div>
+        <StudioLink
+          to="dashboard"
+          className="inline-flex h-12 shrink-0 items-center gap-2 rounded-xl bg-white px-6 text-[16px] font-semibold text-violet-700 shadow-lg transition hover:bg-violet-50"
+        >
           Get Started Free <ArrowRight size={18} />
         </StudioLink>
       </div>
@@ -506,7 +522,7 @@ function FooterLink({
   studio?: 'design' | 'dashboard' | 'privacy' | 'licences';
   before?: () => void;
 }) {
-  const cls = 'text-[14px] text-haze hover:text-white';
+  const cls = 'text-[15px] text-haze hover:text-white';
   return studio ? (
     <StudioLink to={studio} className={cls} before={before}>
       {children}
@@ -520,16 +536,14 @@ function FooterLink({
 
 function Footer() {
   return (
-    <footer className="border-t border-white/5 px-4 pb-10 pt-14 sm:px-6">
-      <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+    <footer className="border-t border-white/10 px-4 pb-10 pt-12 sm:px-6">
+      <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
         <div>
-          <img src="/logo-light.png" alt="modellio" className="h-[24px] w-auto" />
-          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-mist">
-            Everything you need to create in 3D, from your first keyring to your next engineered product.
-          </p>
+          <img src="/logo-light.png" alt="modellio" className="h-[26px] w-auto" />
+          <p className="mt-3 text-[15px] text-haze">The Complete 3D Creation Platform</p>
         </div>
         <nav aria-label="Product">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fog">Product</h2>
+          <h2 className="text-[15px] font-semibold text-white">Product</h2>
           <ul className="mt-3 space-y-2">
             <li>
               <FooterLink href="#makers">Makers</FooterLink>
@@ -546,7 +560,7 @@ function Footer() {
           </ul>
         </nav>
         <nav aria-label="Resources">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fog">Resources</h2>
+          <h2 className="text-[15px] font-semibold text-white">Resources</h2>
           <ul className="mt-3 space-y-2">
             <li>
               <FooterLink studio="design" before={openTemplates}>
@@ -562,13 +576,15 @@ function Footer() {
           </ul>
         </nav>
         <nav aria-label="Company">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fog">Company</h2>
+          <h2 className="text-[15px] font-semibold text-white">Company</h2>
           <ul className="mt-3 space-y-2">
             <li>
               <FooterLink href="#why">About</FooterLink>
             </li>
             <li>
               <FooterLink studio="privacy">Privacy Policy</FooterLink>
+            </li>
+            <li>
               <FooterLink studio="licences">Open-source licences</FooterLink>
             </li>
           </ul>

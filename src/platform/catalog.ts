@@ -11,8 +11,10 @@ export interface MakerEntry {
   line: string;
   description: string;
   studio: StudioId;
-  /** Product render on a transparent background (`scripts/render-landing-images.mjs`). */
+  /** Product render on a transparent background (`scripts/render-landing-images.mjs`); used by the dashboard. */
   image: string;
+  /** Landing-page product art (transparent WebP, `scripts/prepare-landing-art.py`); falls back to `image`. */
+  art?: string;
   facts: string[];
 }
 
@@ -25,6 +27,7 @@ export const MAKER_ENTRIES: MakerEntry[] = [
       'Type a name, drop in shapes or your logo and arrange them on a canvas. Raised, engraved or flush lettering, a reinforced ring, and a back side too.',
     studio: 'keyring',
     image: '/landing/maker-keyring.webp',
+    art: '/landing/art/maker-keyring.webp',
     facts: ['28 templates', 'Raised, engraved or flush', 'Two colours'],
   },
   {
@@ -35,6 +38,7 @@ export const MAKER_ENTRIES: MakerEntry[] = [
       'Pick an ID layout, set the label, and number a whole run of tags at once: prefix, start, step and padding. Every tag prints as its own object.',
     studio: 'keytag',
     image: '/landing/maker-keytag.webp',
+    art: '/landing/art/maker-keytag.webp',
     facts: ['Sequential numbering', 'Batch 3MF', 'ID layouts'],
   },
   {
@@ -45,6 +49,7 @@ export const MAKER_ENTRIES: MakerEntry[] = [
       'Several lines of text with their own sizes and fonts, raised or recessed, a border, and screw holes, keyhole slots or a desk stand that slots on.',
     studio: 'sign',
     image: '/landing/maker-sign.webp',
+    art: '/landing/art/maker-sign.webp',
     facts: ['Multi-line text', 'Screw holes or keyhole slots', 'Desk stand'],
   },
   {
@@ -55,6 +60,7 @@ export const MAKER_ENTRIES: MakerEntry[] = [
       'Shape the side profile, choose a cross-section, twist it and add ribs, waves or texture. Planters get drainage holes and a saucer.',
     studio: 'vase',
     image: '/landing/maker-vase.webp',
+    art: '/landing/art/maker-vase-planter.webp',
     facts: ['32 templates', 'Twist and 7 patterns', 'Capacity shown'],
   },
   {
@@ -65,6 +71,7 @@ export const MAKER_ENTRIES: MakerEntry[] = [
       'Separates every colour, including painted areas, into closed parts, adds pegs and sockets so they line up, and lays them out on plates.',
     studio: 'split',
     image: '/landing/maker-split.webp',
+    art: '/landing/art/maker-split-studio.webp',
     facts: ['Reads slicer colours', 'Pegs and sockets', 'Plates per colour'],
   },
   {

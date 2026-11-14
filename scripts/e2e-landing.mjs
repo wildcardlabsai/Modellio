@@ -35,7 +35,7 @@ check(
   '2. Hero: MODELLIO, the headline, the label and both calls to action',
   h1.includes('MODELLIO') &&
     h1.includes('The Complete 3D Creation Platform') &&
-    (await page.getByText('Design · Create · Customise · 3D Print').isVisible()) &&
+    (await page.getByText('Design • Create • Customise • 3D Print').isVisible()) &&
     (await page.getByTestId('hero-get-started').isVisible()) &&
     (await page.getByRole('button', { name: 'Watch Overview' }).isVisible()),
   h1,
@@ -50,17 +50,28 @@ const imgs = await page
     () => true,
     () => false,
   );
-check('2b. Hero product renders (keyring, vase, sign, planter) load', imgs);
+check('2b. The hero product image loads', imgs);
+const art = await page.evaluate(async () => {
+  const imgs = [...document.querySelectorAll('[data-testid="maker-art"]')];
+  await Promise.all(imgs.map((i) => (i.complete ? null : new Promise((r) => i.addEventListener('load', r, { once: true })))));
+  return imgs.map((i) => ({ src: i.getAttribute('src'), ok: i.naturalWidth > 0, natural: i.naturalWidth / i.naturalHeight }));
+});
+check(
+  '2c. Each maker card shows its own product image (five supplied images and the cookie render)',
+  art.length === 6 &&
+    art.every((a) => a.ok) &&
+    new Set(art.map((a) => a.src)).size === 6 &&
+    art.filter((a) => a.src.startsWith('/landing/art/')).length === 5,
+  art.map((a) => a.src).join(', '),
+);
 check('3. The editor is not mounted on the landing page', (await page.getByTestId('left-panel').count()) === 0);
 for (const id of ['keyring', 'keytag', 'sign', 'vase', 'split', 'cookie', 'design'])
   check(`4. Card on the page: ${id}`, await page.getByTestId(`studio-card-${id}`).isVisible());
-const soon = ['lithophane', 'thread'];
-let soonOk = true;
-for (const id of soon) {
-  const card = page.getByTestId(`soon-card-${id}`);
-  soonOk &&= (await card.isVisible()) && (await card.getByText('Coming soon').isVisible()) && (await card.getByRole('link').count()) === 0;
-}
-check('5. Tools that are not built yet are labelled Coming soon and are not links', soonOk);
+check(
+  '5. Only tools that exist are advertised (no unbuilt tools on the page)',
+  (await page.getByText('Coming soon').count()) === 0 && (await page.getByTestId('tool-lithophane').count()) === 0,
+);
+check('5a. All nine live tools are listed', (await page.locator('[data-testid^="tool-"]').count()) === 9);
 check(
   '5b. Live tools link into the Design Studio',
   (await page.getByTestId('tool-gear').getByRole('link').getAttribute('href')) === '/?studio=design',
@@ -186,6 +197,57 @@ for (const [label, vp] of [
   await p.screenshot({ path: `${OUT}/landing-02-${label}.png` });
   await c.close();
 }
+
+// Layout across widths: no overflow, sensible maker columns, undistorted images.
+for (const [w, cols] of [
+  [1440, 3],
+  [1024, 3],
+  [768, 2],
+  [430, 1],
+  [390, 1],
+]) {
+  const c = await browser.newContext({ viewport: { width: w, height: 900 } });
+  const p = await c.newPage();
+  await p.goto(URL + '/', { waitUntil: 'networkidle' });
+  const r = await p.evaluate(async () => {
+    const el = document.querySelector('[data-testid="landing"]');
+    for (let y = 0; y < el.scrollHeight; y += 600) {
+      el.scrollTop = y;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    const imgs = [
+      ...document.querySelectorAll('[data-testid="maker-art"], [data-testid="hero-visuals"] img, [data-testid="studio-card-design"] img'),
+    ];
+    await Promise.all(imgs.map((i) => (i.complete ? null : new Promise((res) => i.addEventListener('load', res, { once: true })))));
+    const grid = document.querySelector('[data-testid="maker-grid"]');
+    const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+    // object-contain: the drawn picture keeps its ratio; for plain images the box must match.
+    const distorted = imgs.filter((i) => {
+      const fit = getComputedStyle(i).objectFit;
+      if (fit === 'contain') return false;
+      const box = i.getBoundingClientRect();
+      return Math.abs(box.width / box.height - i.naturalWidth / i.naturalHeight) > 0.02;
+    }).length;
+    const overflow = el.scrollWidth > el.clientWidth || document.documentElement.scrollWidth > window.innerWidth;
+    const tiny = [...document.querySelectorAll('[data-testid="landing"] p, [data-testid="landing"] a, [data-testid="landing"] h3')].filter(
+      (n) => n.offsetParent && parseFloat(getComputedStyle(n).fontSize) < 12,
+    ).length;
+    return { cols, distorted, overflow, tiny };
+  });
+  check(
+    `23. ${w}px: no sideways scroll, ${cols}-column makers, undistorted images, no text under 12 px`,
+    !r.overflow && r.cols === cols && r.distorted === 0 && r.tiny === 0,
+    JSON.stringify(r),
+  );
+  await c.close();
+}
+const company = page.getByRole('navigation', { name: 'Company' });
+check(
+  '24. Footer: Privacy Policy and the licences are separate links on their own lines',
+  (await company.getByRole('link', { name: 'Privacy Policy' }).count()) === 1 &&
+    (await company.getByRole('link', { name: 'Open-source licences' }).count()) === 1 &&
+    (await company.locator('li').count()) === 3,
+);
 
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
