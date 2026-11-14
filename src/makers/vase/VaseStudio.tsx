@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
+import { capturePreview } from '../shell/capture';
+import { useProjects } from '@/store/projectStore';
+import { useMakerHandoff } from '@/platform/handoff';
+import { clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -13,10 +18,8 @@ import {
   Maximize,
   PencilRuler,
   Plus,
-  Redo2,
   Shuffle,
   TriangleAlert,
-  Undo2,
 } from 'lucide-react';
 import { useVase, buildFine } from './store';
 import { VASE_TEMPLATES, TEMPLATE_CATEGORIES, type TemplateCategory } from './templates';
@@ -46,6 +49,12 @@ const TYPE_LABEL: Record<BodyType, string> = { vase: 'Vase', pot: 'Plant pot', l
 export default function VaseStudio() {
   useEffect(() => {
     (window as unknown as { modellioVase: unknown }).modellioVase = { store: useVase };
+    const handed = useMakerHandoff.getState().take('vase');
+    if (handed) {
+      const st = handed.state as { params: VaseParams; templateId: string | null };
+      useVase.getState().loadSaved(st.params, st.templateId);
+      useVase.getState().setProject({ id: handed.projectId, name: handed.name });
+    }
     useVase.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -80,38 +89,68 @@ function Header() {
   const setParams = useVase((s) => s.setParams);
   const canUndo = useVase((s) => s.past.length > 0);
   const canRedo = useVase((s) => s.future.length > 0);
+  const project = useVase((s) => s.project);
   const { undo, redo, surpriseMe } = useVase.getState();
   return (
-    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-white px-3 sm:px-5">
-      <h1 className="text-[14px] font-semibold text-ink">Vase Maker</h1>
-      <div className="w-[300px]">
-        <Segmented<BodyType>
-          label="What to make"
-          value={type}
-          options={[
-            { value: 'vase', label: 'Vase' },
-            { value: 'pot', label: 'Plant pot' },
-            { value: 'lampshade', label: 'Lampshade' },
-          ]}
-          onChange={(v) => setParams({ type: v })}
-        />
-      </div>
-      <div className="flex-1" />
+    <MakerHeader
+      title="Vase & Planter Maker"
+      testId="vase"
+      canUndo={canUndo}
+      canRedo={canRedo}
+      onUndo={undo}
+      onRedo={redo}
+      help={
+        <>
+          <p className="font-semibold text-ink">Shape a vase or planter</p>
+          <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+            <li>Pick a template, Start blank, or press Surprise me.</li>
+            <li>Drag the points on the side profile; choose a cross-section, twist and pattern.</li>
+            <li>Plant pots get drainage holes and a saucer; vases can be printed in vase mode.</li>
+            <li>Check the size, capacity and overhang on the right, then Download.</li>
+          </ol>
+        </>
+      }
+      save={{
+        project,
+        suggestedName: () => {
+          const st = useVase.getState();
+          return VASE_TEMPLATES.find((t) => t.id === st.templateId)?.name ?? `My ${TYPE_LABEL[st.params.type].toLowerCase()}`;
+        },
+        run: async (name) => {
+          const st = useVase.getState();
+          const fine = await buildFine();
+          const id = await useProjects.getState().saveMakerProject({
+            id: st.project?.id,
+            name,
+            studio: 'vase',
+            schema: 1,
+            state: { params: st.params, templateId: st.templateId },
+            parts: fine.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
+            thumbnail: capturePreview(),
+          });
+          st.setProject({ id, name });
+        },
+      }}
+    >
+      <HeaderTabs<BodyType>
+        label="What to make"
+        value={type}
+        options={[
+          { value: 'vase', label: 'Vase' },
+          { value: 'pot', label: 'Plant pot' },
+          { value: 'lampshade', label: 'Lampshade' },
+        ]}
+        onChange={(v) => setParams({ type: v })}
+      />
       <button
         type="button"
         onClick={surpriseMe}
-        className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-[#344054] hover:bg-[#f2f4f7]"
+        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-haze hover:bg-white/10 hover:text-white"
         data-testid="vase-surprise"
       >
         <Dice5 size={16} /> Surprise me
       </button>
-      <IconButton label="Undo" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo}>
-        <Undo2 size={17} />
-      </IconButton>
-      <IconButton label="Redo" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={redo}>
-        <Redo2 size={17} />
-      </IconButton>
-    </div>
+    </MakerHeader>
   );
 }
 
@@ -764,17 +803,23 @@ function Preview() {
   const group = useRef<THREE.Group>(null);
   const fit = useRef<() => void>(() => {});
   return (
-    <div className="relative h-full w-full" data-testid="vase-viewport" role="region" aria-label="3D preview of the vase">
+    <div
+      className="relative h-full w-full"
+      data-testid="vase-viewport"
+      data-maker-preview
+      role="region"
+      aria-label="3D preview of the vase"
+    >
       <Canvas
         camera={{ position: [180, -260, 200], fov: 35, near: 0.5, far: 10000, up: [0, 0, 1] }}
         dpr={[1, 2]}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
-        onCreated={({ gl }) => gl.setClearColor('#f5f7fb')}
+        onCreated={({ gl }) => clearPreview(gl)}
       >
         <hemisphereLight args={['#ffffff', '#b9c2d0', 1.5]} />
         <directionalLight position={[120, -160, 260]} intensity={1.7} />
         <directionalLight position={[-160, 120, 80]} intensity={0.5} />
-        <gridHelper args={[600, 60, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />
+        {!productShot && <gridHelper args={[600, 60, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
         <group ref={group}>
           {result?.parts.map((p) => (
             <PartMesh key={`${p.id}-${p.mesh.indices.length}-${p.volume}`} part={p} />

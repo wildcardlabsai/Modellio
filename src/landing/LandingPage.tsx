@@ -1,130 +1,165 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
-import '@fontsource/space-mono/400.css';
-import { ArrowRight, ArrowUpRight, Menu, X, Plus } from 'lucide-react';
-import { useStudio, studioUrl, type StudioId } from '@/app/studio';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  ArrowRight,
+  Boxes,
+  ChevronLeft,
+  ChevronRight,
+  GraduationCap,
+  Menu,
+  PlayCircle,
+  Printer,
+  Sparkles,
+  Users,
+  X,
+  Check,
+  Type,
+  ImageUp,
+  Cog,
+  Package,
+  FlipVertical2,
+  ScanSearch,
+  Sun,
+  Wrench,
+} from 'lucide-react';
 import { useProjects } from '@/store/projectStore';
-import { TEMPLATES, type Template } from '@/templates/templates';
-import { COMING_SOON, DESIGN_STUDIO, FAQ, MAKERS, type Maker } from './content';
+import { MAKER_ENTRIES, TOOL_ENTRIES } from '@/platform/catalog';
+import { SectionHeading, StudioLink, buttonClass } from '@/components/ui/platform';
+import { AccountButton } from '@/components/layout/AccountButton';
+import { cloudConfigured } from '@/cad/serialization/supabaseRepository';
+import { FAQ } from './content';
 
-/** Navigate inside the app while keeping a real href (so links open in a new tab too). */
-function StudioLink({
-  to,
-  className,
-  children,
-  label,
-  testId,
-}: {
-  to: Exclude<StudioId, 'home'>;
-  className: string;
-  children: ReactNode;
-  label?: string;
-  testId?: string;
-}) {
+const TOOL_ICONS: Record<string, typeof Type> = {
+  text: Type,
+  svg: ImageUp,
+  gear: Cog,
+  box: Package,
+  underside: FlipVertical2,
+  print: ScanSearch,
+  lithophane: Sun,
+  thread: Wrench,
+};
+
+/** Open the Design Studio on its template gallery. */
+const openTemplates = () => useProjects.getState().setView('templates');
+
+/**
+ * The MODELLIO landing page: what it is, the specialist makers, the Design Studio, the tools
+ * that exist today, and how to start. Every link goes somewhere real.
+ */
+export function LandingPage() {
+  const [overview, setOverview] = useState(false);
   return (
-    <a
-      href={studioUrl(to)}
-      aria-label={label}
-      className={className}
-      data-testid={testId}
-      onClick={(e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        useStudio.getState().setStudio(to);
-      }}
-    >
-      {children}
-    </a>
+    <div className="bg-aurora dark-scroll h-full overflow-y-auto scroll-smooth" data-testid="landing">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-night-950"
+      >
+        Skip to content
+      </a>
+      <Header />
+      <main id="main" className="overflow-x-clip">
+        <Hero onOverview={() => setOverview(true)} />
+        <MakersSection />
+        <StudioSection />
+        <ToolsSection />
+        <WhySection />
+        <PricingSection />
+        <FaqSection />
+        <FinalCta />
+      </main>
+      <Footer />
+      {overview && <OverviewDialog onClose={() => setOverview(false)} />}
+    </div>
   );
 }
 
-const MONO = "font-['Space_Mono',ui-monospace,monospace]";
-const INK = 'text-[#16191F]';
-const MUTED = 'text-[#5B6270]';
-const PAPER = 'bg-[#FAF9F6]';
-/** Drafting paper: 2 mm minor and 10 mm major grid lines (at 10 px per mm). */
-const GRID: CSSProperties = {
-  backgroundImage:
-    'linear-gradient(#e6e2d8 1px, transparent 1px), linear-gradient(90deg, #e6e2d8 1px, transparent 1px), linear-gradient(#f0ede6 1px, transparent 1px), linear-gradient(90deg, #f0ede6 1px, transparent 1px)',
-  backgroundSize: '100px 100px, 100px 100px, 20px 20px, 20px 20px',
-  backgroundPosition: '-1px -1px',
-};
-const BTN_DARK = `inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#16191F] px-5 text-[15px] font-semibold text-white hover:bg-[#2a2f39]`;
-const BTN_BLUE = `inline-flex h-11 items-center justify-center gap-2 rounded-md bg-brand px-5 text-[15px] font-semibold text-white hover:bg-brand-600`;
-
-const NAV = [
-  { href: '#makers', label: 'Makers' },
-  { href: '#design-studio', label: 'Design Studio' },
-  { href: '#templates', label: 'Templates' },
-  { href: '#faq', label: 'FAQ' },
+const NAV: { label: string; href?: string; studio?: 'design' | 'dashboard'; before?: () => void }[] = [
+  { label: 'Home', href: '#top' },
+  { label: 'Makers', href: '#makers' },
+  { label: 'Design Studio', studio: 'design' },
+  { label: 'Tools', href: '#tools' },
+  { label: 'Explore', studio: 'design', before: openTemplates },
+  { label: 'Pricing', href: '#pricing' },
 ];
 
-export function LandingPage() {
+function NavItem({ item, onDone, className }: { item: (typeof NAV)[number]; onDone?: () => void; className: string }) {
+  if (item.studio)
+    return (
+      <StudioLink
+        to={item.studio}
+        className={className}
+        before={() => {
+          item.before?.();
+          onDone?.();
+        }}
+      >
+        {item.label}
+      </StudioLink>
+    );
   return (
-    <div className={`h-full overflow-y-auto scroll-smooth ${PAPER} ${INK}`} data-testid="landing">
-      <Header />
-      <main id="main">
-        <Hero />
-        <MakersSection />
-        <DesignStudioSection />
-        <Templates />
-        <Faq />
-      </main>
-      <Footer />
-    </div>
+    <a href={item.href} className={className} onClick={onDone}>
+      {item.label}
+    </a>
   );
 }
 
 function Header() {
   const [open, setOpen] = useState(false);
   return (
-    <header className="sticky top-0 z-30 border-b border-[#E4E0D6] bg-[#FAF9F6]/95 px-4 backdrop-blur sm:px-6">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-6">
-        <a href="/" className="flex shrink-0 items-center" aria-label="Modellio home">
-          <img src="/logo-dark.png" alt="modellio" className="h-[24px] w-auto" draggable={false} />
+    <header id="top" className="sticky top-0 z-30 border-b border-white/5 bg-night-950/75 px-4 backdrop-blur-xl sm:px-6">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-6">
+        <a href="/" aria-label="Modellio home" className="flex shrink-0 items-center">
+          <img src="/logo-light.png" alt="modellio" className="h-[26px] w-auto" draggable={false} />
         </a>
-        <nav className="hidden items-center gap-1 md:flex" aria-label="Page sections">
+        <nav className="hidden flex-1 items-center gap-1 lg:flex" aria-label="Main">
           {NAV.map((n) => (
-            <a
-              key={n.href}
-              href={n.href}
-              className={`rounded-md px-3 py-2 text-[14px] font-medium ${MUTED} hover:bg-[#EFECE4] hover:text-[#16191F]`}
-            >
-              {n.label}
-            </a>
+            <NavItem
+              key={n.label}
+              item={n}
+              className="rounded-lg px-3 py-2 text-[14px] font-medium text-haze transition-colors hover:bg-white/5 hover:text-white"
+            />
           ))}
         </nav>
-        <div className="flex-1" />
-        <StudioLink
-          to="design"
-          className="hidden h-10 items-center gap-2 rounded-md bg-[#16191F] px-4 text-[14px] font-semibold text-white hover:bg-[#2a2f39] sm:inline-flex"
-        >
-          Open Design Studio <ArrowRight size={16} />
-        </StudioLink>
-        <button
-          type="button"
-          className="rounded-md p-2 hover:bg-[#EFECE4] md:hidden"
-          aria-expanded={open}
-          aria-controls="landing-mobile-nav"
-          aria-label={open ? 'Close menu' : 'Open menu'}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {cloudConfigured() && (
+            <span className="hidden sm:block">
+              <AccountButton />
+            </span>
+          )}
+          <span className="hidden sm:block">
+            <StudioLink to="dashboard" className={buttonClass('primary', 'sm')} testId="get-started">
+              Get Started Free
+            </StudioLink>
+          </span>
+          <button
+            type="button"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-fog hover:bg-white/10 lg:hidden"
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
       </div>
       {open && (
-        <nav id="landing-mobile-nav" className={`border-t border-[#E4E0D6] ${PAPER} px-4 pb-4 pt-2 md:hidden`} aria-label="Page sections">
+        <nav
+          id="mobile-menu"
+          aria-label="Mobile"
+          className="mx-auto max-w-7xl border-t border-white/10 pb-4 pt-2 lg:hidden"
+          data-testid="mobile-menu"
+        >
           {NAV.map((n) => (
-            <a
-              key={n.href}
-              href={n.href}
-              onClick={() => setOpen(false)}
-              className="block rounded-md px-3 py-2.5 text-[15px] font-medium hover:bg-[#EFECE4]"
-            >
-              {n.label}
-            </a>
+            <NavItem
+              key={n.label}
+              item={n}
+              onDone={() => setOpen(false)}
+              className="block rounded-lg px-3 py-3 text-[16px] font-medium text-fog hover:bg-white/5"
+            />
           ))}
-          <StudioLink to="design" className={`${BTN_DARK} mt-2 w-full`}>
-            Open Design Studio <ArrowRight size={16} />
+          <StudioLink to="dashboard" className={buttonClass('primary', 'md', 'mt-3 w-full')}>
+            Get Started Free
           </StudioLink>
         </nav>
       )}
@@ -132,289 +167,241 @@ function Header() {
   );
 }
 
-/** A small technical label, like a dimension or a drawing reference. */
-function Label({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <p className={`${MONO} text-[12px] uppercase tracking-[0.06em] ${MUTED} ${className}`}>{children}</p>;
-}
+const HERO_VISUALS = [
+  { src: '/landing/hero-keyring.webp', alt: 'A personalised two-colour keyring', label: 'Keyring', className: 'col-start-1 row-start-1' },
+  { src: '/landing/hero-vase.webp', alt: 'A twisted sculptural vase', label: 'Vase', className: 'col-start-2 row-span-2 row-start-1' },
+  { src: '/landing/hero-sign.webp', alt: 'A custom house-number sign', label: 'Sign', className: 'col-start-1 row-start-2' },
+  { src: '/landing/hero-planter.webp', alt: 'A ribbed planter with a saucer', label: 'Planter', className: 'col-span-2 row-start-3' },
+];
 
-function Hero() {
+function Hero({ onOverview }: { onOverview: () => void }) {
   return (
-    <section className="border-b border-[#E4E0D6] px-4 sm:px-6" style={GRID} aria-labelledby="hero-heading">
-      <div className="mx-auto max-w-6xl pb-16 pt-12 lg:pb-20 lg:pt-16">
-        <Label>Free · in your browser · for 3D printing</Label>
-        <h1 id="hero-heading" className="mt-3 max-w-3xl text-[40px] font-extrabold leading-[1.04] tracking-[-0.02em] sm:text-[60px]">
-          What are you making?
-        </h1>
-        <p className={`mt-4 max-w-2xl text-[18px] leading-relaxed ${MUTED}`}>
-          Design it yourself from a blank workplane, or pick a maker that builds one particular thing for you. Either way you get files any
-          slicer can print.
-        </p>
-
-        <div className="mt-10 grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-          {/* Path 1: from scratch */}
-          <div className="flex flex-col rounded-lg border border-[#16191F] bg-white" data-testid="path-scratch">
-            <div className="flex items-baseline justify-between border-b border-[#E4E0D6] px-5 py-3">
-              <Label>01 — Start from scratch</Label>
-              <span className={`${MONO} text-[11px] ${MUTED}`}>mm</span>
-            </div>
-            <div className="flex flex-1 flex-col p-5">
-              <h2 className="text-[26px] font-bold tracking-tight">Design Studio</h2>
-              <p className={`mt-1.5 text-[15px] leading-relaxed ${MUTED}`}>
-                Shapes, holes, text and exact measurements. For anything there isn’t a maker for, or for changing what a maker made.
-              </p>
+    <section className="relative px-4 pb-20 pt-14 sm:px-6 lg:pb-28 lg:pt-20" aria-labelledby="hero-title">
+      <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
+        <div>
+          <p className="inline-flex items-center gap-2 rounded-pill border border-violet-400/30 bg-violet/10 px-3.5 py-1.5 text-[13px] font-medium text-violet-300">
+            <Sparkles size={14} aria-hidden /> Design · Create · Customise · 3D Print
+          </p>
+          <h1 id="hero-title" className="mt-6">
+            <span className="text-gradient block text-[56px] font-extrabold leading-none tracking-tight sm:text-[76px] lg:text-[88px]">
+              MODELLIO
+            </span>
+            <span className="mt-4 block text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[38px]">
+              The Complete 3D Creation Platform
+            </span>
+          </h1>
+          <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-haze sm:text-[18px]">
+            Create, customise and design amazing 3D models with powerful makers, a full design studio and professional tools — all in your
+            browser.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <StudioLink to="dashboard" className={buttonClass('primary', 'lg')} testId="hero-get-started">
+              Get Started Free <ArrowRight size={18} />
+            </StudioLink>
+            <button type="button" onClick={onOverview} className={buttonClass('secondary', 'lg')}>
+              <PlayCircle size={19} /> Watch Overview
+            </button>
+          </div>
+          <p className="mt-5 text-[13px] text-mist">Free · No install · No account needed</p>
+        </div>
+        <div className="relative grid grid-cols-2 grid-rows-[repeat(3,minmax(0,auto))] gap-4 overflow-visible" data-testid="hero-visuals">
+          <div
+            className="pointer-events-none absolute -inset-4 -z-10 rounded-[3rem] sm:-inset-8 bg-[radial-gradient(closest-side,rgb(124_58_237/0.28),transparent)]"
+            aria-hidden
+          />
+          {HERO_VISUALS.map((v, i) => (
+            <figure key={v.label} className={`card-night flex items-center justify-center overflow-hidden p-3 ${v.className}`}>
               <img
-                src={DESIGN_STUDIO.image}
-                alt="The Design Studio with a desk organiser being modelled"
-                width={1800}
-                height={1125}
-                className="mt-4 aspect-[16/9] w-full rounded border border-[#E4E0D6] object-cover object-left-top"
+                src={v.src}
+                alt={v.alt}
+                className="float-slow max-h-[260px] w-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,0.45)]"
+                style={{ animationDelay: `${i * -1.7}s` }}
+                draggable={false}
               />
-              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
-                <StudioLink to="design" className={BTN_DARK}>
-                  Start designing <ArrowRight size={16} />
-                </StudioLink>
-                <a
-                  href="#templates"
-                  className="text-[14px] font-medium underline decoration-[#C9C4B8] underline-offset-4 hover:decoration-[#16191F]"
-                >
-                  or start from a template
-                </a>
-              </div>
-            </div>
-          </div>
-
-          {/* Path 2: makers */}
-          <div className="flex flex-col rounded-lg border border-[#16191F] bg-white" data-testid="path-makers">
-            <div className="flex items-baseline justify-between border-b border-[#E4E0D6] px-5 py-3">
-              <Label>02 — Use a maker</Label>
-              <span className={`${MONO} text-[11px] ${MUTED}`}>{MAKERS.length} ready</span>
-            </div>
-            <div className="flex flex-1 flex-col p-5">
-              <h2 className="text-[26px] font-bold tracking-tight">Makers</h2>
-              <p className={`mt-1.5 text-[15px] leading-relaxed ${MUTED}`}>
-                Tools that make one thing well. Answer a few questions and download print-ready parts.
-              </p>
-              <ul className="mt-4 divide-y divide-[#E4E0D6] border-y border-[#E4E0D6]">
-                {MAKERS.map((m) => (
-                  <li key={m.id}>
-                    <StudioLink to={m.studio!} className="group flex items-center gap-4 py-3.5" testId={`maker-link-${m.id}`}>
-                      {/* Cropped to the model area of the screenshot. */}
-                      <span
-                        aria-hidden
-                        className="h-[64px] w-[88px] shrink-0 rounded border border-[#E4E0D6] bg-[#f5f7fb] bg-no-repeat"
-                        style={{
-                          backgroundImage: `url(${m.image})`,
-                          backgroundSize: '300%',
-                          backgroundPosition: m.id === 'cookie' ? '48% 58%' : '42% 40%',
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[16px] font-semibold group-hover:text-brand">{m.name}</span>
-                        <span className={`block text-[13px] leading-snug ${MUTED}`}>{m.line}</span>
-                      </span>
-                      <ArrowRight size={18} className="shrink-0 transition-transform group-hover:translate-x-0.5" />
-                    </StudioLink>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-4">
-                <Label>Coming next</Label>
-                <p className="mt-1.5 text-[14px] leading-relaxed">{COMING_SOON.map((m) => m.name).join(' · ')}</p>
-              </div>
-              <a
-                href="#makers"
-                className="mt-auto pt-5 text-[14px] font-medium underline decoration-[#C9C4B8] underline-offset-4 hover:decoration-[#16191F]"
-              >
-                What each maker does
-              </a>
-            </div>
-          </div>
+            </figure>
+          ))}
         </div>
       </div>
     </section>
-  );
-}
-
-function Figure({ src, alt, caption, n }: { src: string; alt: string; caption: string; n: number }) {
-  return (
-    <figure>
-      <img src={src} alt={alt} width={1800} height={1125} loading="lazy" className="w-full rounded border border-[#16191F] bg-white" />
-      <figcaption className={`${MONO} mt-2 text-[12px] ${MUTED}`}>
-        Fig. {n} — {caption}
-      </figcaption>
-    </figure>
-  );
-}
-
-function Facts({ items }: { items: string[] }) {
-  return (
-    <ul className="mt-5 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-      {items.map((f) => (
-        <li key={f} className="flex gap-2.5 text-[14px] leading-snug">
-          <Plus size={14} className="mt-0.5 shrink-0 text-brand" aria-hidden />
-          {f}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function MakerBlock({ m, n, flip }: { m: Maker; n: number; flip: boolean }) {
-  return (
-    <article className="grid items-center gap-8 lg:grid-cols-2 lg:gap-12" data-testid={`studio-card-${m.id}`}>
-      <div className={flip ? 'lg:order-2' : ''}>
-        <Figure
-          src={m.image!}
-          alt={`${m.name} screenshot`}
-          caption={
-            m.id === 'keyring'
-              ? 'a two-colour name tag, 64 × 24 mm'
-              : m.id === 'cookie'
-                ? 'gingerbread cutter, stamp and handle'
-                : m.id === 'vase'
-                  ? 'a twisted star vase, 180 mm tall'
-                  : 'a multi-colour model split into parts'
-          }
-          n={n}
-        />
-      </div>
-      <div>
-        <h3 className="text-[28px] font-bold leading-tight tracking-tight">{m.name}</h3>
-        <p className="mt-1 text-[16px] font-medium">{m.line}</p>
-        <p className={`mt-3 text-[15px] leading-relaxed ${MUTED}`}>{m.description}</p>
-        <Facts items={m.facts} />
-        <StudioLink to={m.studio!} className={`${BTN_BLUE} mt-6`}>
-          {m.action} <ArrowRight size={16} />
-        </StudioLink>
-      </div>
-    </article>
-  );
-}
-
-function SectionHead({ id, title, children }: { id: string; title: string; children?: ReactNode }) {
-  return (
-    <div className="mb-10 max-w-2xl">
-      <h2 id={id} className="text-[34px] font-extrabold leading-tight tracking-[-0.015em] sm:text-[40px]">
-        {title}
-      </h2>
-      {children && <p className={`mt-3 text-[17px] leading-relaxed ${MUTED}`}>{children}</p>}
-    </div>
   );
 }
 
 function MakersSection() {
   return (
-    <section id="makers" className="scroll-mt-16 border-b border-[#E4E0D6] px-4 py-20 sm:px-6" aria-labelledby="makers-heading">
-      <div className="mx-auto max-w-6xl">
-        <SectionHead id="makers-heading" title="Makers">
-          Each maker is built for one job, so it can ask the right questions and get the details right for you. When you want to change
-          something it didn’t ask about, send the result to the Design Studio.
-        </SectionHead>
-        <div className="flex flex-col gap-20">
-          {MAKERS.map((m, i) => (
-            <MakerBlock key={m.id} m={m} n={i + 1} flip={i % 2 === 1} />
-          ))}
-        </div>
-        <div className="mt-20 rounded-lg border border-dashed border-[#B9B3A6] p-6">
-          <h3 id="coming-soon" className="text-[20px] font-bold">
-            Coming soon
-          </h3>
-          <ul className="mt-4 divide-y divide-[#E4E0D6]" aria-labelledby="coming-soon">
-            {COMING_SOON.map((m) => (
-              <li
-                key={m.id}
-                className="grid gap-1 py-3 sm:grid-cols-[220px_1fr_auto] sm:items-baseline sm:gap-6"
-                data-testid={`soon-card-${m.id}`}
+    <section id="makers" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="makers-title">
+      <div className="mx-auto max-w-7xl">
+        <SectionHeading
+          id="makers-title"
+          eyebrow="Makers"
+          title="Specialist Makers"
+          intro="Create ready-to-print models in minutes with our dedicated makers."
+        />
+        <ul className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {MAKER_ENTRIES.map((m) => (
+            <li key={m.id}>
+              <StudioLink
+                to={m.studio}
+                className="card-night card-night-hover group flex h-full flex-col overflow-hidden"
+                testId={`studio-card-${m.id}`}
+                label={`Open ${m.name}`}
               >
-                <span className="text-[15px] font-semibold">{m.name}</span>
-                <span className={`text-[14px] ${MUTED}`}>{m.line}</span>
-                <span className={`${MONO} text-[11px] uppercase ${MUTED}`}>Coming soon</span>
+                <div className="flex h-48 items-center justify-center bg-[radial-gradient(closest-side,rgb(59_130_246/0.16),transparent)] p-4">
+                  <img
+                    src={m.image}
+                    alt=""
+                    className="max-h-full w-auto object-contain drop-shadow-[0_14px_24px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:scale-[1.04]"
+                    draggable={false}
+                  />
+                </div>
+                <div className="flex flex-1 flex-col p-5 pt-2">
+                  <h3 className="text-[19px] font-semibold text-white">{m.name}</h3>
+                  <p className="mt-1.5 flex-1 text-[14px] leading-relaxed text-haze">{m.line}</p>
+                  <span className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-semibold text-violet-300 group-hover:text-white">
+                    Open maker <ArrowRight size={15} />
+                  </span>
+                </div>
+              </StudioLink>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-10 text-center">
+          <StudioLink to="dashboard" className={buttonClass('secondary', 'md')}>
+            Explore All Makers <ArrowRight size={16} />
+          </StudioLink>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const STUDIO_BENEFITS = [
+  'Build from scratch or customise existing models.',
+  'Precise modelling with sketch, extrude and more.',
+  'Edit, combine and refine with advanced tools.',
+  'Prepare and export models for 3D printing.',
+];
+
+function StudioSection() {
+  return (
+    <section id="design-studio" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="studio-title">
+      <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[0.9fr_1.4fr]">
+        <div>
+          <p className="text-[13px] font-semibold uppercase tracking-[0.18em] text-violet-300">Design Studio</p>
+          <h2 id="studio-title" className="mt-2 text-[32px] font-bold leading-tight tracking-tight text-white sm:text-[40px]">
+            The MODELLIO Design Studio
+          </h2>
+          <p className="mt-3 text-[17px] leading-relaxed text-haze">
+            A powerful, flexible 3D modelling environment for anything you can imagine.
+          </p>
+          <ul className="mt-6 space-y-3">
+            {STUDIO_BENEFITS.map((b) => (
+              <li key={b} className="flex gap-3 text-[15px] text-fog">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-electric/20 text-electric-300">
+                  <Check size={13} aria-hidden />
+                </span>
+                {b}
               </li>
             ))}
           </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function DesignStudioSection() {
-  return (
-    <section
-      id="design-studio"
-      className="scroll-mt-16 border-b border-[#E4E0D6] bg-white px-4 py-20 sm:px-6"
-      aria-labelledby="design-heading"
-    >
-      <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[1fr_1.2fr] lg:gap-14" data-testid="studio-card-design">
-        <div>
-          <SectionHead id="design-heading" title="The Design Studio">
-            {DESIGN_STUDIO.description}
-          </SectionHead>
-          <div className="-mt-4">
-            <Facts items={DESIGN_STUDIO.facts} />
-          </div>
-          <StudioLink to="design" className={`${BTN_DARK} mt-7`}>
-            {DESIGN_STUDIO.action} <ArrowRight size={16} />
+          <StudioLink to="design" className={buttonClass('primary', 'lg', 'mt-8')} testId="open-design-studio">
+            Open Design Studio <ArrowRight size={18} />
           </StudioLink>
         </div>
-        <Figure
-          src={DESIGN_STUDIO.image!}
-          alt="The Design Studio: shape library, workplane and measurements"
-          caption="a desk organiser, 150 × 70 × 45 mm"
-          n={MAKERS.length + 1}
-        />
+        <figure className="card-night overflow-hidden p-2" data-testid="studio-card-design">
+          <img
+            src="/landing/design-studio.jpg"
+            alt="The MODELLIO Design Studio with a model, the shape library and the inspector"
+            className="w-full rounded-[0.9rem]"
+          />
+        </figure>
       </div>
     </section>
   );
 }
 
-function Templates() {
-  const [busy, setBusy] = useState<string | null>(null);
-  const open = async (t: Template) => {
-    setBusy(t.id);
-    try {
-      await useProjects.getState().init();
-      useStudio.getState().setStudio('design');
-      await useProjects.getState().createFromTemplate(t);
-    } finally {
-      setBusy(null);
-    }
-  };
+function ToolsSection() {
   return (
-    <section id="templates" className="scroll-mt-16 border-b border-[#E4E0D6] px-4 py-20 sm:px-6" aria-labelledby="templates-heading">
-      <div className="mx-auto max-w-6xl">
-        <SectionHead id="templates-heading" title="Or start from a template">
-          Each one is built from ordinary shapes, so you can resize it, change it, or take it apart to see how it was made.
-        </SectionHead>
-        <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {TEMPLATES.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                onClick={() => void open(t)}
-                disabled={busy !== null}
-                className="group block w-full overflow-hidden rounded-lg border border-[#D9D4C8] bg-white text-left hover:border-[#16191F] disabled:opacity-70"
-                aria-label={`Open the ${t.name} template in the Design Studio`}
-              >
-                <img
-                  src={`/templates/${t.id}.jpg`}
-                  alt=""
-                  width={320}
-                  height={200}
-                  loading="lazy"
-                  className="aspect-[16/10] w-full border-b border-[#E4E0D6] object-cover"
-                />
-                <span className="block p-4">
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span className="text-[16px] font-bold">{t.name}</span>
-                    <span className={`${MONO} text-[11px] uppercase ${MUTED}`}>{t.level}</span>
-                  </span>
-                  <span className={`mt-1 block text-[14px] leading-relaxed ${MUTED}`}>{t.description}</span>
-                  <span className="mt-3 inline-flex items-center gap-1 text-[14px] font-semibold text-brand">
-                    {busy === t.id ? 'Opening…' : 'Open in the Design Studio'} <ArrowUpRight size={15} />
-                  </span>
+    <section id="tools" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="tools-title">
+      <div className="mx-auto max-w-7xl">
+        <SectionHeading
+          id="tools-title"
+          eyebrow="Tools"
+          title="Powerful Design Tools"
+          intro="Focused tools inside the Design Studio for the jobs that come up again and again."
+        />
+        <ul className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {TOOL_ENTRIES.map((t) => {
+            const Icon = TOOL_ICONS[t.id] ?? Boxes;
+            const body = (
+              <>
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet/25 to-electric/25 text-violet-300">
+                  <Icon size={21} aria-hidden />
                 </span>
-              </button>
+                <h3 className="mt-4 text-[16px] font-semibold text-white">{t.name}</h3>
+                <p className="mt-1 flex-1 text-[14px] leading-relaxed text-haze">{t.line}</p>
+                <span className={`mt-4 text-[12px] font-medium ${t.studio ? 'text-electric-300' : 'text-mist'}`}>
+                  {t.studio ? t.where : 'Coming soon'}
+                </span>
+              </>
+            );
+            return (
+              <li key={t.id} data-testid={t.studio ? `tool-${t.id}` : `soon-card-${t.id}`}>
+                {t.studio ? (
+                  <StudioLink
+                    to={t.studio}
+                    className="card-night card-night-hover flex h-full flex-col p-5"
+                    label={`${t.name}: ${t.where}`}
+                  >
+                    {body}
+                  </StudioLink>
+                ) : (
+                  <div className="card-night flex h-full flex-col p-5 opacity-70" aria-disabled="true">
+                    {body}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+const WHY = [
+  {
+    Icon: Boxes,
+    title: 'All in One Platform',
+    text: 'Makers, a full design studio and print tools share one project system, so nothing gets stuck in one place.',
+  },
+  {
+    Icon: GraduationCap,
+    title: 'Beginner Friendly',
+    text: 'Start from a template or a maker; every size is a number you can type, and every change can be undone.',
+  },
+  {
+    Icon: Printer,
+    title: 'Designed for 3D Printing',
+    text: 'Closed solids, real millimetres, print checks, colours kept in 3MF, and parts laid out for your plate.',
+  },
+  {
+    Icon: Users,
+    title: 'For Everyone',
+    text: 'Gifts and keyrings, signs and planters, enclosures and replacement parts — from your first print onwards.',
+  },
+];
+
+function WhySection() {
+  return (
+    <section id="why" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="why-title">
+      <div className="mx-auto max-w-7xl">
+        <SectionHeading id="why-title" title="Why Choose MODELLIO?" />
+        <ul className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {WHY.map(({ Icon, title, text }) => (
+            <li key={title} className="card-night p-6">
+              <Icon size={26} className="text-electric-400" aria-hidden />
+              <h3 className="mt-4 text-[17px] font-semibold text-white">{title}</h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-haze">{text}</p>
             </li>
           ))}
         </ul>
@@ -423,19 +410,57 @@ function Templates() {
   );
 }
 
-function Faq() {
+function PricingSection() {
   return (
-    <section id="faq" className="scroll-mt-16 px-4 py-20 sm:px-6" aria-labelledby="faq-heading">
-      <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1fr_2fr]">
-        <SectionHead id="faq-heading" title="Questions" />
-        <div className="divide-y divide-[#E4E0D6] border-y border-[#E4E0D6]">
+    <section id="pricing" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="pricing-title">
+      <div className="mx-auto max-w-3xl">
+        <SectionHeading
+          id="pricing-title"
+          eyebrow="Pricing"
+          title="Free while we build"
+          intro="Every maker and tool on this page is free to use. No install, no card, no account needed."
+        />
+        <div className="card-night mt-10 p-7 sm:p-9">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[15px] font-semibold text-violet-300">Free</p>
+              <p className="mt-1 text-[44px] font-extrabold leading-none text-white">£0</p>
+            </div>
+            <StudioLink to="dashboard" className={buttonClass('primary', 'md')}>
+              Get Started Free
+            </StudioLink>
+          </div>
+          <ul className="mt-6 grid gap-2.5 sm:grid-cols-2">
+            {[
+              'All makers and the Design Studio',
+              'STL, OBJ and 3MF export',
+              'Projects saved in your browser',
+              'Version history and share links',
+            ].map((f) => (
+              <li key={f} className="flex gap-2.5 text-[14px] text-fog">
+                <Check size={16} className="mt-0.5 shrink-0 text-electric-400" aria-hidden /> {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FaqSection() {
+  return (
+    <section id="faq" className="scroll-mt-20 px-4 py-20 sm:px-6" aria-labelledby="faq-title">
+      <div className="mx-auto max-w-3xl">
+        <SectionHeading id="faq-title" title="Questions" />
+        <div className="mt-10 space-y-3">
           {FAQ.map((f) => (
-            <details key={f.q} className="group py-4 [&_summary::-webkit-details-marker]:hidden">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[16px] font-semibold">
+            <details key={f.q} className="card-night group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[16px] font-semibold text-white">
                 {f.q}
-                <Plus size={18} className="shrink-0 transition-transform group-open:rotate-45" aria-hidden />
+                <ChevronRight size={18} className="shrink-0 text-violet-300 transition-transform group-open:rotate-90" aria-hidden />
               </summary>
-              <p className={`mt-3 max-w-2xl text-[15px] leading-relaxed ${MUTED}`}>{f.a}</p>
+              <p className="mt-3 text-[15px] leading-relaxed text-haze">{f.a}</p>
             </details>
           ))}
         </div>
@@ -444,46 +469,201 @@ function Faq() {
   );
 }
 
-function Footer() {
-  const link = 'hover:text-brand';
+function FinalCta() {
   return (
-    <footer className="border-t border-[#16191F] bg-[#16191F] px-4 py-12 text-white sm:px-6">
-      <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.5fr_1fr_1fr]">
+    <section className="px-4 py-20 sm:px-6" aria-labelledby="cta-title">
+      <div className="card-night mx-auto max-w-5xl overflow-hidden px-6 py-14 text-center sm:px-12">
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(40rem_16rem_at_50%_0%,rgb(124_58_237/0.25),transparent)]"
+          aria-hidden
+        />
+        <h2 id="cta-title" className="relative text-[30px] font-bold tracking-tight text-white sm:text-[40px]">
+          Ready to bring your ideas to life?
+        </h2>
+        <p className="relative mt-3 text-[17px] text-haze">Join MODELLIO today and start creating in 3D — for free.</p>
+        <StudioLink to="dashboard" className={buttonClass('primary', 'lg', 'relative mt-8')}>
+          Get Started Free <ArrowRight size={18} />
+        </StudioLink>
+      </div>
+    </section>
+  );
+}
+
+function FooterLink({
+  children,
+  href,
+  studio,
+  before,
+}: {
+  children: ReactNode;
+  href?: string;
+  studio?: 'design' | 'dashboard' | 'privacy';
+  before?: () => void;
+}) {
+  const cls = 'text-[14px] text-haze hover:text-white';
+  return studio ? (
+    <StudioLink to={studio} className={cls} before={before}>
+      {children}
+    </StudioLink>
+  ) : (
+    <a href={href} className={cls}>
+      {children}
+    </a>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-white/5 px-4 pb-10 pt-14 sm:px-6">
+      <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
-          <img src="/logo-light.png" alt="modellio" className="h-[22px] w-auto" draggable={false} />
-          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-white/70">
-            Make anything. Shape everything. Free 3D design for 3D printing, in your browser.
+          <img src="/logo-light.png" alt="modellio" className="h-[24px] w-auto" />
+          <p className="mt-3 max-w-xs text-[14px] leading-relaxed text-mist">
+            Everything you need to create in 3D, from your first keyring to your next engineered product.
           </p>
         </div>
-        <nav aria-label="Tools">
-          <h2 className={`${MONO} mb-3 text-[12px] uppercase tracking-[0.06em] text-white/60`}>Tools</h2>
-          <ul className="space-y-2 text-[14px]">
+        <nav aria-label="Product">
+          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fog">Product</h2>
+          <ul className="mt-3 space-y-2">
             <li>
-              <StudioLink to="design" className={link}>
-                Design Studio
-              </StudioLink>
+              <FooterLink href="#makers">Makers</FooterLink>
             </li>
-            {MAKERS.map((m) => (
-              <li key={m.id}>
-                <StudioLink to={m.studio!} className={link}>
-                  {m.name}
-                </StudioLink>
-              </li>
-            ))}
+            <li>
+              <FooterLink studio="design">Design Studio</FooterLink>
+            </li>
+            <li>
+              <FooterLink href="#tools">Tools</FooterLink>
+            </li>
+            <li>
+              <FooterLink href="#pricing">Pricing</FooterLink>
+            </li>
           </ul>
         </nav>
-        <nav aria-label="Coming soon">
-          <h2 className={`${MONO} mb-3 text-[12px] uppercase tracking-[0.06em] text-white/60`}>Coming soon</h2>
-          <ul className="space-y-2 text-[14px] text-white/70">
-            {COMING_SOON.map((m) => (
-              <li key={m.id}>{m.name}</li>
-            ))}
+        <nav aria-label="Resources">
+          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fog">Resources</h2>
+          <ul className="mt-3 space-y-2">
+            <li>
+              <FooterLink studio="design" before={openTemplates}>
+                Templates
+              </FooterLink>
+            </li>
+            <li>
+              <FooterLink href="#faq">Help &amp; FAQ</FooterLink>
+            </li>
+            <li>
+              <FooterLink studio="dashboard">Dashboard</FooterLink>
+            </li>
+          </ul>
+        </nav>
+        <nav aria-label="Company">
+          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fog">Company</h2>
+          <ul className="mt-3 space-y-2">
+            <li>
+              <FooterLink href="#why">About</FooterLink>
+            </li>
+            <li>
+              <FooterLink studio="privacy">Privacy Policy</FooterLink>
+            </li>
           </ul>
         </nav>
       </div>
-      <p className={`${MONO} mx-auto mt-10 max-w-6xl border-t border-white/15 pt-6 text-[12px] text-white/60`}>
-        © {new Date().getFullYear()} MODELLIO
-      </p>
+      <p className="mx-auto mt-12 max-w-7xl text-[13px] text-mist">© {new Date().getFullYear()} MODELLIO</p>
     </footer>
+  );
+}
+
+const OVERVIEW = [
+  {
+    src: '/landing/keyring-maker.jpg',
+    title: '1. Start with a maker',
+    text: 'Pick a maker or a template and type your text. The maker does the fiddly geometry: holes, borders, colours.',
+  },
+  {
+    src: '/landing/design-studio.jpg',
+    title: '2. Refine in the Design Studio',
+    text: 'Open a copy in the Design Studio to combine shapes, cut holes, add text and set every size in millimetres.',
+  },
+  {
+    src: '/landing/vase-maker.jpg',
+    title: '3. Shape anything',
+    text: 'Drag a profile, twist it, add a pattern: every change rebuilds a real, closed solid you can print.',
+  },
+  {
+    src: '/landing/split-studio.jpg',
+    title: '4. Print it',
+    text: 'Check overhangs and thin walls, split colours into parts, and export STL or 3MF for your slicer.',
+  },
+];
+
+/** "Watch Overview": the workflow in four steps, shown with real screenshots of the app. */
+function OverviewDialog({ onClose }: { onClose: () => void }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((v) => (v + 1) % OVERVIEW.length), 6000);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') setI((v) => (v + 1) % OVERVIEW.length);
+      if (e.key === 'ArrowLeft') setI((v) => (v + OVERVIEW.length - 1) % OVERVIEW.length);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+  const s = OVERVIEW[i];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-night-950/80 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="overview-title"
+        className="surface-night w-full max-w-4xl overflow-hidden rounded-2xl border border-night-line bg-night-900 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        data-testid="overview-dialog"
+      >
+        <div className="flex items-center justify-between border-b border-white/5 px-5 py-3">
+          <h2 id="overview-title" className="text-[16px] font-semibold text-white">
+            MODELLIO overview
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close overview"
+            className="rounded-lg p-1.5 text-haze hover:bg-white/10 hover:text-white"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <img src={s.src} alt={s.title} className="aspect-[16/9] w-full bg-night-800 object-cover" />
+        <div className="flex items-center gap-4 px-5 py-4">
+          <button
+            type="button"
+            aria-label="Previous step"
+            onClick={() => setI((i + OVERVIEW.length - 1) % OVERVIEW.length)}
+            className="rounded-lg p-2 text-haze hover:bg-white/10"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <div className="flex-1" aria-live="polite">
+            <p className="text-[16px] font-semibold text-white">{s.title}</p>
+            <p className="mt-0.5 text-[14px] text-haze">{s.text}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Next step"
+            onClick={() => setI((i + 1) % OVERVIEW.length)}
+            className="rounded-lg p-2 text-haze hover:bg-white/10"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
+        <div className="flex justify-center gap-1.5 pb-4" aria-hidden>
+          {OVERVIEW.map((o, k) => (
+            <span key={o.title} className={`h-1.5 rounded-full transition-all ${k === i ? 'w-6 bg-violet-400' : 'w-1.5 bg-white/20'}`} />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

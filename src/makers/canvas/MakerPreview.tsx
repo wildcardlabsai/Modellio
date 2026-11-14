@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -32,17 +33,17 @@ export function MakerPreview({
   const group = useRef<THREE.Group>(null);
   const fit = useRef<() => void>(() => {});
   return (
-    <div className="relative h-full w-full" data-testid={testId} role="region" aria-label={label}>
+    <div className="relative h-full w-full" data-testid={testId} data-maker-preview role="region" aria-label={label}>
       <Canvas
         camera={{ position: [80, -120, 110], fov: 35, near: 0.5, far: 10000, up: [0, 0, 1] }}
         dpr={[1, 2]}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
-        onCreated={({ gl }) => gl.setClearColor('#f5f7fb')}
+        onCreated={({ gl }) => clearPreview(gl)}
       >
         <hemisphereLight args={['#ffffff', '#b9c2d0', 1.5]} />
         <directionalLight position={[120, -160, 260]} intensity={1.7} />
         <directionalLight position={[-160, 120, 80]} intensity={0.5} />
-        <gridHelper args={[400, 40, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />
+        {!productShot && <gridHelper args={[400, 40, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
         <group ref={group}>
           {parts.map((p) => (
             <PartMesh key={`${p.id}-${p.mesh.indices.length}-${p.mesh.positions.length}`} part={p} />

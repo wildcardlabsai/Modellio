@@ -1,7 +1,6 @@
 import { useEffect, useState, type DragEvent } from 'react';
 import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert, Undo2, Redo2 } from 'lucide-react';
 import { STEPS, useSplit } from '../store';
-import { IconButton } from '@/components/ui/IconButton';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
@@ -76,6 +75,8 @@ export default function SplitStudio() {
   );
 }
 
+const darkIcon = 'flex h-9 w-9 items-center justify-center rounded-lg text-haze hover:bg-white/10 hover:text-white disabled:opacity-35';
+
 function Stepper() {
   const step = useSplit((s) => s.step);
   const doc = useSplit((s) => s.doc);
@@ -88,8 +89,11 @@ function Stepper() {
   const { setStep, canEnter, undo, redo } = useSplit.getState();
   const done: Record<string, boolean> = { import: !!doc, split: !!split?.parts.length, connect: !!connected, export: false };
   return (
-    <nav className="flex h-12 shrink-0 items-center gap-1 border-b border-line bg-white px-3 sm:px-5" aria-label="Split Studio steps">
-      <span className="mr-3 hidden text-[14px] font-semibold text-ink md:block">Split Studio</span>
+    <nav
+      className="surface-night flex h-12 shrink-0 items-center gap-1 border-b border-night-line bg-night-900 px-3 text-fog sm:px-5"
+      aria-label="Split Studio steps"
+    >
+      <span className="mr-3 hidden text-[14px] font-semibold text-white md:block">Split Studio</span>
       <ol className="flex items-center gap-1">
         {STEPS.map((s, i) => {
           const available = canEnter(s.id);
@@ -97,7 +101,7 @@ function Stepper() {
           const isDone = done[s.id];
           return (
             <li key={s.id} className="flex items-center">
-              {i > 0 && <span className="mx-1 h-px w-3 bg-line sm:w-5" aria-hidden />}
+              {i > 0 && <span className="mx-1 h-px w-3 bg-night-line sm:w-5" aria-hidden />}
               <button
                 type="button"
                 disabled={!available}
@@ -105,12 +109,16 @@ function Stepper() {
                 aria-current={active ? 'step' : undefined}
                 title={available ? undefined : s.id === 'split' ? 'Import a 3MF file first' : 'Split the model first'}
                 className={`flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-medium ${
-                  active ? 'bg-brand-50 text-brand' : available ? 'text-[#344054] hover:bg-[#f2f4f7]' : 'text-[#98a2b3]'
+                  active ? 'bg-violet/25 text-white' : available ? 'text-haze hover:bg-white/10 hover:text-white' : 'text-mist/70'
                 }`}
               >
                 <span
                   className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
-                    isDone ? 'bg-brand text-white' : active ? 'border border-brand' : 'border border-[#d0d5dd]'
+                    isDone
+                      ? 'bg-gradient-to-br from-violet-600 to-electric text-white'
+                      : active
+                        ? 'border border-violet-300'
+                        : 'border border-night-600'
                   }`}
                   aria-hidden
                 >
@@ -125,16 +133,23 @@ function Stepper() {
       </ol>
       <div className="flex-1" />
       {doc && (
-        <span className="mr-2 hidden max-w-[30%] truncate text-[13px] text-muted xl:block" data-testid="split-title">
+        <span className="mr-2 hidden max-w-[30%] truncate text-[13px] text-haze xl:block" data-testid="split-title">
           {doc.metadata.Title || doc.fileName}
         </span>
       )}
-      <IconButton label="Undo settings change" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo}>
+      <button type="button" aria-label="Undo settings change" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo} className={darkIcon}>
         <Undo2 size={17} />
-      </IconButton>
-      <IconButton label="Redo settings change" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={redo}>
+      </button>
+      <button
+        type="button"
+        aria-label="Redo settings change"
+        title="Redo (Ctrl+Shift+Z)"
+        disabled={!canRedo}
+        onClick={redo}
+        className={darkIcon}
+      >
         <Redo2 size={17} />
-      </IconButton>
+      </button>
     </nav>
   );
 }

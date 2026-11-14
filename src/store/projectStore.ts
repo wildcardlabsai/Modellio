@@ -2,7 +2,14 @@ import { create } from 'zustand';
 import { createEmptyDocument } from '@/cad/document';
 import { addMeshAsset, getMeshAsset } from '@/cad/assets';
 import type { MeshData } from '@/cad/kernel/meshData';
-import { projectFromFile, projectToFile, referencedAssets, type ProjectData, type ProjectMeta } from '@/cad/serialization/project';
+import {
+  projectFromFile,
+  projectToFile,
+  referencedAssets,
+  workspaceOf,
+  type ProjectData,
+  type ProjectMeta,
+} from '@/cad/serialization/project';
 import { createDefaultRepository, type ProjectRepository, type VersionInfo } from '@/cad/serialization/repository';
 import { decodeShareFragment, encodeShareFragment, MAX_SHARE_CHARS, SHARE_PREFIX } from '@/cad/serialization/share';
 import { useEditor } from './editorStore';
@@ -12,6 +19,9 @@ import type { Template } from '@/templates/templates';
 import { createId } from '@/utils/id';
 import { downloadBlob, safeFileName } from '@/utils/download';
 import { viewport } from '@/viewport/viewportBridge';
+import { buildMeshDocument } from '@/cad/meshDocument';
+import { useStudio, type StudioId } from '@/app/studio';
+import { useMakerHandoff } from '@/platform/handoff';
 
 export type SaveStatus = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error';
 
@@ -48,6 +58,26 @@ interface ProjectState {
   remove: (id: string) => Promise<void>;
   downloadProjectFile: () => Promise<void>;
   importProjectFile: (text: string) => Promise<void>;
+  /**
+   * Save a maker's design as a project: its settings (to reopen in the maker) and its
+   * generated parts as mesh objects (to open in the Design Studio). Returns the project id.
+   */
+  saveMakerProject: (input: MakerSaveInput) => Promise<string>;
+  /** Open any project in the workspace that made it (maker projects go to their maker). */
+  openProject: (id: string) => Promise<void>;
+  /** Copy a maker project into a new Design Studio project and open it there. */
+  copyToDesign: (id: string) => Promise<void>;
+}
+
+export interface MakerSaveInput {
+  /** Update this project (if it still exists), else create one. */
+  id?: string | null;
+  name: string;
+  studio: string;
+  schema: number;
+  state: unknown;
+  parts: { name: string; mesh: MeshData; color?: string }[];
+  thumbnail?: string;
 }
 
 const LAST_KEY = 'modellio:lastProject';
@@ -123,7 +153,9 @@ async function initOnce() {
   const projects = await repo.list();
   set({ projects });
   const last = recall();
-  const target = projects.find((p) => p.id === last) ?? projects[0];
+  // The editor reopens Design Studio work; maker projects open in their makers.
+  const designs = projects.filter((p) => workspaceOf(p) === 'design');
+  const target = designs.find((p) => p.id === last) ?? designs[0];
   if (target) await get().open(target.id);
   else await get().newProject();
   if (repo.kind === 'memory')
@@ -225,6 +257,12 @@ export const useProjects = create<ProjectState>()((set, get) => ({
     try {
       const p = await repo.load(id);
       if (!p) throw new Error('Project not found');
+      if (p.maker) {
+        // A maker project belongs to its maker; the editor keeps what it had.
+        set({ status: current ? 'saved' : 'loading' });
+        await get().openProject(id);
+        return;
+      }
       loadIntoEditor(p);
       set({ current: p.meta, status: 'saved', view: 'editor', error: null });
       requestAnimationFrame(() => useEditor.getState().requestFrame());
@@ -266,7 +304,7 @@ export const useProjects = create<ProjectState>()((set, get) => ({
     await get().refresh();
     if (current?.id === id) {
       set({ current: null });
-      const next = get().projects[0];
+      const next = get().projects.find((p) => workspaceOf(p) === 'design');
       if (next) await get().open(next.id);
       else await get().newProject();
       set({ view: 'projects' });
@@ -289,6 +327,69 @@ export const useProjects = create<ProjectState>()((set, get) => ({
     set({ view: 'editor', status: 'unsaved' });
     // Save once the Boolean results (and so the thumbnail) are ready.
     setTimeout(() => void get().saveNow(), 1500);
+  },
+
+  saveMakerProject: async (input) => {
+    const { repo, projects } = get();
+    if (!repo) throw new Error('Project storage is not ready yet.');
+    const prev = input.id ? projects.find((p) => p.id === input.id) : undefined;
+    const now = Date.now();
+    const { document, assets } = buildMeshDocument(input.parts, input.name);
+    const meta: ProjectMeta = {
+      id: prev?.id ?? createId('prj'),
+      name: input.name.trim() || 'Untitled',
+      createdAt: prev?.createdAt ?? now,
+      updatedAt: now,
+      objectCount: Object.keys(document.objects).length,
+      thumbnail: input.thumbnail ?? prev?.thumbnail,
+      workspace: input.studio,
+    };
+    await repo.save({ meta, document, assets, maker: { studio: input.studio, schema: input.schema, state: input.state } });
+    await get().refresh();
+    return meta.id;
+  },
+
+  openProject: async (id) => {
+    const { repo } = get();
+    if (!repo) return;
+    const p = await repo.load(id);
+    if (!p) {
+      useEditor.getState().notify('That project could not be found.');
+      await get().refresh();
+      return;
+    }
+    if (p.maker) {
+      useMakerHandoff.getState().give({ projectId: p.meta.id, name: p.meta.name, ...p.maker });
+      useStudio.getState().setStudio(p.maker.studio as StudioId);
+      return;
+    }
+    useStudio.getState().setStudio('design');
+    if (get().current?.id !== id) await get().open(id);
+    set({ view: 'editor' });
+  },
+
+  copyToDesign: async (id) => {
+    const { repo, current, status } = get();
+    if (!repo) return;
+    const p = await repo.load(id);
+    if (!p) return;
+    if (current && status !== 'saved') await get().saveNow();
+    const now = Date.now();
+    const meta: ProjectMeta = {
+      ...p.meta,
+      id: createId('prj'),
+      name: `${p.meta.name} (Design Studio)`,
+      createdAt: now,
+      updatedAt: now,
+      workspace: 'design',
+    };
+    const copy: ProjectData = { meta, document: p.document, assets: p.assets };
+    await repo.save(copy);
+    useStudio.getState().setStudio('design');
+    loadIntoEditor(copy);
+    set({ current: meta, status: 'saved', view: 'editor' });
+    requestAnimationFrame(() => useEditor.getState().requestFrame());
+    await get().refresh();
   },
 
   shared: null,

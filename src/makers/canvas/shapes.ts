@@ -104,6 +104,44 @@ const EXTRA: ShapeDef[] = [
     },
   },
   { id: 'ring', label: 'Ring', polygons: () => [circle(0, 0, 1, 96), circle(0, 0, 0.6, 96, true)] },
+  {
+    id: 'arch',
+    label: 'Arch',
+    // A rectangle with a semicircular top (2 wide × 2 tall before scaling).
+    polygons: () => {
+      const p: Poly = [
+        [-1, -1],
+        [1, -1],
+      ];
+      for (let i = 0; i <= 48; i++) {
+        const a = (i / 48) * Math.PI;
+        p.push([Math.cos(a), Math.sin(a)]);
+      }
+      return [p];
+    },
+  },
+  {
+    id: 'plaque',
+    label: 'Plaque',
+    // A rectangle with concave (inward-rounded) corners, the classic name plaque.
+    polygons: () => {
+      const w = 1.6;
+      const h = 1;
+      const r = 0.22;
+      const p: Poly = [];
+      const corner = (cx: number, cy: number, a0: number) => {
+        for (let i = 0; i <= 12; i++) {
+          const a = a0 - (i / 12) * (Math.PI / 2);
+          p.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+        }
+      };
+      corner(w, -h, Math.PI);
+      corner(w, h, (3 * Math.PI) / 2);
+      corner(-w, h, 0);
+      corner(-w, -h, Math.PI / 2);
+      return [p];
+    },
+  },
 ];
 
 export const CANVAS_SHAPES: ShapeDef[] = [

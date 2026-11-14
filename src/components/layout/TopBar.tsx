@@ -14,8 +14,9 @@ import {
   KeyRound,
   Signpost,
   Grid3x3,
-  Package,
   Image,
+  LayoutDashboard,
+  Tag,
   type LucideIcon,
 } from 'lucide-react';
 import { Popover } from '@/components/ui/Popover';
@@ -23,8 +24,10 @@ import { AccountButton } from './AccountButton';
 import { useTour } from '@/components/onboarding/Tour';
 import { useProjects } from '@/store/projectStore';
 import { useStudio, type StudioId } from '@/app/studio';
+import { MAKER_ENTRIES } from '@/platform/catalog';
 
 const NAV = [
+  { label: 'Dashboard', Icon: LayoutDashboard, studio: 'dashboard' as const, hint: 'Your projects, makers and tools' },
   { label: 'Design', Icon: Box, view: 'editor' as const },
   { label: 'Split Studio', Icon: Scissors, studio: 'split' as const, hint: 'Split a multi-colour 3MF into parts' },
   { label: 'My Projects', Icon: FolderOpen, view: 'projects' as const },
@@ -32,16 +35,26 @@ const NAV = [
   { label: 'Community', Icon: Users, soon: 'Coming soon' },
 ];
 
-/** Focused makers. Coming-soon entries are shown, labelled and disabled. */
+/** Focused makers (from the shared catalogue), plus makers still to come, shown disabled. */
+const MAKER_ICONS: Record<string, LucideIcon> = {
+  keyring: KeyRound,
+  keytag: Tag,
+  sign: Signpost,
+  vase: Flower2,
+  split: Scissors,
+  cookie: Cookie,
+};
 export const MAKERS: { id: string; label: string; Icon: LucideIcon; studio?: StudioId }[] = [
-  { id: 'keyring', label: 'Keyring & Name Tag', Icon: KeyRound, studio: 'keyring' },
-  { id: 'cookie', label: 'Cookie Cutter & Stamp', Icon: Cookie, studio: 'cookie' },
-  { id: 'vase', label: 'Vase Maker', Icon: Flower2, studio: 'vase' },
-  { id: 'sign', label: 'Sign Maker', Icon: Signpost },
+  ...MAKER_ENTRIES.filter((m) => m.id !== 'split').map((m) => ({
+    id: m.id,
+    label: m.name,
+    Icon: MAKER_ICONS[m.id] ?? Wand2,
+    studio: m.studio,
+  })),
   { id: 'organiser', label: 'Organiser Generator', Icon: Grid3x3 },
-  { id: 'box', label: 'Box & Lid Maker', Icon: Package },
   { id: 'lithophane', label: 'Lithophane Studio', Icon: Image },
 ];
+const MAKER_STUDIOS = new Set(MAKERS.map((m) => m.studio).filter(Boolean));
 
 function MakersMenu({ active, onOpen }: { active: boolean; onOpen: (s: StudioId) => void }) {
   return (
@@ -138,10 +151,7 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
           );
           // The Makers menu sits right after the studios.
           return targetStudio === 'split'
-            ? [
-                button,
-                <MakersMenu key="makers" active={studio === 'cookie' || studio === 'vase' || studio === 'keyring'} onOpen={setStudio} />,
-              ]
+            ? [button, <MakersMenu key="makers" active={MAKER_STUDIOS.has(studio)} onOpen={setStudio} />]
             : button;
         })}
       </nav>

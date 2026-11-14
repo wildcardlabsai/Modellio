@@ -18,6 +18,24 @@ export interface ProjectMeta {
   objectCount: number;
   /** Small PNG data URL rendered from the viewport. */
   thumbnail?: string;
+  /**
+   * The workspace that made the project: 'design' (the Design Studio) or a maker
+   * ('keyring', 'keytag', 'sign', 'cookie', 'vase'). Missing on projects saved before
+   * MODELLIO 2.0, which are Design Studio projects.
+   */
+  workspace?: string;
+}
+
+/**
+ * A maker's own settings, kept with the project so the maker can reopen it exactly. The
+ * generated geometry is also stored in `document` as ordinary mesh objects, so the same
+ * project opens in the Design Studio. `schema` is the maker's settings version (each maker
+ * migrates its own older settings).
+ */
+export interface MakerProjectState {
+  studio: string;
+  schema: number;
+  state: unknown;
 }
 
 export interface ProjectData {
@@ -25,10 +43,16 @@ export interface ProjectData {
   document: ModelDocument;
   /** Mesh assets referenced by mesh shapes (imports, flattened Booleans). */
   assets: Record<string, MeshData>;
+  /** Present when a maker made the project. */
+  maker?: MakerProjectState;
 }
 
+/** The workspace a project belongs to (older projects are Design Studio projects). */
+export const workspaceOf = (meta: Pick<ProjectMeta, 'workspace'>) => meta.workspace ?? 'design';
+
 export const PROJECT_FILE_FORMAT = 'modellio-project';
-export const PROJECT_FILE_VERSION = 1;
+/** v2 (MODELLIO 2.0): adds `meta.workspace` and `maker`. v1 files open as Design Studio projects. */
+export const PROJECT_FILE_VERSION = 2;
 export const CURRENT_SCHEMA = 1;
 
 export class ProjectFormatError extends Error {}
@@ -129,7 +153,14 @@ export function projectToFile(p: ProjectData): string {
   }
   const { thumbnail: _thumb, ...meta } = p.meta;
   void _thumb;
-  return JSON.stringify({ format: PROJECT_FILE_FORMAT, version: PROJECT_FILE_VERSION, meta, document: p.document, assets });
+  return JSON.stringify({
+    format: PROJECT_FILE_FORMAT,
+    version: PROJECT_FILE_VERSION,
+    meta,
+    document: p.document,
+    assets,
+    ...(p.maker ? { maker: p.maker } : {}),
+  });
 }
 
 /** Parse a .modellio file. Throws ProjectFormatError for anything invalid. */
@@ -168,8 +199,16 @@ export function projectFromFile(text: string): ProjectData {
       createdAt: typeof m.createdAt === 'number' ? m.createdAt : now,
       updatedAt: typeof m.updatedAt === 'number' ? m.updatedAt : now,
       objectCount: Object.keys(document.objects).length,
+      ...(typeof m.workspace === 'string' ? { workspace: m.workspace } : {}),
     },
     document,
     assets,
+    ...(readMaker(raw.maker) ?? {}),
   };
+}
+
+/** Validate a stored maker block (anything malformed is dropped, keeping the geometry). */
+function readMaker(v: unknown): { maker: MakerProjectState } | null {
+  if (!isObj(v) || typeof v.studio !== 'string' || typeof v.schema !== 'number' || !('state' in v)) return null;
+  return { maker: { studio: v.studio, schema: v.schema, state: v.state } };
 }

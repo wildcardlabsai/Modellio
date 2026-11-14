@@ -64,10 +64,7 @@ const vol = (st, id) => st.parts.find((p) => p.id === id)?.v ?? 0;
 
 // 1. Open from the landing page and the Makers menu
 await page.goto(`${URL}/`, { waitUntil: 'networkidle' });
-await page
-  .getByTestId('studio-card-keyring')
-  .getByRole('link', { name: /Open Keyring Maker/ })
-  .click();
+await page.getByTestId('studio-card-keyring').click();
 await page.getByTestId('keyring-studio').waitFor({ timeout: 20000 });
 check('1. The landing page card opens the maker at ?studio=keyring', page.url().includes('studio=keyring'));
 let st = await settled((s) => s.parts.length === 2);
@@ -81,7 +78,7 @@ check(
   st.notes.some((n) => /filament change/.test(n)),
 );
 await page.getByRole('button', { name: 'Makers' }).click();
-check('4. The Makers menu lists the keyring maker', await page.getByRole('menuitem', { name: /Keyring & Name Tag/ }).isEnabled());
+check('4. The Makers menu lists the keyring maker', await page.getByRole('menuitem', { name: /Keyring Maker/ }).isEnabled());
 await page.keyboard.press('Escape');
 
 // 2. Templates

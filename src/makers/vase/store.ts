@@ -10,6 +10,11 @@ interface VaseState {
   params: VaseParams;
   /** Template the design started from (cleared once nothing of it is left to name). */
   templateId: string | null;
+  /** The saved project this design belongs to. */
+  project: { id: string; name: string } | null;
+  setProject: (project: { id: string; name: string } | null) => void;
+  /** Open saved settings (from a project). */
+  loadSaved: (params: VaseParams, templateId: string | null) => void;
   result: VaseResult | null;
   error: string | null;
   building: boolean;
@@ -29,7 +34,7 @@ interface VaseState {
 }
 
 const KEY = 'modellio:vase';
-function load(): Partial<Pick<VaseState, 'params' | 'templateId' | 'tab'>> {
+function load(): Partial<Pick<VaseState, 'params' | 'templateId' | 'tab' | 'project'>> {
   try {
     return JSON.parse(localStorage.getItem(KEY) ?? '{}');
   } catch {
@@ -53,9 +58,9 @@ let generation = 0;
 
 export const useVase = create<VaseState>((set, get) => {
   const persist = () => {
-    const { params, templateId, tab } = get();
+    const { params, templateId, tab, project } = get();
     try {
-      localStorage.setItem(KEY, JSON.stringify({ params, templateId, tab }));
+      localStorage.setItem(KEY, JSON.stringify({ params, templateId, tab, project }));
     } catch {
       /* storage unavailable */
     }
@@ -69,6 +74,12 @@ export const useVase = create<VaseState>((set, get) => {
     tab: saved.tab ?? 'templates',
     params: saved.params ? { ...DEFAULT_VASE, ...saved.params } : { ...VASE_TEMPLATES[0].params },
     templateId: saved.templateId ?? (saved.params ? null : VASE_TEMPLATES[0].id),
+    project: saved.project ?? null,
+    setProject: (project) => {
+      set({ project });
+      persist();
+    },
+    loadSaved: (params, templateId) => commit({ ...DEFAULT_VASE, ...structuredClone(params) }, { templateId, tab: 'design' }),
     result: null,
     error: null,
     building: false,
@@ -89,10 +100,10 @@ export const useVase = create<VaseState>((set, get) => {
     beginGesture: () => set({ past: [...get().past.slice(-99), get().params], future: [] }),
     applyTemplate: (id) => {
       const tpl = VASE_TEMPLATES.find((x) => x.id === id);
-      if (tpl) commit(structuredClone(tpl.params), { templateId: id });
+      if (tpl) commit(structuredClone(tpl.params), { templateId: id, project: null });
     },
-    startBlank: () => commit(structuredClone(BLANK), { templateId: null, tab: 'design' }),
-    surpriseMe: () => commit(surprise(), { templateId: null }),
+    startBlank: () => commit(structuredClone(BLANK), { templateId: null, tab: 'design', project: null }),
+    surpriseMe: () => commit(surprise(), { templateId: null, project: null }),
     undo: () => {
       const { past, params } = get();
       if (!past.length) return;

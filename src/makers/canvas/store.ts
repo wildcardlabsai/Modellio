@@ -29,6 +29,9 @@ export interface MakerState<P, R> {
   side: 'front' | 'back';
   setSide: (side: 'front' | 'back') => void;
   templateId: string | null;
+  /** The saved project this design belongs to (set by Save, or when opened from the dashboard). */
+  project: { id: string; name: string } | null;
+  setProject: (project: { id: string; name: string } | null) => void;
   result: R | null;
   error: string | null;
   building: boolean;
@@ -56,7 +59,8 @@ export function createMakerStore<P extends object, R>(opts: {
   defaults: P;
   build: (elements: DesignElement[], params: P) => Promise<R>;
 }): UseBoundStore<StoreApi<MakerState<P, R>>> {
-  let saved: Partial<{ elements: DesignElement[]; params: P; templateId: string | null }> = {};
+  let saved: Partial<{ elements: DesignElement[]; params: P; templateId: string | null; project: { id: string; name: string } | null }> =
+    {};
   if (typeof window !== 'undefined')
     try {
       saved = JSON.parse(localStorage.getItem(opts.key) ?? '{}');
@@ -71,9 +75,9 @@ export function createMakerStore<P extends object, R>(opts: {
 
   return create<MakerState<P, R>>((set, get) => {
     const persist = () => {
-      const { elements, params, templateId } = get();
+      const { elements, params, templateId, project } = get();
       try {
-        localStorage.setItem(opts.key, JSON.stringify({ elements, params, templateId }));
+        localStorage.setItem(opts.key, JSON.stringify({ elements, params, templateId, project }));
       } catch {
         /* storage full or unavailable */
       }
@@ -89,6 +93,11 @@ export function createMakerStore<P extends object, R>(opts: {
       ...init,
       selected: null,
       tool: 'select',
+      project: saved.project ?? null,
+      setProject: (project) => {
+        set({ project });
+        persist();
+      },
       side: 'front',
       setSide: (side) => set({ side, selected: null }),
       result: null,
@@ -135,6 +144,8 @@ export function createMakerStore<P extends object, R>(opts: {
           templateId,
           selected: null,
           side: 'front',
+          // A template or blank start is a new design, not the saved project.
+          project: null,
         }),
       undo: () => {
         const { past } = get();

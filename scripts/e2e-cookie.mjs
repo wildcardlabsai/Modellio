@@ -61,10 +61,7 @@ const settled = async (pred = () => true, ms = 30000) => {
 
 // 1. Open from the landing page and the Makers menu
 await page.goto(`${URL}/`, { waitUntil: 'networkidle' });
-await page
-  .getByTestId('studio-card-cookie')
-  .getByRole('link', { name: /Open Cookie Cutter/ })
-  .click();
+await page.getByTestId('studio-card-cookie').click();
 await page.getByTestId('cookie-studio').waitFor({ timeout: 20000 });
 check('1. The landing page card opens the cookie maker at ?studio=cookie', page.url().includes('studio=cookie'));
 let st = await settled((s) => s.parts.length === 3);
@@ -82,7 +79,7 @@ check(
   '5. The Makers menu lists the cookie and keyring makers and the coming-soon makers',
   (await page.getByRole('menuitem', { name: /Cookie Cutter/ }).isEnabled()) &&
     (await page.getByRole('menuitem', { name: /Keyring/ }).isEnabled()) &&
-    (await page.getByRole('menuitem', { name: /Sign Maker/ }).isDisabled()),
+    (await page.getByRole('menuitem', { name: /Lithophane/ }).isDisabled()),
 );
 await page.getByRole('menuitem', { name: /Cookie Cutter/ }).click();
 await page.getByTestId('cookie-studio').waitFor();

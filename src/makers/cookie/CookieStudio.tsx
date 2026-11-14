@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
-import { CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, Redo2, TriangleAlert, Undo2 } from 'lucide-react';
+import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
+import { capturePreview } from '../shell/capture';
+import { useProjects } from '@/store/projectStore';
+import { useMakerHandoff } from '@/platform/handoff';
+import { DEFAULT_COOKIE_PARAMS } from './geometry';
+import { CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, TriangleAlert } from 'lucide-react';
 import { useCookie, openCookieTemplate, startBlankCookie, resizeDesign } from './store';
 import { COOKIE_TEMPLATES, COOKIE_CATEGORIES } from './templates';
 import type { CookieParams, CookiePart, CookieRole } from './geometry';
@@ -12,7 +17,6 @@ import { designBounds, type DesignElement } from '../canvas/model';
 import { NumberField } from '@/components/ui/NumberField';
 import { Toggle } from '@/components/ui/Toggle';
 import { Segmented } from '@/components/ui/Modal';
-import { IconButton } from '@/components/ui/IconButton';
 import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
 import { useEditor } from '@/store/editorStore';
@@ -61,6 +65,12 @@ export default function CookieStudio() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     (window as unknown as { modellioCookie: unknown }).modellioCookie = { store: useCookie, openCookieTemplate, startBlankCookie };
+    const handed = useMakerHandoff.getState().take('cookie');
+    if (handed) {
+      const st = handed.state as { elements: never[]; params: typeof DEFAULT_COOKIE_PARAMS; templateId: string | null };
+      useCookie.getState().load(st.elements, st.params, st.templateId);
+      useCookie.getState().setProject({ id: handed.projectId, name: handed.name });
+    }
     useCookie.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -159,41 +169,65 @@ function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design
   const make = useCookie((s) => s.params.make);
   const canUndo = useCookie((s) => s.past.length > 0);
   const canRedo = useCookie((s) => s.future.length > 0);
+  const project = useCookie((s) => s.project);
   const { undo, redo, setParams } = useCookie.getState();
   return (
-    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-white px-3 sm:px-5">
-      <h1 className="text-[14px] font-semibold text-ink">Cookie Cutter & Stamp Maker</h1>
-      <div className="w-[390px] shrink-0">
-        <Segmented
-          label="What to make"
-          value={make}
-          options={[
-            { value: 'both', label: 'Cutter + stamp' },
-            { value: 'cutter', label: 'Cutter' },
-            { value: 'stamp', label: 'Stamp' },
-          ]}
-          onChange={(v) => setParams({ make: v })}
-        />
-      </div>
-      <div className="w-[150px] shrink-0">
-        <Segmented<'design' | '3d'>
-          label="View"
-          value={view}
-          options={[
-            { value: 'design', label: 'Design' },
-            { value: '3d', label: '3D' },
-          ]}
-          onChange={setView}
-        />
-      </div>
-      <div className="flex-1" />
-      <IconButton label="Undo" shortcut="Ctrl+Z" disabled={!canUndo} onClick={undo}>
-        <Undo2 size={17} />
-      </IconButton>
-      <IconButton label="Redo" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={redo}>
-        <Redo2 size={17} />
-      </IconButton>
-    </div>
+    <MakerHeader
+      title="Cookie Cutter & Stamp Maker"
+      testId="cookie"
+      canUndo={canUndo}
+      canRedo={canRedo}
+      onUndo={undo}
+      onRedo={redo}
+      help={
+        <>
+          <p className="font-semibold text-ink">Make a cutter and stamp</p>
+          <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+            <li>Pick a template or Start blank and add a shape, a name or a picture.</li>
+            <li>“Cookie shape” cuts and is stamped; “Outline only” cuts; “Stamp detail” only presses in.</li>
+            <li>Set the size and outline margin on the right, then Download all parts.</li>
+          </ol>
+        </>
+      }
+      save={{
+        project,
+        suggestedName: designName,
+        run: async (name) => {
+          const st = useCookie.getState();
+          if (!st.result) throw new Error('The cookie has not finished building.');
+          const id = await useProjects.getState().saveMakerProject({
+            id: st.project?.id,
+            name,
+            studio: 'cookie',
+            schema: 1,
+            state: { elements: st.elements, params: st.params, templateId: st.templateId },
+            parts: st.result.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
+            thumbnail: capturePreview(),
+          });
+          st.setProject({ id, name });
+        },
+      }}
+    >
+      <HeaderTabs
+        label="What to make"
+        value={make}
+        options={[
+          { value: 'both', label: 'Cutter + stamp' },
+          { value: 'cutter', label: 'Cutter' },
+          { value: 'stamp', label: 'Stamp' },
+        ]}
+        onChange={(v) => setParams({ make: v })}
+      />
+      <HeaderTabs<'design' | '3d'>
+        label="View"
+        value={view}
+        options={[
+          { value: 'design', label: 'Design' },
+          { value: '3d', label: '3D' },
+        ]}
+        onChange={setView}
+      />
+    </MakerHeader>
   );
 }
 

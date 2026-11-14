@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -40,12 +41,12 @@ export function SplitViewport() {
         camera={{ position: [120, -160, 120], fov: 40, near: 0.5, far: 20000, up: [0, 0, 1] }}
         dpr={[1, 2]}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
-        onCreated={({ gl }) => gl.setClearColor('#f5f7fb')}
+        onCreated={({ gl }) => clearPreview(gl)}
       >
         <hemisphereLight args={['#ffffff', '#b9c2d0', 1.6]} />
         <directionalLight position={[80, -120, 200]} intensity={1.6} />
         <directionalLight position={[-120, 100, 60]} intensity={0.5} />
-        {mode !== 'plates' && <gridHelper args={[400, 40, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
+        {!productShot && mode !== 'plates' && <gridHelper args={[400, 40, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
         <Content mode={mode} doc={doc} parts={parts} contentKey={contentKey} />
       </Canvas>
       {doc && (

@@ -61,7 +61,7 @@ const settled = async (pred = () => true, ms = 30000) => {
 
 // 1. Getting there
 await page.goto(`${URL}/`, { waitUntil: 'networkidle' });
-await page.getByTestId('path-makers').getByTestId('maker-link-vase').click();
+await page.getByTestId('studio-card-vase').click();
 await page.getByTestId('vase-studio').waitFor({ timeout: 20000 });
 check('1. The landing page lists the Vase Maker and opens it at ?studio=vase', page.url().includes('studio=vase'));
 let st = await settled();
@@ -245,7 +245,7 @@ await page.getByRole('button', { name: 'Back to Vase Maker' }).click();
 await page.getByTestId('vase-studio').waitFor();
 check('25c. "Back to Vase Maker" returns to the vase', page.url().includes('studio=vase'));
 await page.getByRole('button', { name: 'Makers' }).click();
-check('26. The Makers menu lists the Vase Maker', await page.getByRole('menuitem', { name: /Vase Maker/ }).isEnabled());
+check('26. The Makers menu lists the Vase Maker', await page.getByRole('menuitem', { name: /Vase & Planter Maker/ }).isEnabled());
 await page.keyboard.press('Escape');
 
 // 7. Tablet

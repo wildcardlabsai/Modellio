@@ -44,7 +44,7 @@ export const DEFAULT_KEYRING: KeyringParams = {
 };
 
 export interface KeyringPart {
-  id: 'base' | 'top' | 'tag';
+  id: 'base' | 'top' | 'tag' | 'stand';
   name: string;
   colour: string;
   mesh: MeshData;

@@ -30,71 +30,70 @@ const path = () => new globalThis.URL(page.url()).search;
 await page.goto(URL + '/', { waitUntil: 'networkidle' });
 const landing = page.getByTestId('landing');
 check('1. / shows the landing page', await landing.isVisible());
+const h1 = (await page.getByRole('heading', { level: 1 }).textContent()) ?? '';
 check(
-  '2. The first screen offers both paths: Design Studio from scratch, or a maker',
-  (await page.getByRole('heading', { level: 1 }).textContent()).includes('What are you making') &&
-    (await page
-      .getByTestId('path-scratch')
-      .getByRole('link', { name: /Start designing/ })
-      .isVisible()) &&
-    (await page.getByTestId('path-makers').getByTestId('maker-link-cookie').isVisible()) &&
-    (await page.getByTestId('path-makers').getByTestId('maker-link-split').isVisible()),
+  '2. Hero: MODELLIO, the headline, the label and both calls to action',
+  h1.includes('MODELLIO') &&
+    h1.includes('The Complete 3D Creation Platform') &&
+    (await page.getByText('Design · Create · Customise · 3D Print').isVisible()) &&
+    (await page.getByTestId('hero-get-started').isVisible()) &&
+    (await page.getByRole('button', { name: 'Watch Overview' }).isVisible()),
+  h1,
 );
-const fold = await page.evaluate(() => {
-  const r = (id) => document.querySelector(`[data-testid="${id}"]`).getBoundingClientRect();
-  return { scratch: r('path-scratch').top, makers: r('path-makers').top, h: window.innerHeight };
-});
-check('2b. Both paths start above the fold on a laptop screen', fold.scratch < fold.h && fold.makers < fold.h, JSON.stringify(fold));
+const imgs = await page
+  .waitForFunction(
+    () => [...document.querySelectorAll('[data-testid="hero-visuals"] img')].every((i) => i.complete && i.naturalWidth > 0),
+    null,
+    { timeout: 10000 },
+  )
+  .then(
+    () => true,
+    () => false,
+  );
+check('2b. Hero product renders (keyring, vase, sign, planter) load', imgs);
 check('3. The editor is not mounted on the landing page', (await page.getByTestId('left-panel').count()) === 0);
-for (const id of ['design', 'keyring', 'split', 'cookie', 'vase'])
-  check(`4. Live studio card: ${id}`, await page.getByTestId(`studio-card-${id}`).isVisible());
-const soon = ['sign', 'organiser', 'box', 'lithophane'];
+for (const id of ['keyring', 'keytag', 'sign', 'vase', 'split', 'cookie', 'design'])
+  check(`4. Card on the page: ${id}`, await page.getByTestId(`studio-card-${id}`).isVisible());
+const soon = ['lithophane', 'thread'];
 let soonOk = true;
 for (const id of soon) {
   const card = page.getByTestId(`soon-card-${id}`);
-  soonOk &&=
-    (await card.isVisible()) && (await card.textContent()).includes('Coming soon') && (await card.locator('a, button').count()) === 0;
+  soonOk &&= (await card.isVisible()) && (await card.getByText('Coming soon').isVisible()) && (await card.getByRole('link').count()) === 0;
 }
-check('5. Coming-soon studios are listed, labelled and not clickable', soonOk);
-const imgs = await page.evaluate(async () => {
-  const list = [...document.querySelectorAll('[data-testid="landing"] img')];
-  for (const img of list) {
-    img.loading = 'eager';
-    if (!img.complete)
-      await new Promise((r) => img.addEventListener('load', r, { once: true }) || img.addEventListener('error', r, { once: true }));
-  }
-  return list.map((i) => ({ src: i.getAttribute('src'), ok: i.naturalWidth > 0 }));
-});
+check('5. Tools that are not built yet are labelled Coming soon and are not links', soonOk);
 check(
-  '6. Every image on the page loads',
-  imgs.length >= 10 && imgs.every((i) => i.ok),
-  imgs
-    .filter((i) => !i.ok)
-    .map((i) => i.src)
-    .join(', '),
+  '5b. Live tools link into the Design Studio',
+  (await page.getByTestId('tool-gear').getByRole('link').getAttribute('href')) === '/?studio=design',
 );
-await page.getByRole('navigation', { name: 'Page sections' }).first().getByRole('link', { name: 'FAQ' }).click();
-await page.waitForTimeout(600);
-check('7. Section links scroll to their section', await page.getByRole('heading', { name: 'Questions', exact: true }).isVisible());
+
+// Overview dialog
+await page.getByRole('button', { name: 'Watch Overview' }).click();
+const ov = page.getByTestId('overview-dialog');
+await ov.waitFor();
+const first = await ov.locator('p').first().textContent();
+await page.getByRole('button', { name: 'Next step' }).click();
+const second = await ov.locator('p').first().textContent();
+check('6. "Watch Overview" opens a step-by-step overview', first !== second, `${first} → ${second}`);
+await page.keyboard.press('Escape');
+check('6b. Escape closes the overview', (await ov.count()) === 0);
+
+// Section links
+await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Pricing' }).click();
+await page.waitForTimeout(700);
+check('7. Header section links scroll to their section', await page.getByRole('heading', { name: 'Free while we build' }).isVisible());
 const faq = page.locator('details').first();
 await faq.locator('summary').click();
 check('8. FAQ answers expand', await faq.evaluate((d) => d.open));
-await page.screenshot({ path: `${OUT}/landing-01-desktop.png` });
 
-// 2. Navigation into studios and back
-await page
-  .getByRole('link', { name: /Open Design Studio/ })
-  .first()
-  .click();
+// 2. Navigation into the app
+await page.goto(URL + '/', { waitUntil: 'networkidle' });
+await page.getByTestId('open-design-studio').click();
 await page.getByTestId('left-panel').waitFor({ timeout: 15000 });
 check('9. "Open Design Studio" opens the editor at ?studio=design', path() === '?studio=design' && !page.url().includes('#'), page.url());
 await page.getByRole('link', { name: 'Modellio home' }).click();
 await landing.waitFor();
 check('10. The logo returns to the landing page', path() === '');
-await page
-  .getByTestId('studio-card-split')
-  .getByRole('link', { name: /Open Split Studio/ })
-  .click();
+await page.getByTestId('studio-card-split').click();
 await page.getByTestId('split-studio').waitFor({ timeout: 15000 });
 check('11. The Split Studio card opens Split Studio', path() === '?studio=split');
 await page.goBack();
@@ -105,13 +104,17 @@ await page.getByTestId('split-studio').waitFor({ timeout: 15000 });
 check('13. Browser Forward returns to Split Studio', true);
 await page.reload({ waitUntil: 'networkidle' });
 check('14. Reloading a studio URL stays in that studio', await page.getByTestId('split-studio').isVisible());
-const href = await page
-  .goto(URL + '/', { waitUntil: 'networkidle' })
-  .then(() => page.getByTestId('studio-card-design').getByRole('link').getAttribute('href'));
-check('15. Studio links are real URLs (open in a new tab)', href === '/?studio=design', href);
+await page.goto(URL + '/', { waitUntil: 'networkidle' });
+const href = await page.getByTestId('hero-get-started').getAttribute('href');
+check('15. Links are real URLs (open in a new tab)', href === '/?studio=dashboard', href);
+await page.getByTestId('hero-get-started').click();
+await page.getByTestId('dashboard').waitFor({ timeout: 15000 });
+check('15b. "Get Started Free" opens the dashboard', path() === '?studio=dashboard');
 
-// 3. Templates open in the Design Studio
-await page.getByRole('button', { name: /Open the Phone stand template/i }).click();
+// 3. Templates open in the Design Studio (from the Explore link)
+await page.goto(URL + '/', { waitUntil: 'networkidle' });
+await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Explore' }).click();
+await page.getByRole('button', { name: /Use phone stand/i }).click();
 await page.getByTestId('left-panel').waitFor({ timeout: 15000 });
 const ok = await page
   .waitForFunction(() => window.modellio.store.getState().doc.rootIds.length > 0, null, { timeout: 15000 })
@@ -120,7 +123,7 @@ const ok = await page
     () => false,
   );
 const name = await page.evaluate(() => window.modellio.projects.getState().current?.name ?? '');
-check('16. A template card opens that template in the Design Studio', ok && /phone stand/i.test(name), name);
+check('16. Explore → a template opens it in the Design Studio', ok && /phone stand/i.test(name), name);
 
 // 4. Share links still open the editor directly (including older links without ?studio)
 const shareUrl = await page.evaluate(() => window.modellio.projects.getState().shareLink().url ?? null);
@@ -166,16 +169,18 @@ for (const [label, vp] of [
   check(`20. ${label}: no horizontal scrolling`, !overflow);
   if (label === 'phone') {
     await p.getByRole('button', { name: 'Open menu' }).tap();
-    const menu = p.locator('#landing-mobile-nav');
+    const menu = p.getByTestId('mobile-menu');
     check(
-      '21. phone: the menu opens with section links and a studio link',
-      (await menu.isVisible()) && (await menu.getByRole('link', { name: /Open Design Studio/ }).isVisible()),
+      '21. phone: the menu opens with section links and Get Started',
+      (await menu.isVisible()) &&
+        (await menu.getByRole('link', { name: 'Design Studio' }).isVisible()) &&
+        (await menu.getByRole('link', { name: 'Get Started Free' }).isVisible()),
     );
-    await menu.getByRole('link', { name: 'Templates' }).tap();
-    await p.waitForTimeout(500);
+    await menu.getByRole('link', { name: 'Tools' }).tap();
+    await p.waitForTimeout(700);
     check(
       '22. phone: menu links navigate and close the menu',
-      !(await menu.isVisible()) && (await p.getByRole('heading', { name: 'Or start from a template' }).isVisible()),
+      (await menu.count()) === 0 && (await p.getByRole('heading', { name: 'Powerful Design Tools' }).isVisible()),
     );
   }
   await p.screenshot({ path: `${OUT}/landing-02-${label}.png` });

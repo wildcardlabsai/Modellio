@@ -95,14 +95,14 @@ export class IndexedDbProjectRepository implements ProjectRepository {
       req(tx.objectStore('data').get(id) as IDBRequest<Omit<ProjectData, 'meta'> | undefined>),
     ]);
     if (!meta || !data) return null;
-    return { meta, document: data.document, assets: data.assets };
+    return { meta, document: data.document, assets: data.assets, ...(data.maker ? { maker: data.maker } : {}) };
   }
 
   async save(p: ProjectData): Promise<void> {
     const db = await this.db;
     const tx = db.transaction(['meta', 'data'], 'readwrite');
     tx.objectStore('meta').put(p.meta);
-    tx.objectStore('data').put({ document: p.document, assets: p.assets }, p.meta.id);
+    tx.objectStore('data').put({ document: p.document, assets: p.assets, ...(p.maker ? { maker: p.maker } : {}) }, p.meta.id);
     await txDone(tx);
   }
 

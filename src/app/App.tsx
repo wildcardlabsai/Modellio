@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, type ComponentType, type LazyExoticComponent, lazy, useEffect, useState } from 'react';
 import { ReturnBar } from '@/components/layout/ReturnBar';
 import { TopBar } from '@/components/layout/TopBar';
 import { Toolbar } from '@/components/toolbar/Toolbar';
@@ -34,12 +34,28 @@ import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
 import { booleanStats, computeCombined } from '@/cad/operations/combine';
-import { useStudio } from './studio';
+import { useStudio, type StudioId } from './studio';
+import { WORKSPACE_LABEL } from '@/platform/catalog';
 import { LandingPage } from '@/landing/LandingPage';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 const CookieStudio = lazy(() => import('@/makers/cookie/CookieStudio'));
 const VaseStudio = lazy(() => import('@/makers/vase/VaseStudio'));
 const KeyringStudio = lazy(() => import('@/makers/keyring/KeyringStudio'));
+const KeyTagStudio = lazy(() => import('@/makers/keytag/KeyTagStudio'));
+const SignStudio = lazy(() => import('@/makers/sign/SignStudio'));
+const Dashboard = lazy(() => import('@/dashboard/Dashboard'));
+const PrivacyPage = lazy(() => import('@/platform/PrivacyPage'));
+
+/** Workspaces other than the Design Studio, loaded on demand. */
+const WORKSPACES: Partial<Record<StudioId, LazyExoticComponent<ComponentType>>> = {
+  dashboard: Dashboard,
+  split: SplitStudio,
+  cookie: CookieStudio,
+  vase: VaseStudio,
+  keyring: KeyringStudio,
+  keytag: KeyTagStudio,
+  sign: SignStudio,
+};
 
 export function App() {
   useKeyboardShortcuts();
@@ -114,37 +130,28 @@ export function App() {
   }, []);
 
   if (studio === 'home') return <LandingPage />;
+  if (studio === 'privacy')
+    return (
+      <Suspense fallback={null}>
+        <PrivacyPage />
+      </Suspense>
+    );
+  const Workspace = WORKSPACES[studio];
 
   return (
     <div className="flex h-full flex-col">
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <ReturnBar />
-      {studio === 'split' || studio === 'cookie' || studio === 'vase' || studio === 'keyring' ? (
+      {Workspace ? (
         <Suspense
           fallback={
             <div className="flex flex-1 items-center justify-center text-[13px] text-muted" role="status">
-              <Loader2 size={16} className="mr-2 animate-spin" /> Opening{' '}
-              {studio === 'split'
-                ? 'Split Studio'
-                : studio === 'vase'
-                  ? 'the Vase Maker'
-                  : studio === 'keyring'
-                    ? 'the Keyring Maker'
-                    : 'the cookie maker'}
-              …
+              <Loader2 size={16} className="mr-2 animate-spin" /> Opening {WORKSPACE_LABEL[studio] ?? 'MODELLIO'}…
             </div>
           }
         >
           <ErrorBoundary fallback={(error, reset) => <ViewportCrash error={error} reset={reset} />}>
-            {studio === 'split' ? (
-              <SplitStudio />
-            ) : studio === 'vase' ? (
-              <VaseStudio />
-            ) : studio === 'keyring' ? (
-              <KeyringStudio />
-            ) : (
-              <CookieStudio />
-            )}
+            <Workspace />
           </ErrorBoundary>
         </Suspense>
       ) : (
