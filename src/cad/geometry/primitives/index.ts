@@ -13,7 +13,7 @@ import { fitToSize, flipGeometry, mergeParts, polyhedron, yUpToZUp } from '../ge
 type Builder = (size: Vec3, params: ShapeParams) => THREE.BufferGeometry;
 
 /** Shapes built purely from size + numeric params (text and mesh need more context). */
-export type ParametricType = Exclude<PrimitiveType, 'text' | 'mesh' | 'profile'>;
+export type ParametricType = Exclude<PrimitiveType, 'text' | 'mesh' | 'profile' | 'solid'>;
 
 const seg = (params: ShapeParams, fallback = 48) => Math.round(clamp(params.segments ?? fallback, 3, 256));
 

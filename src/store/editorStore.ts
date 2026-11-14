@@ -42,7 +42,7 @@ import {
   worldBoundsOf,
   worldMatrix,
 } from '@/cad/hierarchy';
-import { getShapeDefinition, getTextMesh } from '@/cad/shapeRegistry';
+import { getShapeDefinition, getTextMesh, solidRequest } from '@/cad/shapeRegistry';
 import { bakeGroupDraft, computeCombined, separateDraft } from '@/cad/operations/combine';
 import { initKernel } from '@/cad/kernel/kernel';
 import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
@@ -51,6 +51,8 @@ import { addMeshAsset, getMeshAsset } from '@/cad/assets';
 import { applyMeshTool as applyMeshToolGeometry, type MeshTool } from '@/cad/operations/meshTools';
 import { getKernel } from '@/cad/kernel/kernel';
 import { buildProfileMesh, type ProfileOp } from '@/cad/sketch/profile';
+import { solidConversion } from '@/cad/brep/convert';
+import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
 import type { CombineMode, TextContent } from '@/types/document';
@@ -189,6 +191,12 @@ export interface EditorState {
    * message) when the sketch has no closed outline.
    */
   saveSketch: (id: ObjectId | null, sketch: Sketch, op: ProfileOp) => Promise<ObjectId | null>;
+  /**
+   * Turn a box, cylinder, cone, sphere, torus, wedge, tube or sketch into a precise solid (exact
+   * OpenCascade geometry that can take fillets and chamfers). Checks the build first; resolves
+   * false (with a message) when the shape cannot be converted or the engine fails.
+   */
+  convertToSolid: (id: ObjectId) => Promise<boolean>;
   /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
   applyMeshTool: (id: ObjectId, tool: MeshTool, amount: number) => void;
   addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
@@ -713,6 +721,42 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply('Sketch', (d) => addObjectDraft(d, obj));
       set({ selection: [obj.id] });
       return obj.id;
+    },
+
+    convertToSolid: async (id) => {
+      const o = get().doc.objects[id];
+      if (o?.kind !== 'shape') return false;
+      if (o.shape === 'solid') return true;
+      if (get().readOnly) {
+        refuseReadOnly();
+        return false;
+      }
+      if (isEffectivelyLocked(get().doc, id)) {
+        get().notify('This object is locked.');
+        return false;
+      }
+      const conv = solidConversion(o);
+      if (!conv.ok) {
+        get().notify(conv.reason);
+        return false;
+      }
+      try {
+        await buildBrepAsync(solidRequest({ feature: conv.recipe, size: o.size })!);
+      } catch (e) {
+        get().notify(e instanceof Error ? e.message : String(e));
+        return false;
+      }
+      const current = get().doc.objects[id];
+      if (current?.kind !== 'shape' || current.shape !== o.shape) return false;
+      get().apply('Make precise solid', (d) => {
+        const t = d.objects[id];
+        if (t?.kind !== 'shape') return;
+        t.shape = 'solid';
+        t.feature = conv.recipe;
+        t.params = {};
+        delete t.sketch;
+      });
+      return true;
     },
 
     applyMeshTool: (id, tool, amount) => {

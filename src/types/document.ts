@@ -1,4 +1,5 @@
 import type { Sketch } from '@/cad/sketch/types';
+import type { FeatureRecipe } from '@/cad/brep/types';
 /**
  * MODELLIO document model.
  *
@@ -44,7 +45,9 @@ export type PrimitiveType =
   /** Arbitrary mesh from the asset store (Boolean bakes, separated parts, imports). */
   | 'mesh'
   /** A 2D sketch extruded or revolved (`sketch` + params op/depth/angle). */
-  | 'profile';
+  | 'profile'
+  /** A precise (OpenCascade) solid built from `feature`: a base plus fillets and chamfers. */
+  | 'solid';
 
 export type FontId = 'inter-bold' | 'inter' | 'roboto-slab' | 'bebas-neue' | 'pacifico' | 'space-mono';
 
@@ -93,6 +96,8 @@ export interface ShapeObject extends BaseObject {
   meshId?: string;
   /** Profile shapes only: the editable 2D sketch the solid is made from. */
   sketch?: Sketch;
+  /** Solid shapes only: the feature recipe (base + ordered operations). */
+  feature?: FeatureRecipe;
 }
 
 /**

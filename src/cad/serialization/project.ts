@@ -1,3 +1,4 @@
+import { validateRecipe } from '@/cad/brep/types';
 import type { ModelDocument, SceneObject } from '@/types/document';
 import type { MeshData } from '../kernel/meshData';
 import { collectSubtree } from '../document';
@@ -52,7 +53,8 @@ export const workspaceOf = (meta: Pick<ProjectMeta, 'workspace'>) => meta.worksp
 
 export const PROJECT_FILE_FORMAT = 'modellio-project';
 /** v2 (MODELLIO 2.0): adds `meta.workspace` and `maker`. v1 files open as Design Studio projects. */
-export const PROJECT_FILE_VERSION = 2;
+/** 3: precise solids (`solid` shapes with a feature recipe). */
+export const PROJECT_FILE_VERSION = 3;
 export const CURRENT_SCHEMA = 1;
 
 export class ProjectFormatError extends Error {}
@@ -91,6 +93,10 @@ export function migrateDocument(raw: unknown): ModelDocument {
     if (!isObj(t) || !isVec3(t.position) || !isVec3(t.rotation)) throw new ProjectFormatError(`Object ${id} has an invalid transform.`);
     if (value.kind === 'shape') {
       if (typeof value.shape !== 'string' || !isVec3(value.size)) throw new ProjectFormatError(`Shape ${id} is malformed.`);
+      if (value.shape === 'solid') {
+        const problem = validateRecipe(value.feature);
+        if (problem) throw new ProjectFormatError(`Solid ${id}: ${problem}`);
+      }
     } else if (value.kind === 'group') {
       if (!Array.isArray(value.children)) throw new ProjectFormatError(`Group ${id} is malformed.`);
     } else {

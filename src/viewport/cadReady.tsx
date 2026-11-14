@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { initKernel, onKernelReady } from '@/cad/kernel/kernel';
 import { loadFont, onFontLoaded } from '@/cad/text/fonts';
 import { onCombineResult } from '@/cad/operations/combine';
+import { onBrepResult } from '@/cad/brep/client';
 import { useEditor } from '@/store/editorStore';
 import type { FontId } from '@/types/document';
 
@@ -16,6 +17,7 @@ export const useCadReady = create<{ version: number; kernel: boolean }>(() => ({
 onKernelReady(() => useCadReady.setState((s) => ({ version: s.version + 1, kernel: true })));
 onFontLoaded(() => useCadReady.setState((s) => ({ version: s.version + 1 })));
 onCombineResult(() => useCadReady.setState((s) => ({ version: s.version + 1 })));
+onBrepResult(() => useCadReady.setState((s) => ({ version: s.version + 1 })));
 
 /**
  * Start the kernel and load every font the document uses. Mounted as its own

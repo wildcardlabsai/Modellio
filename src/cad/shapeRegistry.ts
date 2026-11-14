@@ -8,6 +8,8 @@ import { getMeshAsset } from './assets';
 import { getLoadedFont } from './text/fonts';
 import { buildTextMesh } from './text/textGeometry';
 import { buildProfileMesh, type ProfileOp } from './sketch/profile';
+import { getBrep } from './brep/client';
+import type { BrepBuild, BrepRequest } from './brep/types';
 
 export interface ParamSpec {
   key: string;
@@ -184,6 +186,7 @@ export const SHAPES: ShapeDefinition[] = (
       defaultColor: '#0EA5E9',
       params: [],
     },
+    { type: 'solid', label: 'Precise solid', defaultSize: [20, 20, 20], defaultParams: {}, defaultColor: '#2463EB', params: [] },
   ]);
 
 export const LIBRARY_SHAPES = SHAPES.filter((s) => s.library);
@@ -278,6 +281,23 @@ export function getTextMesh(o: Pick<ShapeObject, 'text' | 'params'>): MeshData |
   return mesh;
 }
 
+/**
+ * The engine request for a solid: primitives are rebuilt at the object's exact size (so fillet
+ * radii stay true millimetres); other bases are built at their natural size and scaled to fit.
+ */
+export function solidRequest(o: Pick<ShapeObject, 'feature' | 'size'>): BrepRequest | null {
+  if (!o.feature) return null;
+  return { recipe: o.feature, size: o.feature.base.kind === 'primitive' ? safeSize(o.size) : [0, 0, 0] };
+}
+
+/** The finished build of a solid (or the previous one while a new size is being built). */
+export function getSolidBuild(o: Pick<ShapeObject, 'feature' | 'size'>): BrepBuild | null {
+  const req = solidRequest(o);
+  if (!req) return null;
+  const { entry, fallback } = getBrep(req);
+  return entry.state === 'ready' ? entry.build : fallback;
+}
+
 const profileCache = new Map<string, MeshData | null>();
 
 /** The solid for a profile shape's sketch (extruded or revolved). Null until the kernel loads. */
@@ -305,6 +325,12 @@ export function getProfileMesh(o: Pick<ShapeObject, 'sketch' | 'params'>): MeshD
  * still loading (kernel, font) or missing (asset). Caller owns the result.
  */
 export function buildGeometryForShape(o: ShapeObject): THREE.BufferGeometry | null {
+  if (o.shape === 'solid') {
+    const b = getSolidBuild(o);
+    if (!b) return null;
+    const g = fitToSize(meshDataToGeometry({ positions: b.positions, indices: b.indices }, (30 * Math.PI) / 180), safeSize(o.size));
+    return o.mirror ? mirrorGeometry(g, o.mirror) : g;
+  }
   if (o.shape === 'text') {
     const mesh = getTextMesh(o);
     if (!mesh) return null;

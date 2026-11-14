@@ -68,6 +68,21 @@ describe('project file (.modellio)', () => {
     expect(doc.rootIds.sort()).toEqual(['g1', Object.values(doc.objects).find((o) => o.kind === 'shape' && o.shape === 'mesh')!.id].sort());
   });
 
+  it('round-trips precise solids (feature recipes) and rejects invalid ones', () => {
+    const p = sampleProject();
+    const solid = createShape(p.document, 'solid', [0, 40, 10]);
+    solid.feature = {
+      base: { kind: 'primitive', shape: 'box', params: {} },
+      ops: [{ id: 'f1', kind: 'fillet', radius: 2, edges: [{ kind: 'line', mid: [0, -1, 1], dir: [1, 0, 0], radius: 0 }] }],
+    };
+    p.document = produce(p.document, (d) => addObjectDraft(d, solid));
+    const back = projectFromFile(projectToFile(p));
+    expect((back.document.objects[solid.id] as ShapeObject).feature).toEqual(solid.feature);
+    const raw = JSON.parse(projectToFile(p));
+    raw.document.objects[solid.id].feature.ops[0].radius = -1;
+    expect(() => projectFromFile(JSON.stringify(raw))).toThrow(/Fillet radius must be positive/);
+  });
+
   it('rejects objects with invalid transforms', () => {
     const raw = JSON.parse(JSON.stringify(sampleProject().document));
     const id = raw.rootIds[0];

@@ -30,8 +30,8 @@ interface Props {
  */
 export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted, ghost }: Props) {
   const { shape, size, params, transform, color, mirror, text, meshId, isHole } = object;
-  const version = useCadReady((s) => (shape === 'text' || shape === 'mesh' || shape === 'profile' ? s.version : 0));
-  const key = JSON.stringify([shape, size, params, mirror, text, meshId, object.sketch, version]);
+  const version = useCadReady((s) => (shape === 'text' || shape === 'mesh' || shape === 'profile' || shape === 'solid' ? s.version : 0));
+  const key = JSON.stringify([shape, size, params, mirror, text, meshId, object.sketch, object.feature, version]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const geometry = useMemo(() => buildGeometryForShape(object), [key]);
   useEffect(() => () => geometry?.dispose(), [geometry]);

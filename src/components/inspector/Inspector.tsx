@@ -24,7 +24,11 @@ import {
   SquaresIntersect,
   BetweenHorizontalEnd,
   FlipVertical2,
+  Gem,
+  Loader2,
 } from 'lucide-react';
+import { useBrepEngine } from '@/cad/brep/client';
+import { solidConversion } from '@/cad/brep/convert';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
@@ -33,7 +37,7 @@ import { useCadReady } from '@/viewport/cadReady';
 import type { CombineMode, FontId } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
 import type { GroupObject, SceneObject, ShapeObject, Vec3 } from '@/types/document';
-import { getShapeDefinition } from '@/cad/shapeRegistry';
+import { getShapeDefinition, getSolidBuild } from '@/cad/shapeRegistry';
 import { proportionalSize } from '@/cad/document';
 import { canScaleNonUniform, descendantShapes, groupLocalBounds, isEffectivelyLocked } from '@/cad/hierarchy';
 import { NumberField } from '@/components/ui/NumberField';
@@ -372,11 +376,14 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               />
             </Section>
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
-            {object.kind === 'shape' && object.shape !== 'text' && object.shape !== 'mesh' && object.shape !== 'profile' && (
-              <HollowSection object={object} locked={locked} />
-            )}
+            {object.kind === 'shape' &&
+              object.shape !== 'text' &&
+              object.shape !== 'mesh' &&
+              object.shape !== 'profile' &&
+              object.shape !== 'solid' && <HollowSection object={object} locked={locked} />}
             {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
             {object.kind === 'shape' && object.shape === 'profile' && <ProfileSection object={object} locked={locked} />}
+            {object.kind === 'shape' && <PreciseSolidSection object={object} locked={locked} />}
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
               <Toggle
@@ -773,6 +780,83 @@ function ProfileSection({ object, locked }: { object: ShapeObject; locked: boole
       <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
         Changing the sketch or these settings rebuilds the solid at its sketched size.
       </p>
+    </Section>
+  );
+}
+
+const BASE_LABEL: Record<string, string> = {
+  box: 'Box',
+  cylinder: 'Cylinder',
+  cone: 'Cone',
+  sphere: 'Sphere',
+  torus: 'Torus',
+  wedge: 'Wedge',
+  tube: 'Tube',
+};
+
+/**
+ * Precise solids: exact OpenCascade geometry. For shapes that can be converted, offers the
+ * conversion; for solids, shows what they are built from and anything that could not be applied.
+ */
+function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const engine = useBrepEngine((s) => s.status);
+  const version = useCadReady((s) => s.version);
+  const [busy, setBusy] = useState(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const build = useMemo(() => (object.shape === 'solid' ? getSolidBuild(object) : null), [object.feature, object.size, version]);
+  if (object.shape !== 'solid') {
+    const conv = solidConversion(object);
+    if (!conv.ok) return null;
+    const convert = async () => {
+      setBusy(true);
+      try {
+        await useEditor.getState().convertToSolid(object.id);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <Section title="Precise solid">
+        <p className="text-[12px] leading-relaxed text-muted">
+          Make this an exact solid so you can round (fillet) or bevel (chamfer) chosen edges. It stays the same size and shape.
+        </p>
+        <button
+          type="button"
+          disabled={locked || busy}
+          onClick={() => void convert()}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+          data-testid="make-solid"
+        >
+          {busy ? <Loader2 size={15} className="animate-spin" /> : <Gem size={15} />}
+          {busy ? (engine === 'loading' ? 'Loading the precise-solid engine…' : 'Building…') : 'Make precise solid'}
+        </button>
+      </Section>
+    );
+  }
+  const base = object.feature?.base;
+  const what =
+    base?.kind === 'primitive' ? (BASE_LABEL[base.shape] ?? base.shape) : base?.kind === 'sketch' ? `Sketch (${base.op})` : 'Unknown';
+  return (
+    <Section title="Precise solid">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]" data-testid="solid-info">
+        <dt className="text-muted">Made from</dt>
+        <dd className="font-medium text-ink">{what}</dd>
+        <dt className="text-muted">Volume</dt>
+        <dd className="font-medium text-ink" data-testid="solid-volume">
+          {build
+            ? `${(build.volume / 1000).toFixed(3)} cm³`
+            : engine === 'loading'
+              ? 'Loading engine…'
+              : engine === 'error'
+                ? 'Engine failed'
+                : 'Building…'}
+        </dd>
+      </dl>
+      {build?.problems.map((p) => (
+        <p key={p.id} className="mt-2 flex items-start gap-1.5 text-[12px] text-amber-700" data-testid="solid-problem">
+          <CircleAlert size={14} className="mt-px shrink-0" /> {p.reason === 'missing-edges' ? `Needs attention: ${p.message}` : p.message}
+        </p>
+      ))}
     </Section>
   );
 }
