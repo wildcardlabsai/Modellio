@@ -188,6 +188,14 @@ export function sketchDrawing(r: R, s: Sketch): Drawing | null {
   return out;
 }
 
+/** A stored exact solid (e.g. from a STEP file). */
+function brepBase(r: R, data: string): Shape3D {
+  const s = r.deserializeShape(data);
+  const solids = (s as Shape3D).solids;
+  if (!solids?.length) throw new BrepError('The stored solid is empty.');
+  return s as Shape3D;
+}
+
 function sketchBase(r: R, base: Extract<FeatureBase, { kind: 'sketch' }>): Shape3D {
   let d = sketchDrawing(r, base.sketch);
   if (!d) throw new BrepError('The sketch has no closed outline.');
@@ -306,11 +314,20 @@ export interface BuildOptions {
   tolerance?: number;
 }
 
-export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): BrepBuild {
+/**
+ * The exact solid for a request, with its operations applied, plus the base's bounding-box centre
+ * (references and display meshes are relative to it). The caller owns (and must delete) `shape`.
+ */
+export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V; half: V; problems: BrepBuild['problems'] } {
   const { recipe } = req;
   let shape: Shape3D;
   try {
-    shape = recipe.base.kind === 'primitive' ? primitive(r, recipe.base, req.size) : sketchBase(r, recipe.base);
+    shape =
+      recipe.base.kind === 'primitive'
+        ? primitive(r, recipe.base, req.size)
+        : recipe.base.kind === 'brep'
+          ? brepBase(r, recipe.base.data)
+          : sketchBase(r, recipe.base);
   } catch (e) {
     if (e instanceof BrepError) throw e;
     throw new BrepError(friendly(e, 'The base shape'));
@@ -355,6 +372,11 @@ export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): Brep
     }
   }
 
+  return { shape, centre, half, problems };
+}
+
+export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): BrepBuild {
+  const { shape, centre, half, problems } = buildShape(r, req);
   try {
     const bb = shape.boundingBox;
     const size: Vec3 = [bb.width, bb.height, bb.depth];
@@ -377,6 +399,7 @@ export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): Brep
       edges,
       volume: r.measureVolume(shape),
       size,
+      centre: [...centre] as Vec3,
       problems,
     };
   } finally {

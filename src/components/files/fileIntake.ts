@@ -4,6 +4,8 @@ import type { ParsedFile } from '@/cad/import/importMesh';
 import { meshDataBounds } from '@/cad/kernel/meshData';
 import { initKernel } from '@/cad/kernel/kernel';
 import { ASSET_ACCEPT, assetKind, meshPartsFromFile, useAssets } from '@/assets/library';
+import { importStepInWorker, primeBrep } from '@/cad/brep/client';
+import type { FeatureRecipe } from '@/cad/brep/types';
 import { isOutlineFile, outlineFromFile, outlineToMesh } from '@/assets/outlines';
 import { ProjectFormatError } from '@/cad/serialization/project';
 import { useEditor } from '@/store/editorStore';
@@ -32,7 +34,8 @@ const MAX_FILE_BYTES = 200 * 1024 * 1024;
  * Accept files from the picker, drag & drop or the asset library:
  *  - .modellio projects open as projects;
  *  - SVGs and pictures become a solid (traced, 40 mm wide, 2 mm tall) at once;
- *  - STL, OBJ and 3MF go to the import dialog (units, up axis; 3MF keeps its colours).
+ *  - STL, OBJ and 3MF go to the import dialog (units, up axis; 3MF keeps its colours);
+ *  - STEP solids come in as exact precise solids.
  * Unless `save` is false, artwork and models are also kept in the asset library.
  */
 export async function handleFiles(files: File[], at?: [number, number], opts: { save?: boolean } = {}) {
@@ -52,6 +55,10 @@ export async function handleFiles(files: File[], at?: [number, number], opts: { 
       }
       // Yield so the "Reading…" indicator paints before a large parse.
       await new Promise((r) => setTimeout(r, 30));
+      if (name.endsWith('.step') || name.endsWith('.stp')) {
+        await importStepFile(file, at);
+        continue;
+      }
       if (opts.save !== false && assetKind(file.name, file.type)) void useAssets.getState().add([file]);
       if (isOutlineFile(file.name, file.type)) {
         await addArtwork(file, at);
@@ -91,6 +98,28 @@ export async function handleFiles(files: File[], at?: [number, number], opts: { 
   }
 }
 
+/**
+ * STEP: every solid in the file becomes an exact precise solid (movable, filletable; no
+ * parametric history). Read by the precise-solid engine, which loads on first use.
+ */
+async function importStepFile(file: File, at?: [number, number]) {
+  useFileUi.setState({ busy: `Reading ${file.name} (loading the precise-solid engine the first time)…` });
+  const solids = await importStepInWorker(new Uint8Array(await file.arrayBuffer()), file.name);
+  const parts = solids.map((s) => {
+    const recipe: FeatureRecipe = { base: { kind: 'brep', data: s.data, source: file.name }, ops: [] };
+    // The build was made at the solid's natural size (request size [0, 0, 0]): keep it.
+    primeBrep({ recipe, size: [0, 0, 0] }, s.build);
+    return { name: s.name, recipe, size: s.build.size, centre: s.build.centre };
+  });
+  useEditor.getState().importSolids(parts, { at, groupName: file.name.replace(/\.(step|stp)$/i, '') });
+  const n = parts.length;
+  useEditor
+    .getState()
+    .notify(
+      `Imported ${n} exact solid${n === 1 ? '' : 's'} from ${file.name}. You can move, fillet and chamfer ${n === 1 ? 'it' : 'them'}.`,
+    );
+}
+
 /** An SVG or picture as a solid: traced outline, 40 mm on its longest side, 2 mm tall. */
 async function addArtwork(file: File, at?: [number, number]) {
   const outline = await outlineFromFile(file);
@@ -119,7 +148,7 @@ function picker(accept: string, multiple: boolean): HTMLInputElement {
 }
 
 export function openMeshPicker() {
-  meshInput ??= picker(ASSET_ACCEPT, true);
+  meshInput ??= picker(`${ASSET_ACCEPT},.step,.stp`, true);
   meshInput.click();
 }
 

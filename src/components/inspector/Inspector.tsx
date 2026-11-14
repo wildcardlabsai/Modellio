@@ -839,7 +839,13 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
   const setOps = (next: typeof ops, label: string) => useEditor.getState().setFeatureOps(object.id, next, label);
   const base = object.feature?.base;
   const what =
-    base?.kind === 'primitive' ? (BASE_LABEL[base.shape] ?? base.shape) : base?.kind === 'sketch' ? `Sketch (${base.op})` : 'Unknown';
+    base?.kind === 'primitive'
+      ? (BASE_LABEL[base.shape] ?? base.shape)
+      : base?.kind === 'sketch'
+        ? `Sketch (${base.op})`
+        : base?.kind === 'brep'
+          ? `Imported solid (${base.source})`
+          : 'Unknown';
   return (
     <Section title="Precise solid">
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]" data-testid="solid-info">

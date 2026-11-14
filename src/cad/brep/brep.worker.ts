@@ -3,6 +3,7 @@ import wasmUrl from 'replicad-opencascadejs/wasm?url';
 import type * as Replicad from 'replicad';
 import { buildBrep, BrepError } from './build';
 import type { BrepRequest } from './types';
+import { exportStep, importStep, type StepExportItem } from './step';
 
 /**
  * The precise-solid engine: OpenCascade (via replicad), loaded the first time a request arrives.
@@ -20,8 +21,15 @@ async function load(): Promise<typeof Replicad> {
   return r;
 }
 
-self.onmessage = async (e: MessageEvent<{ id: number; req: BrepRequest }>) => {
-  const { id, req } = e.data;
+type Message =
+  | { id: number; type: 'build'; req: BrepRequest }
+  | { id: number; type: 'export-step'; items: StepExportItem[] }
+  | { id: number; type: 'import-step'; bytes: Uint8Array; name: string };
+
+const failure = (err: unknown, fallback: string) => (err instanceof BrepError ? err.message : fallback);
+
+self.onmessage = async (e: MessageEvent<Message>) => {
+  const m = e.data;
   let r: typeof Replicad;
   try {
     r = await (engine ??= load());
@@ -30,19 +38,30 @@ self.onmessage = async (e: MessageEvent<{ id: number; req: BrepRequest }>) => {
     postMessage({ type: 'status', status: 'error' });
     postMessage({
       type: 'result',
-      id,
+      id: m.id,
       error: `The precise-solid engine could not load: ${err instanceof Error ? err.message : String(err)}`,
     });
     return;
   }
   try {
-    const res = buildBrep(r, req);
-    postMessage({ type: 'result', id, res }, { transfer: [res.positions.buffer, res.indices.buffer] });
+    if (m.type === 'build') {
+      const res = buildBrep(r, m.req);
+      postMessage({ type: 'result', id: m.id, res }, { transfer: [res.positions.buffer, res.indices.buffer] });
+    } else if (m.type === 'export-step') {
+      const res = await exportStep(r, m.items);
+      postMessage({ type: 'result', id: m.id, res }, { transfer: [res.bytes.buffer] });
+    } else {
+      const res = await importStep(r, m.bytes, m.name);
+      postMessage({ type: 'result', id: m.id, res }, { transfer: res.flatMap((s) => [s.build.positions.buffer, s.build.indices.buffer]) });
+    }
   } catch (err) {
     postMessage({
       type: 'result',
-      id,
-      error: err instanceof BrepError ? err.message : 'The precise-solid engine could not build this shape.',
+      id: m.id,
+      error: failure(
+        err,
+        m.type === 'build' ? 'The precise-solid engine could not build this shape.' : 'The STEP file could not be processed.',
+      ),
     });
   }
 };

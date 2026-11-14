@@ -13,8 +13,9 @@ export interface Outline {
 
 const base = (name: string) => name.replace(/\.[^.]+$/, '') || 'Artwork';
 export const isSvgFile = (name: string, type = '') => /\.svg$/i.test(name) || type === 'image/svg+xml';
+/** Raster pictures the browser can decode (not every image/* type: e.g. image/vnd.dwg is a CAD drawing). */
 export const isPictureFile = (name: string, type = '') =>
-  !isSvgFile(name, type) && (/^image\//.test(type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name));
+  !isSvgFile(name, type) && (/^image\/(png|jpe?g|webp|gif|bmp)$/i.test(type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name));
 export const isOutlineFile = (name: string, type = '') => isSvgFile(name, type) || isPictureFile(name, type);
 
 /** Trace an SVG (filled paths and strokes) or a picture (dark shapes on a light background, or a transparent PNG). */

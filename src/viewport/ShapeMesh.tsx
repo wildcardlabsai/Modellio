@@ -4,6 +4,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import type { ShapeObject } from '@/types/document';
 import { buildGeometryForShape, geometryFromBuild } from '@/cad/shapeRegistry';
 import { useFeatureTool } from '@/components/features/featureTool';
+import { featureKey } from '@/cad/brep/types';
 import { useEditor } from '@/store/editorStore';
 import { rootAncestor } from '@/cad/hierarchy';
 import { gizmoRecentlyUsed } from './viewportBridge';
@@ -32,7 +33,7 @@ interface Props {
 export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted, ghost }: Props) {
   const { shape, size, params, transform, color, mirror, text, meshId, isHole } = object;
   const version = useCadReady((s) => (shape === 'text' || shape === 'mesh' || shape === 'profile' || shape === 'solid' ? s.version : 0));
-  const key = JSON.stringify([shape, size, params, mirror, text, meshId, object.sketch, object.feature, version]);
+  const key = JSON.stringify([shape, size, params, mirror, text, meshId, object.sketch, featureKey(object.feature), version]);
   // While a fillet or chamfer is being set up, show the engine's preview of the result.
   const preview = useFeatureTool((s) =>
     s.session?.objectId === object.id && s.session.preview.state === 'ok' ? s.session.preview.build : undefined,

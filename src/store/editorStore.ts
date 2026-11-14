@@ -52,7 +52,7 @@ import { applyMeshTool as applyMeshToolGeometry, type MeshTool } from '@/cad/ope
 import { getKernel } from '@/cad/kernel/kernel';
 import { buildProfileMesh, type ProfileOp } from '@/cad/sketch/profile';
 import { solidConversion } from '@/cad/brep/convert';
-import type { FeatureOp } from '@/cad/brep/types';
+import type { FeatureOp, FeatureRecipe } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
@@ -199,6 +199,14 @@ export interface EditorState {
    * false (with a message) when the shape cannot be converted or the engine fails.
    */
   convertToSolid: (id: ObjectId) => Promise<boolean>;
+  /**
+   * Add exact solids (e.g. from a STEP file), keeping their relative placement, resting on the
+   * plate at a free spot. Several solids are grouped. Returns the new selection.
+   */
+  importSolids: (
+    parts: { name: string; recipe: FeatureRecipe; size: Vec3; centre: Vec3 }[],
+    opts?: { groupName?: string; at?: [number, number] },
+  ) => ObjectId[];
   /** Replace a precise solid's operation list (fillets, chamfers): add, edit, reorder, suppress, delete. */
   setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string) => void;
   /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
@@ -761,6 +769,63 @@ export const useEditor = create<EditorState>()((set, get) => {
         delete t.sketch;
       });
       return true;
+    },
+
+    importSolids: (parts, opts) => {
+      if (!parts.length) return [];
+      if (get().readOnly) {
+        refuseReadOnly();
+        return [];
+      }
+      const doc = get().doc;
+      const all = new THREE.Box3();
+      for (const p of parts) {
+        const half = new THREE.Vector3(...p.size).multiplyScalar(0.5);
+        const c = new THREE.Vector3(...p.centre);
+        all.expandByPoint(c.clone().sub(half));
+        all.expandByPoint(c.clone().add(half));
+      }
+      const allSize = all.getSize(new THREE.Vector3());
+      const allCenter = all.getCenter(new THREE.Vector3());
+      const target: Vec3 = opts?.at
+        ? [roundTo(opts.at[0]), roundTo(opts.at[1]), 0]
+        : (() => {
+            const p = findFreePosition(doc, [allSize.x, allSize.y, allSize.z]);
+            return [p[0], p[1], 0] as Vec3;
+          })();
+      const shift = new THREE.Vector3(target[0] - allCenter.x, target[1] - allCenter.y, -all.min.z);
+      const colors = ['#64748B', '#2463EB', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'];
+      const shapes = parts.map((p, i) => {
+        const base = createShape(doc, 'box', [0, 0, 0]);
+        return {
+          ...base,
+          name: uniqueName(doc, p.name.slice(0, 40) || 'Imported'),
+          shape: 'solid' as const,
+          feature: p.recipe,
+          params: {},
+          // Exact sizes: the display mesh is fitted to them, so keep full precision.
+          size: [...p.size] as Vec3,
+          color: colors[i % colors.length],
+          transform: {
+            position: [roundTo(p.centre[0] + shift.x), roundTo(p.centre[1] + shift.y), roundTo(p.centre[2] + shift.z)] as Vec3,
+            rotation: [0, 0, 0] as Vec3,
+          },
+        };
+      });
+      const gid = createId('grp');
+      get().apply(parts.length > 1 ? `Import ${parts.length} solids` : 'Import solid', (d) => {
+        for (const sh of shapes) addObjectDraft(d, sh);
+        if (shapes.length > 1)
+          groupDraft(
+            d,
+            shapes.map((x) => x.id),
+            { id: gid, name: uniqueName(doc, opts?.groupName ?? 'Imported') },
+          );
+      });
+      const sel = shapes.length > 1 ? [gid] : [shapes[0].id];
+      set({ selection: sel });
+      get().requestFrame();
+      return sel;
     },
 
     setFeatureOps: (id, ops, label) => {

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { CircleAlert, CircleCheck, Download, Info } from 'lucide-react';
+import { CircleAlert, CircleCheck, Download, Info, Loader2 } from 'lucide-react';
+import { exportStepInWorker } from '@/cad/brep/client';
+import type { StepExportItem } from '@/cad/brep/step';
 import { Modal, Segmented, primaryBtn, secondaryBtn } from '@/components/ui/Modal';
 import { useFileUi } from './fileIntake';
 import { useEditor } from '@/store/editorStore';
@@ -13,7 +15,7 @@ import { downloadBlob, safeFileName } from '@/utils/download';
 import { formatLength } from '@/utils/units';
 import { useCadReady } from '@/viewport/cadReady';
 
-type Format = 'stl' | 'stl-ascii' | '3mf' | 'obj' | 'glb';
+type Format = 'stl' | 'stl-ascii' | '3mf' | 'obj' | 'glb' | 'step';
 
 export function ExportDialog() {
   const open = useFileUi((s) => s.exportOpen);
@@ -49,7 +51,44 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
   const belowPlate = !collection.bounds.isEmpty() && collection.bounds.min.z < -1e-3;
   const empty = collection.bodies.length === 0;
 
+  const [busy, setBusy] = useState(false);
+  const exactCount = collection.bodies.filter((b) => b.exact).length;
+  const exportStepFile = async () => {
+    const base = safeFileName(projectName);
+    setBusy(true);
+    try {
+      // Copies: the buffers are handed to the engine worker.
+      const items: StepExportItem[] = collection.bodies.map((b) =>
+        b.exact
+          ? {
+              kind: 'exact',
+              name: b.name,
+              color: b.color,
+              req: b.exact.req,
+              size: b.exact.size,
+              mirror: b.exact.mirror,
+              matrix: b.exact.matrix,
+            }
+          : { kind: 'mesh', name: b.name, color: b.color, positions: b.mesh.positions.slice(), indices: b.mesh.indices.slice() },
+      );
+      const res = await exportStepInWorker(items);
+      downloadBlob(res.bytes as Uint8Array<ArrayBuffer>, `${base}.step`, 'model/step');
+      useEditor
+        .getState()
+        .notify(`Exported STEP · ${res.exact.length} exact${res.faceted.length ? `, ${res.faceted.length} faceted (from meshes)` : ''}`);
+      onClose();
+    } catch (e) {
+      useEditor.getState().notify(`Export failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const doExport = () => {
+    if (format === 'step') {
+      void exportStepFile();
+      return;
+    }
     const base = safeFileName(projectName);
     try {
       if (format === 'stl') downloadBlob(writeBinaryStl(collection.bodies, up), `${base}.stl`, 'model/stl');
@@ -86,8 +125,9 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
           <button type="button" className={secondaryBtn} onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className={primaryBtn} disabled={empty} onClick={doExport}>
-            <Download size={16} /> Download {format === 'obj' ? 'OBJ' : format === '3mf' ? '3MF' : format === 'glb' ? 'GLB' : 'STL'}
+          <button type="button" className={primaryBtn} disabled={empty || busy} onClick={doExport}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download{' '}
+            {format === 'obj' ? 'OBJ' : format === '3mf' ? '3MF' : format === 'glb' ? 'GLB' : format === 'step' ? 'STEP' : 'STL'}
           </button>
         </>
       }
@@ -103,6 +143,7 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
           { value: '3mf', label: '3MF' },
           { value: 'obj', label: 'OBJ' },
           { value: 'glb', label: 'GLB' },
+          { value: 'step', label: 'STEP' },
         ]}
       />
       <h3 className="mb-2 mt-4 text-[13px] font-semibold text-ink">What to export</h3>
@@ -115,16 +156,29 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
           { value: 'selection', label: `Selection${selection.length ? ` (${selection.length})` : ''}` },
         ]}
       />
-      <h3 className="mb-2 mt-4 text-[13px] font-semibold text-ink">Up axis</h3>
-      <Segmented
-        label="Up axis"
-        value={up}
-        onChange={setUp}
-        options={[
-          { value: 'z', label: 'Z up (slicers)' },
-          { value: 'y', label: 'Y up (3D apps)' },
-        ]}
-      />
+      {format !== 'step' && (
+        <>
+          <h3 className="mb-2 mt-4 text-[13px] font-semibold text-ink">Up axis</h3>
+          <Segmented
+            label="Up axis"
+            value={up}
+            onChange={setUp}
+            options={[
+              { value: 'z', label: 'Z up (slicers)' },
+              { value: 'y', label: 'Y up (3D apps)' },
+            ]}
+          />
+        </>
+      )}
+      {format === 'step' && (
+        <p className="mt-3 text-[12px] leading-relaxed text-muted" data-testid="step-note">
+          STEP is for CAD programs (Fusion, SolidWorks, FreeCAD, Onshape). Millimetres, Z up.{' '}
+          {exactCount === collection.bodies.length
+            ? 'Every object is written as exact geometry.'
+            : `${exactCount} of ${collection.bodies.length} objects are exact; the others (imported meshes, text, Boolean combinations) are written as faceted solids made of their triangles.`}{' '}
+          The precise-solid engine (about 7 MB) loads the first time.
+        </p>
+      )}
       {format === '3mf' && (
         <p className="mt-3 text-[12px] text-muted">
           3MF keeps millimetres, object names and colours. Preferred by PrusaSlicer, Bambu Studio, OrcaSlicer and Cura.

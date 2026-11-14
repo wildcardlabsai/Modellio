@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import type { ModelDocument, ObjectId } from '@/types/document';
-import { buildGeometryForShape } from '../shapeRegistry';
+import type { ModelDocument, ObjectId, Vec3 } from '@/types/document';
+import { solidConversion } from '../brep/convert';
+import type { BrepRequest } from '../brep/types';
+import { buildGeometryForShape, solidRequest } from '../shapeRegistry';
 import { computeCombined } from '../operations/combine';
 import { worldMatrix } from '../hierarchy';
 import { geometryToMeshData, meshDataBounds, type MeshData } from '../kernel/meshData';
@@ -13,6 +15,11 @@ export interface ExportBody {
   color: string;
   mesh: MeshData;
   watertight: boolean;
+  /**
+   * Exact geometry, for STEP: precise solids and standard primitives (recipe, size, mirror and
+   * world matrix). Absent for meshes, text and Boolean results, which STEP writes as facets.
+   */
+  exact?: { req: BrepRequest; size: Vec3; mirror?: Vec3; matrix: number[] };
 }
 
 export interface ExportCollection {
@@ -33,12 +40,12 @@ export interface ExportCollection {
 export function collectExportBodies(doc: ModelDocument, ids?: ObjectId[]): ExportCollection {
   const out: ExportCollection = { bodies: [], skippedHoles: 0, failed: [], triangles: 0, bounds: new THREE.Box3() };
 
-  const add = (id: ObjectId, name: string, color: string, mesh: MeshData) => {
+  const add = (id: ObjectId, name: string, color: string, mesh: MeshData, exact?: ExportBody['exact']) => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
     geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     const report = analyzeMesh(geo, 1e-4);
-    out.bodies.push({ id, name, color, mesh, watertight: report.watertight });
+    out.bodies.push({ id, name, color, mesh, watertight: report.watertight, ...(exact ? { exact } : {}) });
     out.triangles += mesh.indices.length / 3;
     out.bounds.union(meshDataBounds(mesh));
   };
@@ -56,7 +63,16 @@ export function collectExportBodies(doc: ModelDocument, ids?: ObjectId[]): Expor
         out.failed.push({ name: o.name, reason: 'Still loading (font or engine)' });
         return;
       }
-      add(id, o.name, o.color, geometryToMeshData(geo, worldMatrix(doc, id)));
+      const matrix = worldMatrix(doc, id);
+      const conv = solidConversion(o);
+      const req = conv.ok ? solidRequest({ feature: conv.recipe, size: o.size }) : null;
+      add(
+        id,
+        o.name,
+        o.color,
+        geometryToMeshData(geo, matrix),
+        req ? { req, size: [...o.size] as Vec3, ...(o.mirror ? { mirror: o.mirror } : {}), matrix: matrix.toArray() } : undefined,
+      );
       geo.dispose();
       return;
     }

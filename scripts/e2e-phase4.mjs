@@ -301,13 +301,30 @@ check(
   '9. A corrupt project file shows a clear error',
   await waitFor(async () => (await page.getByRole('status').filter({ hasText: 'incomplete' }).count()) > 0),
 );
-const txt = path.join(OUT, 'notes.step');
-fs.writeFileSync(txt, 'ISO-10303-21;');
+// STEP is supported since 2.1, so use a format that is not (AutoCAD drawing).
+const txt = path.join(OUT, 'notes.dwg');
+fs.writeFileSync(txt, 'AC1032');
 const [tc] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /^Import STL, OBJ/ }).click()]);
 await tc.setFiles(txt);
 check(
   '9b. Unsupported formats are refused with a message',
   await waitFor(async () => (await page.getByRole('status').filter({ hasText: 'not supported' }).count()) > 0),
+);
+// A truncated STEP file is explained rather than failing silently.
+const brokenStep = path.join(OUT, 'notes.step');
+fs.writeFileSync(brokenStep, 'ISO-10303-21;');
+const [sc] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /^Import STL, OBJ/ }).click()]);
+await sc.setFiles(brokenStep);
+check(
+  '9c. A broken STEP file gets a clear message',
+  await waitFor(
+    async () =>
+      (await page
+        .getByRole('status')
+        .filter({ hasText: /STEP file (could not be read|has no closed solids)/ })
+        .count()) > 0,
+    60000,
+  ),
 );
 
 check('No runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));

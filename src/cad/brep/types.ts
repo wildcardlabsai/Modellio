@@ -18,7 +18,12 @@ export type FeatureBase =
       /** Extra primitive parameters: box `radius` / `chamfer` (all edges), cone `topRatio`, tube `wall`. */
       params: Record<string, number>;
     }
-  | { kind: 'sketch'; sketch: Sketch; op: 'extrude' | 'revolve'; depth: number; angle: number };
+  | { kind: 'sketch'; sketch: Sketch; op: 'extrude' | 'revolve'; depth: number; angle: number }
+  /**
+   * An exact solid stored as it is (OpenCascade BRep text), e.g. one solid from a STEP file. Its
+   * shape has no parametric history; it can be moved, filleted and chamfered.
+   */
+  | { kind: 'brep'; data: string; source: string };
 
 /**
  * Where an edge is, independent of the solid's size: the edge's kind, its midpoint and direction
@@ -55,6 +60,8 @@ export interface BrepBuild {
   volume: number;
   /** Size of the solid in mm (X, Y, Z). */
   size: Vec3;
+  /** Centre of the base's bounding box in its own coordinates (mesh and edges are relative to it). */
+  centre: Vec3;
   /**
    * Operations that were skipped: their edges could not be found after an edit (never guessed),
    * or OpenCascade could not make them (e.g. a radius larger than the faces next to the edge).
@@ -91,6 +98,9 @@ export function validateRecipe(raw: unknown): string | null {
     if (typeof base.sketch !== 'object' || base.sketch === null || !Array.isArray(base.sketch.points)) return 'Invalid sketch.';
     if (base.op !== 'extrude' && base.op !== 'revolve') return 'Invalid sketch operation.';
     if (!finite(base.depth) || !finite(base.angle)) return 'Invalid sketch depth or angle.';
+  } else if (base.kind === 'brep') {
+    if (typeof base.data !== 'string' || !base.data.length) return 'Stored solid is missing.';
+    if (typeof base.source !== 'string') return 'Stored solid has no source.';
   } else return 'Unknown feature base.';
   if (!Array.isArray(ops)) return 'Feature operations missing.';
   for (const op of ops) {
@@ -105,5 +115,27 @@ export function validateRecipe(raw: unknown): string | null {
   return null;
 }
 
+// Stored solids can be megabytes of text: key them by a hash (remembered per string).
+const hashes = new Map<string, string>();
+function hashOf(s: string): string {
+  let h = hashes.get(s);
+  if (h) return h;
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995);
+  }
+  h = `#${s.length}:${(a >>> 0).toString(36)}${(b >>> 0).toString(36)}`;
+  hashes.set(s, h);
+  if (hashes.size > 256) hashes.delete(hashes.keys().next().value!);
+  return h;
+}
+const compact = (_k: string, v: unknown) => (typeof v === 'string' && v.length > 512 ? hashOf(v) : v);
+
+/** A stable, compact key for a feature recipe. */
+export const featureKey = (f: FeatureRecipe | undefined) => (f ? JSON.stringify(f, compact) : '');
+
 /** A stable cache key for a build request. */
-export const requestKey = (r: BrepRequest) => JSON.stringify([r.recipe, r.size.map((v) => Math.round(v * 1e4) / 1e4)]);
+export const requestKey = (r: BrepRequest) => `${featureKey(r.recipe)}|${r.size.map((v) => Math.round(v * 1e4) / 1e4).join(',')}`;

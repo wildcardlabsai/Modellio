@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { requestKey, type BrepBuild, type BrepRequest } from './types';
+import { featureKey, requestKey, type BrepBuild, type BrepRequest } from './types';
+import type { StepExportItem, StepExportResult, StepSolid } from './step';
 
 /**
  * Main-thread side of the precise-solid engine. Builds are cached by request; while a new build
@@ -20,11 +21,14 @@ const waiters = new Map<string, { resolve: (b: BrepBuild) => void; reject: (e: E
 let worker: Worker | null = null;
 let seq = 0;
 const inflight = new Map<number, { key: string; req: BrepRequest }>();
+/** One-off jobs (STEP export / import): run in order with the builds. */
+const jobs = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+const jobQueue: { id: number; message: object; transfer: Transferable[] }[] = [];
 /** Not yet sent: at most one per recipe (a newer size replaces an older one). */
 const queued = new Map<string, { key: string; req: BrepRequest }>();
 let busy = false;
 
-const recipeKey = (req: BrepRequest) => JSON.stringify(req.recipe);
+const recipeKey = (req: BrepRequest) => featureKey(req.recipe);
 
 export function onBrepResult(cb: () => void) {
   listeners.add(cb);
@@ -41,9 +45,17 @@ function getWorker(): Worker | null {
       useBrepEngine.setState({ status: m.status });
       return;
     }
+    busy = false;
+    const oneOff = jobs.get(m.id);
+    if (oneOff) {
+      jobs.delete(m.id);
+      if (m.error) oneOff.reject(new Error(m.error));
+      else oneOff.resolve(m.res);
+      pump();
+      return;
+    }
     const job = inflight.get(m.id);
     inflight.delete(m.id);
-    busy = false;
     if (job) settle(job.key, job.req, m.res ? { state: 'ready', build: m.res } : { state: 'error', message: m.error ?? 'Build failed.' });
     pump();
   };
@@ -76,6 +88,18 @@ function settle(key: string, req: BrepRequest, entry: Entry) {
 
 function pump() {
   if (busy) return;
+  const oneOff = jobQueue.shift();
+  if (oneOff) {
+    const w = getWorker();
+    if (!w) {
+      jobs.get(oneOff.id)?.reject(new Error('This browser cannot run the precise-solid engine.'));
+      jobs.delete(oneOff.id);
+      return;
+    }
+    busy = true;
+    w.postMessage({ id: oneOff.id, ...oneOff.message }, oneOff.transfer);
+    return;
+  }
   const next = queued.entries().next();
   if (next.done) return;
   const [rk, job] = next.value;
@@ -88,7 +112,7 @@ function pump() {
   const id = ++seq;
   inflight.set(id, job);
   busy = true;
-  w.postMessage({ id, req: job.req });
+  w.postMessage({ id, type: 'build', req: job.req });
 }
 
 function enqueue(key: string, req: BrepRequest) {
@@ -131,4 +155,29 @@ export function buildBrepAsync(req: BrepRequest): Promise<BrepBuild> {
     waiters.get(key)!.push({ resolve, reject });
     if (cache.get(key)?.state !== 'pending') enqueue(key, req);
   });
+}
+
+function runJob<T>(message: object, transfer: Transferable[] = []): Promise<T> {
+  const id = ++seq;
+  return new Promise<T>((resolve, reject) => {
+    jobs.set(id, { resolve: resolve as (v: unknown) => void, reject });
+    jobQueue.push({ id, message, transfer });
+    pump();
+  });
+}
+
+/** Write a STEP file in the engine worker. */
+export function exportStepInWorker(items: StepExportItem[]): Promise<StepExportResult> {
+  const transfer = items.flatMap((i) => (i.kind === 'mesh' ? [i.positions.buffer, i.indices.buffer] : []));
+  return runJob({ type: 'export-step', items }, transfer);
+}
+
+/** Read the solids of a STEP file in the engine worker. */
+export function importStepInWorker(bytes: Uint8Array, name: string): Promise<StepSolid[]> {
+  return runJob({ type: 'import-step', bytes, name }, [bytes.buffer]);
+}
+
+/** Store a build that was made elsewhere (e.g. while importing a STEP file) so it is not rebuilt. */
+export function primeBrep(req: BrepRequest, build: BrepBuild) {
+  settle(requestKey(req), req, { state: 'ready', build });
 }

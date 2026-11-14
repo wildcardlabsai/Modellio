@@ -301,6 +301,99 @@ check(
 );
 await page.keyboard.press('Escape');
 
+// ---- Step 3: STEP export and import -------------------------------------------------------------
+const exactVolume = await page
+  .getByTestId('solid-volume')
+  .textContent()
+  .catch(() => null);
+await S((id) => window.modellio.store.getState().select([id]), fbox);
+const filletedVol = await until(async () => {
+  const t = await page.getByTestId('solid-volume').textContent();
+  return /cm³/.test(t) && t;
+});
+void exactVolume;
+await page.getByRole('button', { name: 'Export', exact: true }).click();
+await page.getByRole('radio', { name: 'STEP' }).click();
+check(
+  '32. STEP says every object is exact here',
+  /Every object is written as exact geometry/.test(await page.getByTestId('step-note').textContent()),
+);
+const [stepDl] = await Promise.all([
+  page.waitForEvent('download', { timeout: 60000 }),
+  page.getByRole('button', { name: /Download STEP/ }).click(),
+]);
+const stepPath = `${OUT}/advanced-part.step`;
+await stepDl.saveAs(stepPath);
+const stepText = fs.readFileSync(stepPath, 'latin1');
+check(
+  '33. The download is a STEP file (ISO 10303-21) in millimetres',
+  stepText.startsWith('ISO-10303-21;') && /SI_UNIT\(\.MILLI\.,\.METRE\.\)/.test(stepText),
+  `${stepText.length} bytes`,
+);
+check('34. It contains exact surfaces (a cylindrical fillet face), not just triangles', /CYLINDRICAL_SURFACE/.test(stepText));
+
+await S(() => {
+  const s = window.modellio.store.getState();
+  s.selectAll();
+  s.deleteSelected();
+});
+const [chooser] = await Promise.all([
+  page.waitForEvent('filechooser'),
+  page.getByRole('button', { name: 'Import STL, OBJ, 3MF, STEP, SVG or picture' }).click(),
+]);
+await chooser.setFiles(stepPath);
+const imported = await until(() =>
+  S(() => Object.values(window.modellio.store.getState().doc.objects).find((o) => o.shape === 'solid' && o.feature?.base?.kind === 'brep')),
+);
+check('35. Importing the STEP file gives an exact precise solid', !!imported);
+await S((id) => window.modellio.store.getState().select([id]), imported.id);
+const importedVol = await until(async () => {
+  const t = await page.getByTestId('solid-volume').textContent();
+  return /cm³/.test(t) && t;
+});
+check('36. With exactly the same volume', importedVol === filletedVol, `${importedVol} vs ${filletedVol}`);
+check(
+  '37. Same size, resting on the plate',
+  imported.size.map((v) => v.toFixed(3)).join(',') === '40.000,20.000,10.000' && Math.abs(imported.transform.position[2] - 5) < 1e-6,
+  JSON.stringify(imported.size),
+);
+check(
+  '38. The Inspector says it is an imported solid',
+  /Imported solid \(advanced-part\.step\)/.test(await page.getByTestId('solid-info').textContent()),
+);
+await page.screenshot({ path: `${OUT}/advanced-05-step-import.png` });
+
+// Mixed export: a mesh-only shape is written faceted, and the dialog says so.
+await S(() => window.modellio.store.getState().addShape('star'));
+await page.getByRole('button', { name: 'Export', exact: true }).click();
+await page.getByRole('radio', { name: 'STEP' }).click();
+await page.getByRole('radio', { name: 'Everything' }).click();
+check(
+  '39. With a mesh shape, the dialog explains which objects are faceted',
+  /1 of 2 objects are exact/.test(await page.getByTestId('step-note').textContent()),
+);
+const [mixed] = await Promise.all([
+  page.waitForEvent('download', { timeout: 60000 }),
+  page.getByRole('button', { name: /Download STEP/ }).click(),
+]);
+const mixedPath = `${OUT}/advanced-mixed.step`;
+await mixed.saveAs(mixedPath);
+check('40. …and still exports a valid STEP file', fs.readFileSync(mixedPath, 'latin1').startsWith('ISO-10303-21;'));
+
+// A file that is not STEP is explained.
+const bad = `${OUT}/not-really.step`;
+fs.writeFileSync(bad, 'solid nope\nendsolid nope\n');
+const [ch2] = await Promise.all([
+  page.waitForEvent('filechooser'),
+  page.getByRole('button', { name: 'Import STL, OBJ, 3MF, STEP, SVG or picture' }).click(),
+]);
+await ch2.setFiles(bad);
+const toast = await until(async () => {
+  const t = await page.locator('body').innerText();
+  return /not a STEP file/.test(t);
+}, 30000);
+check('41. A damaged or wrong file gets a clear message', toast);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);
