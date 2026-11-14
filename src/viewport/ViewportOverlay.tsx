@@ -1,3 +1,4 @@
+import { FeatureDialog } from '@/components/features/FeatureDialog';
 import { Move, Rotate3d, Scaling, Focus, Home, Magnet, ChevronDown, Box, ScanSearch } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { IconButton } from '@/components/ui/IconButton';
@@ -78,6 +79,7 @@ export function ViewportOverlay() {
         </IconButton>
       </div>
 
+      <FeatureDialog />
       {tool === 'layflat' && (
         <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-navy/95 py-1.5 pl-3 pr-1.5 text-xs font-medium text-white shadow-float">
           <span>Lay flat: click the face that should rest on the build plate</span>

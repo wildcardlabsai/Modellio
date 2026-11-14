@@ -26,9 +26,11 @@ import {
   FlipVertical2,
   Gem,
   Loader2,
+  EyeOff,
 } from 'lucide-react';
 import { useBrepEngine } from '@/cad/brep/client';
 import { solidConversion } from '@/cad/brep/convert';
+import { useFeatureTool } from '@/components/features/featureTool';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
@@ -833,6 +835,8 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
       </Section>
     );
   }
+  const ops = object.feature?.ops ?? [];
+  const setOps = (next: typeof ops, label: string) => useEditor.getState().setFeatureOps(object.id, next, label);
   const base = object.feature?.base;
   const what =
     base?.kind === 'primitive' ? (BASE_LABEL[base.shape] ?? base.shape) : base?.kind === 'sketch' ? `Sketch (${base.op})` : 'Unknown';
@@ -852,11 +856,86 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
                 : 'Building…'}
         </dd>
       </dl>
-      {build?.problems.map((p) => (
-        <p key={p.id} className="mt-2 flex items-start gap-1.5 text-[12px] text-amber-700" data-testid="solid-problem">
-          <CircleAlert size={14} className="mt-px shrink-0" /> {p.reason === 'missing-edges' ? `Needs attention: ${p.message}` : p.message}
-        </p>
-      ))}
+      <div className="mt-3 grid grid-cols-2 gap-1.5">
+        {(['fillet', 'chamfer'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            disabled={locked}
+            onClick={() => void useFeatureTool.getState().start(object.id, k)}
+            className="flex h-8 items-center justify-center rounded-lg border border-line text-[12px] font-medium capitalize text-[#344054] hover:bg-canvas disabled:opacity-50"
+            data-testid={`solid-${k}`}
+          >
+            {k} edges
+          </button>
+        ))}
+      </div>
+      {!!ops.length && (
+        <ol className="mt-3 space-y-1" aria-label="Operations" data-testid="solid-ops">
+          {ops.map((op) => {
+            const problem = build?.problems.find((p) => p.id === op.id);
+            const size = op.kind === 'fillet' ? `R ${op.radius} mm` : `${op.distance} mm`;
+            return (
+              <li
+                key={op.id}
+                className={`rounded-lg border px-2 py-1.5 text-[12px] ${problem ? 'border-amber-300 bg-amber-50' : 'border-line'}`}
+                data-testid="solid-op"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className={`flex-1 font-medium ${op.suppressed ? 'text-muted line-through' : 'text-ink'}`}>
+                    {op.kind === 'fillet' ? 'Fillet' : 'Chamfer'} {size} · {op.edges.length} edge{op.edges.length === 1 ? '' : 's'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    onClick={() => void useFeatureTool.getState().start(object.id, op.kind, op.id)}
+                    className="rounded px-1.5 py-0.5 text-brand hover:bg-brand-50 disabled:opacity-40"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    aria-label={op.suppressed ? 'Turn this operation back on' : 'Turn this operation off (suppress)'}
+                    title={op.suppressed ? 'Turn on' : 'Turn off (suppress)'}
+                    onClick={() =>
+                      setOps(
+                        ops.map((o) => (o.id === op.id ? { ...o, suppressed: !o.suppressed } : o)),
+                        op.suppressed ? 'Unsuppress' : 'Suppress',
+                      )
+                    }
+                    className="rounded p-1 text-[#475467] hover:bg-canvas disabled:opacity-40"
+                  >
+                    {op.suppressed ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    aria-label={`Delete this ${op.kind}`}
+                    onClick={() =>
+                      setOps(
+                        ops.filter((o) => o.id !== op.id),
+                        `Delete ${op.kind}`,
+                      )
+                    }
+                    className="rounded p-1 text-[#475467] hover:text-red-600 disabled:opacity-40"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                {problem && (
+                  <p className="mt-1 flex items-start gap-1 text-amber-800" data-testid="solid-problem">
+                    <CircleAlert size={13} className="mt-px shrink-0" />
+                    {problem.reason === 'missing-edges'
+                      ? `Needs attention: ${problem.message} Edit it to pick the edges again.`
+                      : problem.message}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </Section>
   );
 }

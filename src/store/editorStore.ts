@@ -52,6 +52,7 @@ import { applyMeshTool as applyMeshToolGeometry, type MeshTool } from '@/cad/ope
 import { getKernel } from '@/cad/kernel/kernel';
 import { buildProfileMesh, type ProfileOp } from '@/cad/sketch/profile';
 import { solidConversion } from '@/cad/brep/convert';
+import type { FeatureOp } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
@@ -91,7 +92,8 @@ export interface EditorState {
   projection: 'perspective' | 'orthographic';
   setProjection: (p: 'perspective' | 'orthographic') => void;
   /** Active viewport tool. */
-  tool: 'select' | 'measure' | 'layflat';
+  /** 'edges': picking edges for a fillet or chamfer (see components/features/featureTool). */
+  tool: 'select' | 'measure' | 'layflat' | 'edges';
   /** Measure tool: up to two picked world points (mm). */
   measurePoints: Vec3[];
   /** Groups collapsed in the object tree (UI state, not part of the document). */
@@ -136,7 +138,7 @@ export interface EditorState {
   setSnap: (snap: Partial<SnapSettings>) => void;
   setLockProportions: (v: boolean) => void;
   setShowGrid: (v: boolean) => void;
-  setTool: (tool: 'select' | 'measure' | 'layflat') => void;
+  setTool: (tool: 'select' | 'measure' | 'layflat' | 'edges') => void;
   addMeasurePoint: (p: Vec3) => void;
   toggleCollapsed: (id: ObjectId) => void;
   requestFrame: () => void;
@@ -197,6 +199,8 @@ export interface EditorState {
    * false (with a message) when the shape cannot be converted or the engine fails.
    */
   convertToSolid: (id: ObjectId) => Promise<boolean>;
+  /** Replace a precise solid's operation list (fillets, chamfers): add, edit, reorder, suppress, delete. */
+  setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string) => void;
   /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
   applyMeshTool: (id: ObjectId, tool: MeshTool, amount: number) => void;
   addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
@@ -757,6 +761,18 @@ export const useEditor = create<EditorState>()((set, get) => {
         delete t.sketch;
       });
       return true;
+    },
+
+    setFeatureOps: (id, ops, label) => {
+      if (isEffectivelyLocked(get().doc, id)) {
+        get().notify('This object is locked.');
+        return;
+      }
+      get().apply(label, (d) => {
+        const t = d.objects[id];
+        if (t?.kind !== 'shape' || t.shape !== 'solid' || !t.feature) return;
+        t.feature.ops = ops;
+      });
     },
 
     applyMeshTool: (id, tool, amount) => {

@@ -290,6 +290,12 @@ export function solidRequest(o: Pick<ShapeObject, 'feature' | 'size'>): BrepRequ
   return { recipe: o.feature, size: o.feature.base.kind === 'primitive' ? safeSize(o.size) : [0, 0, 0] };
 }
 
+/** Display geometry of a precise-solid build, fitted to the object's size and mirrored. */
+export function geometryFromBuild(b: BrepBuild, o: Pick<ShapeObject, 'size' | 'mirror'>): THREE.BufferGeometry {
+  const g = fitToSize(meshDataToGeometry({ positions: b.positions, indices: b.indices }, (30 * Math.PI) / 180), safeSize(o.size));
+  return o.mirror ? mirrorGeometry(g, o.mirror) : g;
+}
+
 /** The finished build of a solid (or the previous one while a new size is being built). */
 export function getSolidBuild(o: Pick<ShapeObject, 'feature' | 'size'>): BrepBuild | null {
   const req = solidRequest(o);
@@ -327,9 +333,7 @@ export function getProfileMesh(o: Pick<ShapeObject, 'sketch' | 'params'>): MeshD
 export function buildGeometryForShape(o: ShapeObject): THREE.BufferGeometry | null {
   if (o.shape === 'solid') {
     const b = getSolidBuild(o);
-    if (!b) return null;
-    const g = fitToSize(meshDataToGeometry({ positions: b.positions, indices: b.indices }, (30 * Math.PI) / 180), safeSize(o.size));
-    return o.mirror ? mirrorGeometry(g, o.mirror) : g;
+    return b ? geometryFromBuild(b, o) : null;
   }
   if (o.shape === 'text') {
     const mesh = getTextMesh(o);

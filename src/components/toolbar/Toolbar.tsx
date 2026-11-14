@@ -19,13 +19,14 @@ import {
   ChevronDown,
   Menu,
 } from 'lucide-react';
-import { Share2, PanelRight } from 'lucide-react';
+import { Share2, PanelRight, Spline } from 'lucide-react';
 import { useLayout } from '@/hooks/useLayout';
 import { ShareDialog } from '@/components/files/ShareDialog';
 import { VersionsDialog } from '@/components/projects/VersionsDialog';
 import { Popover } from '@/components/ui/Popover';
 import { AlignMenu, MirrorMenu } from './AlignMenu';
 import { CombineMenu } from './CombineMenu';
+import { FeaturesMenu } from './FeaturesMenu';
 import { useEditor } from '@/store/editorStore';
 import { IconButton } from '@/components/ui/IconButton';
 import { MOD } from '@/utils/platform';
@@ -138,6 +139,23 @@ export function Toolbar() {
         )}
       >
         {(close) => <CombineMenu onDone={close} />}
+      </Popover>
+      <Popover
+        trigger={({ open, toggle }) => (
+          <IconButton
+            label="Features: fillet and chamfer"
+            active={open}
+            disabled={!hasSelection}
+            onClick={toggle}
+            data-testid="features-menu"
+          >
+            <Spline size={17} />
+            <span className="hidden xl:inline">Features</span>
+            <ChevronDown size={13} />
+          </IconButton>
+        )}
+      >
+        {(close) => <FeaturesMenu onDone={close} />}
       </Popover>
       <div className="flex-1" />
       <IconButton label="Import STL, OBJ, 3MF, SVG or picture" onClick={openMeshPicker}>

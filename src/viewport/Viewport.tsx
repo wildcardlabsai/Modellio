@@ -23,6 +23,7 @@ import { snapTo } from '@/utils/math';
 import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
 import { LayFlatTool } from './LayFlatTool';
+import { EdgePickTool } from './EdgePickTool';
 import { PrintOverlay } from './PrintOverlay';
 import { CrashProbe, useDebug } from '@/utils/debug';
 import { SnapGuides } from './guides';
@@ -230,6 +231,7 @@ export function Viewport() {
           <ViewCube />
           <MeasureTool />
           <LayFlatTool />
+          <EdgePickTool />
           <PrintOverlay />
           <SnapGuides />
           <CrashProbe />

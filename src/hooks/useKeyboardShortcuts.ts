@@ -90,7 +90,8 @@ export function useKeyboardShortcuts() {
         case 'Delete':
         case 'Backspace':
           e.preventDefault();
-          s.deleteSelected();
+          // Picking edges for a fillet: don't delete the part being worked on.
+          if (s.tool !== 'edges') s.deleteSelected();
           return;
         case 'Escape':
           if (s.transaction) s.cancelTransaction();

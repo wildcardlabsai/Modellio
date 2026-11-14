@@ -2,7 +2,8 @@ import { FastEdges } from './FastLine';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { ShapeObject } from '@/types/document';
-import { buildGeometryForShape } from '@/cad/shapeRegistry';
+import { buildGeometryForShape, geometryFromBuild } from '@/cad/shapeRegistry';
+import { useFeatureTool } from '@/components/features/featureTool';
 import { useEditor } from '@/store/editorStore';
 import { rootAncestor } from '@/cad/hierarchy';
 import { gizmoRecentlyUsed } from './viewportBridge';
@@ -32,8 +33,12 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
   const { shape, size, params, transform, color, mirror, text, meshId, isHole } = object;
   const version = useCadReady((s) => (shape === 'text' || shape === 'mesh' || shape === 'profile' || shape === 'solid' ? s.version : 0));
   const key = JSON.stringify([shape, size, params, mirror, text, meshId, object.sketch, object.feature, version]);
+  // While a fillet or chamfer is being set up, show the engine's preview of the result.
+  const preview = useFeatureTool((s) =>
+    s.session?.objectId === object.id && s.session.preview.state === 'ok' ? s.session.preview.build : undefined,
+  );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const geometry = useMemo(() => buildGeometryForShape(object), [key]);
+  const geometry = useMemo(() => (preview ? geometryFromBuild(preview, object) : buildGeometryForShape(object)), [key, preview]);
   useEffect(() => () => geometry?.dispose(), [geometry]);
 
   const [hovered, setHovered] = useState(false);

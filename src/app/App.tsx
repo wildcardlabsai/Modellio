@@ -40,6 +40,7 @@ import { booleanStats, computeCombined } from '@/cad/operations/combine';
 import { useStudio, type StudioId } from './studio';
 import { WORKSPACE_LABEL } from '@/platform/catalog';
 import { LandingPage } from '@/landing/LandingPage';
+import { useFeatureTool } from '@/components/features/featureTool';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 const CookieStudio = lazy(() => import('@/makers/cookie/CookieStudio'));
 const VaseStudio = lazy(() => import('@/makers/vase/VaseStudio'));
@@ -93,6 +94,7 @@ export function App() {
       guides: useGuides,
       booleanStats,
       templates: TEMPLATES,
+      features: useFeatureTool,
     };
   }, []);
 
