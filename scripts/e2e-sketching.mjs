@@ -314,6 +314,60 @@ check(
   precise && (await S((id) => window.modellio.store.getState().doc.objects[id]?.shape === 'solid', splineBody.id)),
 );
 
+// 6. Dimensions on the canvas: drawn for every value, edited in place, solved, conflicts refused.
+await page.getByTestId('new-sketch').click();
+await editor().waitFor();
+await tool('Line');
+for (const [x, y] of [
+  [0, 0],
+  [12, 0],
+  [6, 9],
+  [0, 0],
+])
+  await click(x, y);
+await tool('Select');
+for (const [x, y] of [
+  [6, 0],
+  [9, 4.5],
+  [3, 4.5],
+]) {
+  await click(x, y);
+  await typeInto('Line length (mm)', 10);
+}
+await page.keyboard.press('Escape');
+const dims = page.getByTestId('sketch-dim');
+check('23. Each length is drawn as a dimension on the canvas', (await dims.count()) === 3, String(await dims.count()));
+const sideLengths = async () => (await drawn()).lines.map(([a, b]) => +Math.hypot(b[0] - a[0], b[1] - a[1]).toFixed(3));
+const editDim = async (i, v) => {
+  await dims.nth(i).dispatchEvent('pointerdown');
+  const f = page.getByTestId('sketch-dim-input');
+  await f.waitFor();
+  await f.fill(String(v));
+  await f.press('Enter');
+  await page.waitForTimeout(150);
+};
+const tri0 = await sideLengths();
+await editDim(0, 25);
+const triNotice = (await page.getByTestId('sketch-notice').textContent()) ?? '';
+check(
+  '24. A dimension the sketch cannot meet (a side longer than the other two) is refused, naming the conflict',
+  /Length 25\.00 mm was not changed: it conflicts with .*Length 10\.00 mm/.test(triNotice),
+  triNotice,
+);
+check('25. Nothing changed', JSON.stringify(await sideLengths()) === JSON.stringify(tri0), (await sideLengths()).join(','));
+await editDim(0, 14);
+const tri1 = await sideLengths();
+check(
+  '26. Typing a new value on the canvas re-solves the sketch',
+  tri1.filter((l) => Math.abs(l - 14) < 0.01).length === 1 && tri1.filter((l) => Math.abs(l - 10) < 0.01).length === 2,
+  tri1.join(','),
+);
+check('27. The label shows the new value', ((await dims.allTextContents()) ?? []).includes('14'));
+await editDim(1, -3);
+check('28. A negative length is refused', /not a valid size/.test((await page.getByTestId('sketch-notice').textContent()) ?? ''));
+await page.screenshot({ path: `${OUT}/sketching-05-dimensions.png` });
+await page.getByRole('button', { name: 'Close sketch without saving' }).click();
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

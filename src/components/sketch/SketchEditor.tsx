@@ -6,6 +6,7 @@ import { sketchUsers } from '@/cad/sketchRecords';
 import { entityPoints, solveSketch, tryConstraint } from '@/cad/sketch/solver';
 import { constraintRefs, describeConstraint, nameConstraints } from '@/cad/sketch/describe';
 import { extendSpline, handleAt, mergePoints } from '@/cad/sketch/edit';
+import { dimensionMarks, type DimensionMark } from '@/cad/sketch/dimensions';
 import { sketchLoops, type ProfileOp } from '@/cad/sketch/profile';
 import { emptySketch, type Constraint, type Sketch, type SketchEntity, type SketchStatus } from '@/cad/sketch/types';
 
@@ -115,6 +116,8 @@ export function SketchEditor({
   );
   /** Why the last constraint or dimension was refused (nothing changed). */
   const [notice, setNotice] = useState<string | null>(null);
+  /** The dimension being edited on the canvas. */
+  const [editingDim, setEditingDim] = useState<string | null>(null);
   const loops = useMemo(() => sketchLoops(sketch), [sketch]);
   // Revolves use only the part right of the Y axis (in both geometry engines).
   const leftOfAxis = useMemo(() => loops.loops.some((l) => l.some((p) => p[0] < -1e-6)), [loops]);
@@ -520,6 +523,16 @@ export function SketchEditor({
               <EntityShape key={e.id} e={e} sketch={sketch} px={px} selected={sel.includes(e.id)} problem={culpritRefs.has(e.id)} />
             ))}
             <ConstraintMarks sketch={sketch} px={px} />
+            <Dimensions
+              marks={dimensionMarks(sketch, 14 * px)}
+              px={px}
+              problem={culprits}
+              editing={editingDim}
+              onEdit={(id) => {
+                setNotice(null);
+                setEditingDim(id);
+              }}
+            />
             {/* Spline handles: a thin line from the anchor to a square you can drag. */}
             {[...handles].map(([h, a]) => {
               const [hp, ap] = [sketch.points.find((p) => p.id === h), sketch.points.find((p) => p.id === a)];
@@ -557,6 +570,21 @@ export function SketchEditor({
               ))}
             {pending.length > 0 && hover && <Preview tool={tool} sketch={sketch} pending={pending} hover={hover} px={px} sides={sides} />}
           </svg>
+          {editingDim && svg.current && (
+            <DimensionInput
+              key={editingDim}
+              mark={dimensionMarks(sketch, 14 * px).find((m) => m.id === editingDim)}
+              svg={svg.current}
+              onDone={(value) => {
+                setEditingDim(null);
+                const c = sketch.constraints.find((x) => x.id === editingDim);
+                if (value === null || !c || !('value' in c)) return;
+                if (Math.abs(value - c.value) < 1e-9) return;
+                addConstraint({ ...c, value });
+              }}
+              onInvalid={(why) => setNotice(why)}
+            />
+          )}
           <p className="pointer-events-none absolute bottom-2 left-3 font-mono text-[11px] text-ink-3">
             {TOOLS.find((t) => t.id === tool)!.hint} · Scroll to zoom
             {hover ? ` · ${hover[0].toFixed(1)}, ${hover[1].toFixed(1)} mm` : ''}
@@ -1160,7 +1188,7 @@ function EntityShape({
   return <path d={`M ${a.x} ${-a.y} A ${r} ${r} 0 ${sweep > Math.PI ? 1 : 0} 0 ${b.x} ${-b.y}`} {...common} data-testid="sketch-arc" />;
 }
 
-/** Dimension and constraint labels, one label per line or circle (e.g. "V · 20.0"). */
+/** Constraint symbols, one label per line or circle (e.g. "H", "T · ∥"). Values are drawn as dimensions. */
 function ConstraintMarks({ sketch, px }: { sketch: Sketch; px: number }) {
   const P = (id: string) => sketch.points.find((p) => p.id === id);
   const labels = new Map<string, string[]>();
@@ -1168,9 +1196,6 @@ function ConstraintMarks({ sketch, px }: { sketch: Sketch; px: number }) {
   for (const c of sketch.constraints) {
     if (c.kind === 'horizontal') push(c.line, 'H');
     else if (c.kind === 'vertical') push(c.line, 'V');
-    else if (c.kind === 'distance') push(c.line, c.value.toFixed(1));
-    else if (c.kind === 'radius') push(c.entity, `⌀${(c.value * 2).toFixed(1)}`);
-    else if (c.kind === 'angle') push(c.l2, `∠${c.value.toFixed(1)}°`);
     else if (c.kind === 'tangent') push(c.e2, 'T');
     else if (c.kind === 'concentric') push(c.e2, '◎');
     else if (c.kind === 'parallel') push(c.l2, '∥');
@@ -1201,6 +1226,117 @@ function ConstraintMarks({ sketch, px }: { sketch: Sketch; px: number }) {
         );
       })}
     </g>
+  );
+}
+
+/**
+ * The sketch's dimensions, drawn like a drawing's: lines offset from the geometry with the value
+ * as a label. Click a label to type a new value (the sketch is re-solved).
+ */
+function Dimensions({
+  marks,
+  px,
+  problem,
+  editing,
+  onEdit,
+}: {
+  marks: DimensionMark[];
+  px: number;
+  problem: Set<string>;
+  editing: string | null;
+  onEdit: (id: string) => void;
+}) {
+  return (
+    <g>
+      {marks.map((m) => {
+        const col = problem.has(m.id) ? '#DC2626' : '#7C3AED';
+        return (
+          <g key={m.id} opacity={editing === m.id ? 0.35 : 1}>
+            {m.lines.map(([a, b], i) => (
+              <line key={i} x1={a[0]} y1={-a[1]} x2={b[0]} y2={-b[1]} stroke={col} strokeWidth={px} pointerEvents="none" />
+            ))}
+            <text
+              x={m.at[0]}
+              y={-m.at[1]}
+              fontSize={11 * px}
+              fontWeight={600}
+              fill={col}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              stroke="#FAF9F6"
+              strokeWidth={3 * px}
+              paintOrder="stroke"
+              className="cursor-text"
+              role="button"
+              aria-label={`Edit dimension ${m.text}`}
+              data-testid="sketch-dim"
+              data-constraint={m.id}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onEdit(m.id);
+              }}
+            >
+              {m.text}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** A field over a dimension's label: Enter (or clicking away) applies, Esc cancels. */
+function DimensionInput({
+  mark,
+  svg,
+  onDone,
+  onInvalid,
+}: {
+  mark: DimensionMark | undefined;
+  svg: SVGSVGElement;
+  onDone: (value: number | null) => void;
+  onInvalid: (why: string) => void;
+}) {
+  const [text, setText] = useState(() => (mark ? String(+mark.shown.toFixed(4)) : ''));
+  const done = useRef(false);
+  if (!mark) return null;
+  const pt = svg.createSVGPoint();
+  pt.x = mark.at[0];
+  pt.y = -mark.at[1];
+  const q = pt.matrixTransform(svg.getScreenCTM()!);
+  const box = svg.getBoundingClientRect();
+  const finish = (apply: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    if (!apply) return onDone(null);
+    const v = mark.toValue(Number(text));
+    if (text.trim() === '' || !Number.isFinite(Number(text)) || v === null) {
+      onInvalid(`${text || 'That'} is not a valid ${mark.unit === '°' ? 'angle' : 'size'} for this dimension. Nothing was changed.`);
+      return onDone(null);
+    }
+    onDone(v);
+  };
+  return (
+    <div className="absolute z-10 -translate-x-1/2 -translate-y-1/2" style={{ left: q.x - box.left, top: q.y - box.top }}>
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') finish(true);
+          else if (e.key === 'Escape') {
+            e.stopPropagation();
+            finish(false);
+          }
+        }}
+        onBlur={() => finish(true)}
+        inputMode="decimal"
+        aria-label={`Dimension value (${mark.unit})`}
+        data-testid="sketch-dim-input"
+        className="h-7 w-20 rounded-md border border-brand bg-white px-1.5 text-center font-mono text-[12px] text-ink shadow-md outline-none"
+      />
+    </div>
   );
 }
 
