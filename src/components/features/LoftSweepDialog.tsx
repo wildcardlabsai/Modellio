@@ -4,6 +4,7 @@ import { SketchEditor, type SketchUse } from '@/components/sketch/SketchEditor';
 import { sketchOutlines, sketchPath } from '@/cad/brep/build';
 import type { Sketch } from '@/cad/sketch/types';
 import { SketchThumb } from './SketchThumb';
+import { DockedPanel } from './DockedPanel';
 import { useSolidBuilder, type BuilderSession, type LoftBase, type SweepBase } from './solidBuilder';
 
 /** One closed outline, as loft sections and sweep profiles need. */
@@ -21,7 +22,7 @@ const onePath = (s: Sketch) => {
   return typeof p === 'string' ? p : null;
 };
 
-const segBtn = (on: boolean) => `rounded-md px-2.5 py-1 text-[12px] font-medium ${on ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`;
+const segBtn = (on: boolean) => `rounded-md px-2.5 py-1 text-[12px] font-medium ${on ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`;
 
 function Choice<T extends string>({
   label,
@@ -36,7 +37,7 @@ function Choice<T extends string>({
 }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[12px] text-[#344054]">{label}</span>
+      <span className="text-[12px] text-ink-2">{label}</span>
       <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-canvas p-0.5">
         {options.map((o) => (
           <button
@@ -63,28 +64,19 @@ export function LoftSweepDialog() {
   const isLoft = session.base.kind === 'loft';
   return (
     <>
-      <div
-        className="pointer-events-auto absolute left-16 top-3 z-20 flex max-h-[calc(100%-24px)] w-[360px] flex-col rounded-xl border border-line bg-white shadow-float"
-        role="dialog"
-        aria-label={isLoft ? 'Loft' : 'Sweep'}
-        data-testid="loft-sweep-dialog"
+      <DockedPanel
+        label={isLoft ? 'Loft' : 'Sweep'}
+        testId="loft-sweep-dialog"
+        title={`${session.editingId ? 'Edit ' : ''}${isLoft ? 'Loft' : 'Sweep'}`}
+        description={
+          isLoft
+            ? 'A solid that blends from one cross-section to the next, bottom to top. Each section is a sketch with one closed outline.'
+            : 'A profile (one closed outline) moved along a path (lines and arcs, open or closed). The profile’s origin sits on the path.'
+        }
+        footer={<Footer session={session} onCancel={b.cancel} onApply={b.apply} />}
       >
-        <div className="border-b border-line p-3">
-          <h2 className="text-[14px] font-semibold text-ink">
-            {session.editingId ? 'Edit ' : ''}
-            {isLoft ? 'Loft' : 'Sweep'}
-          </h2>
-          <p className="mt-0.5 text-[12px] leading-snug text-muted">
-            {isLoft
-              ? 'A solid that blends from one cross-section to the next, bottom to top. Each section is a sketch with one closed outline.'
-              : 'A profile (one closed outline) moved along a path (lines and arcs, open or closed). The profile’s origin sits on the path.'}
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          {session.base.kind === 'loft' ? <LoftFields base={session.base} /> : <SweepFields base={session.base} />}
-        </div>
-        <Footer session={session} onCancel={b.cancel} onApply={b.apply} />
-      </div>
+        {session.base.kind === 'loft' ? <LoftFields base={session.base} /> : <SweepFields base={session.base} />}
+      </DockedPanel>
       {session.sketching && <SketchFor session={session} />}
     </>
   );
@@ -114,7 +106,7 @@ function LoftFields({ base }: { base: LoftBase }) {
                   <button
                     type="button"
                     onClick={() => b.startSketch({ kind: 'section', index: i })}
-                    className="rounded px-1.5 text-[12px] text-brand hover:bg-brand-50"
+                    className="rounded px-1.5 text-[12px] text-brand-ink hover:bg-brand-50"
                   >
                     Edit sketch
                   </button>
@@ -123,7 +115,7 @@ function LoftFields({ base }: { base: LoftBase }) {
                       type="button"
                       aria-label={`Remove section ${i + 1}`}
                       onClick={() => b.setSections(base.sections.filter((_, k) => k !== i))}
-                      className="rounded p-1 text-[#475467] hover:text-red-600"
+                      className="rounded p-1 text-ink-3 hover:text-red-600"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -173,7 +165,7 @@ function LoftFields({ base }: { base: LoftBase }) {
           const last = base.sections[base.sections.length - 1];
           b.setSections([...base.sections, { sketch: structuredClone(last.sketch), height: last.height + 10, offset: [...last.offset] }]);
         }}
-        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-1.5 text-[12px] font-medium text-[#344054] hover:border-brand hover:text-brand"
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-1.5 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink"
         data-testid="loft-add-section"
       >
         <Plus size={14} /> Add section
@@ -202,7 +194,7 @@ function SweepFields({ base }: { base: SweepBase }) {
         <button
           type="button"
           onClick={() => b.startSketch({ kind: target })}
-          className="mt-1 rounded px-1.5 text-[12px] text-brand hover:bg-brand-50"
+          className="mt-1 rounded px-1.5 text-[12px] text-brand-ink hover:bg-brand-50"
           data-testid={testId}
         >
           Edit sketch
@@ -251,7 +243,7 @@ function SweepFields({ base }: { base: SweepBase }) {
 function Footer({ session, onCancel, onApply }: { session: BuilderSession; onCancel: () => void; onApply: () => void }) {
   const p = session.preview;
   return (
-    <div className="border-t border-line p-3">
+    <div>
       <p
         className={`flex min-h-[20px] items-start gap-1.5 text-[12px] ${p.state === 'error' ? 'text-red-700' : p.state === 'ok' ? 'text-emerald-700' : 'text-muted'}`}
         role="status"
@@ -278,7 +270,7 @@ function Footer({ session, onCancel, onApply }: { session: BuilderSession; onCan
         <button
           type="button"
           onClick={onCancel}
-          className="h-8 rounded-lg border border-line px-3 text-[13px] font-medium text-[#344054] hover:bg-canvas"
+          className="h-8 rounded-lg border border-line px-3 text-[13px] font-medium text-ink-2 hover:bg-canvas"
         >
           Cancel
         </button>

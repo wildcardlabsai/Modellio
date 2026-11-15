@@ -48,7 +48,7 @@ export function VersionsDialog({ onClose }: { onClose: () => void }) {
                   void useProjects.getState().restoreVersion(v.key);
                   onClose();
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold text-[#344054] hover:bg-brand-50 hover:text-brand"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-brand-50 hover:text-brand-ink"
               >
                 <RotateCcw size={14} /> Restore
               </button>

@@ -67,7 +67,7 @@ export function AlignMenu({ onDone }: { onDone: () => void }) {
                   alignSelected(row.axis, mode);
                   onDone();
                 }}
-                className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-[#344054] hover:border-brand/40 hover:bg-brand-50 hover:text-brand"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:border-brand/40 hover:bg-brand-50 hover:text-brand-ink"
               >
                 <Icon size={15} />
                 {label}
@@ -89,7 +89,7 @@ export function AlignMenu({ onDone }: { onDone: () => void }) {
                 distributeSelected(i as Axis);
                 onDone();
               }}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-[#344054] hover:bg-brand-50 hover:text-brand disabled:opacity-40"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:bg-brand-50 hover:text-brand-ink disabled:opacity-40"
             >
               <AlignHorizontalSpaceAround size={15} className={i === 2 ? 'rotate-90' : ''} />
               {n}

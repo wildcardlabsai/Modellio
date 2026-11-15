@@ -7,6 +7,7 @@ import { Toolbar } from '@/components/toolbar/Toolbar';
 import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
 const WorkplanePanel = lazy(() => import('@/components/layout/WorkplanePanel').then((m) => ({ default: m.WorkplanePanel })));
 const TextPanel = lazy(() => import('@/components/layout/TextPanel').then((m) => ({ default: m.TextPanel })));
+const ComponentsPanel = lazy(() => import('@/components/layout/ComponentsPanel').then((m) => ({ default: m.ComponentsPanel })));
 const AssetsPanel = lazy(() => import('@/components/layout/AssetsPanel').then((m) => ({ default: m.AssetsPanel })));
 const AssistantPanel = lazy(() => import('@/components/assistant/AssistantPanel').then((m) => ({ default: m.AssistantPanel })));
 const PrintPanel = lazy(() => import('@/components/print/PrintPanel').then((m) => ({ default: m.PrintPanel })));
@@ -41,6 +42,7 @@ import { useStudio, type StudioId } from './studio';
 import { WORKSPACE_LABEL } from '@/platform/catalog';
 import { LandingPage } from '@/landing/LandingPage';
 import { useFeatureTool } from '@/components/features/featureTool';
+import { useHover } from '@/viewport/hover';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 const CookieStudio = lazy(() => import('@/makers/cookie/CookieStudio'));
 const VaseStudio = lazy(() => import('@/makers/vase/VaseStudio'));
@@ -96,6 +98,7 @@ export function App() {
       booleanStats,
       templates: TEMPLATES,
       features: useFeatureTool,
+      hover: useHover,
     };
   }, []);
 
@@ -141,7 +144,8 @@ export function App() {
   const Workspace = WORKSPACES[studio];
 
   return (
-    <div className="flex h-full flex-col">
+    // The Design Studio uses the dark professional shell; the makers keep their light look.
+    <div className="flex h-full flex-col" data-ui={Workspace ? undefined : 'studio-dark'}>
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <ReturnBar />
       {Workspace ? (
@@ -210,11 +214,13 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
           <div className={compact ? 'absolute bottom-0 left-[76px] top-0 z-30 flex shadow-float' : 'contents'} data-testid="left-panel">
             <Suspense fallback={<PanelLoading />}>
               {panel === 'shapes' ? (
-                <ShapeLibrary />
+                <ShapeLibrary onOpenPanel={choosePanel} />
               ) : panel === 'text' ? (
                 <TextPanel />
               ) : panel === 'assets' ? (
                 <AssetsPanel />
+              ) : panel === 'components' ? (
+                <ComponentsPanel />
               ) : panel === 'print' ? (
                 <PrintPanel />
               ) : panel === 'assistant' ? (
@@ -246,7 +252,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
         </main>
         {(!compact || inspectorOpen) && (
           <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">
-            <Inspector />
+            <Inspector onOpenPanel={choosePanel} />
           </div>
         )}
         {/* The editor stays mounted (keeps the WebGL context) while the projects page is shown. */}
@@ -266,5 +272,5 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
 }
 
 function PanelLoading() {
-  return <aside className="w-[264px] shrink-0 border-r border-line bg-white" aria-busy="true" />;
+  return <aside className="w-[264px] shrink-0 border-r border-line bg-panel" aria-busy="true" />;
 }

@@ -194,6 +194,27 @@ Branch `modellio-2.1-advanced-cad`; plan and status in [`docs/MODELLIO-2.1-CAD-E
   and chamfered; there is no parametric history for imported parts, and STEP names/colours are not read yet.
 * Project files are version 3 (older files open unchanged). Licences: `?studio=licences`.
 
+## MODELLIO 2.2 — Design Studio interface ✅
+
+Branch `modellio-2.2-design-studio`; plan and status in [`docs/MODELLIO-2.2-DESIGN-STUDIO-PLAN.md`](docs/MODELLIO-2.2-DESIGN-STUDIO-PLAN.md).
+
+* **Dark professional shell** for the Design Studio (the makers keep their light look), with a dark or light 3D
+  workspace (switch in the view toolbar; remembered per browser).
+* **Toolbar** grouped into History, Create (Sketch, Extrude, Revolve, Loft, Sweep), Modify (Fillet, Chamfer) and
+  Arrange. **Shape library** in collapsible categories with one search over shapes and tools.
+* **Design Browser** with three views: *Bodies* (the object tree), *Sketches* (every sketch and the bodies it drives)
+  and *Features* (each body's base feature and fillets / chamfers, Booleans with their bodies and cutters). Edit,
+  suppress and delete act on the real data; hovering a row highlights it in 3D.
+* **Inspector tabs:** Properties, Appearance (colour plus a view-only finish and transparency), Features (sketch,
+  precise solid, combine, hollow, text, mesh tools) and Print (size, volume, surface area, closed-solid check).
+* **Standalone sketches:** keep a sketch on its own (*Save sketch only*), build several bodies from one sketch, and
+  edit it once to update all of them; any body can take its own copy. **Components:** make a group a component and
+  insert more copies from the Components panel (copies are independent).
+* **Docked feature panels** for Fillet, Chamfer, Loft and Sweep (foldable), and a history timeline whose steps name
+  and highlight what they changed.
+* **Measure** shows where the next click lands (green when snapped to a corner or the grid). **K** starts a sketch.
+* Documents are schema 2 and project files version 4; older projects and share links open and are upgraded.
+
 ## AI assistant
 
 The assistant runs in a Vercel serverless function (`api/assistant.ts`) so the API key never reaches the browser.

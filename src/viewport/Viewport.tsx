@@ -40,6 +40,7 @@ function ReportCrash({ error, onCrash }: { error: Error; onCrash: (e: Error) => 
 }
 import { handleFiles } from '@/components/files/fileIntake';
 import { ASSET_DRAG_MIME, assetFile, useAssets } from '@/assets/library';
+import { useWorkspaceTheme, WORKSPACE_COLORS } from './workspaceTheme';
 
 export const SHAPE_DRAG_MIME = 'application/x-modellio-shape';
 
@@ -89,6 +90,7 @@ function Lights() {
 export function Viewport() {
   const workplane = useEditor((s) => s.doc.settings.workplane);
   const showGrid = useEditor((s) => s.showGrid);
+  const colors = WORKSPACE_COLORS[useWorkspaceTheme((s) => s.theme)];
   const [dragOver, setDragOver] = useState(false);
   const [sceneError, setSceneError] = useState<Error | null>(null);
   const [sceneKey, setSceneKey] = useState(0);
@@ -186,7 +188,8 @@ export function Viewport() {
 
   return (
     <div
-      className="relative h-full w-full overflow-hidden bg-canvas"
+      className="relative h-full w-full overflow-hidden"
+      style={{ background: colors.background }}
       onPointerDownCapture={onPointerDownCapture}
       onDragOver={onDragOver}
       onDragLeave={() => setDragOver(false)}
@@ -213,8 +216,8 @@ export function Viewport() {
           if (!(e.shiftKey || e.ctrlKey || e.metaKey)) useEditor.getState().clearSelection();
         }}
       >
-        <color attach="background" args={['#f5f7fb']} />
-        <fog attach="fog" args={['#f5f7fb', 1200, 4000]} />
+        <color attach="background" args={[colors.background]} />
+        <fog attach="fog" args={[colors.background, 1200, 4000]} />
         <Lights />
         <CameraController />
         <LabelProjector />
@@ -267,7 +270,7 @@ export function Viewport() {
       )}
       {dragOver && (
         <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5">
-          <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[13px] font-medium text-brand shadow-panel">
+          <span className="rounded-lg bg-panel/90 px-3 py-1.5 text-[13px] font-medium text-brand-ink shadow-panel">
             Drop to add · STL, OBJ or .modellio files
           </span>
         </div>

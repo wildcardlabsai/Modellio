@@ -27,7 +27,11 @@ import {
   Gem,
   Loader2,
   EyeOff,
+  Printer,
 } from 'lucide-react';
+import { useInspectorTab, type InspectorTab } from './inspectorTab';
+import { collectExportBodies } from '@/cad/export/collect';
+import type { LeftPanel } from '@/components/layout/LeftRail';
 import { useBrepEngine } from '@/cad/brep/client';
 import { solidConversion } from '@/cad/brep/convert';
 import { useFeatureTool } from '@/components/features/featureTool';
@@ -35,9 +39,10 @@ import { useSolidBuilder } from '@/components/features/solidBuilder';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
-import { meshReport } from '@/cad/operations/meshTools';
+import { meshMeasures, meshReport } from '@/cad/operations/meshTools';
+import { sketchUsers } from '@/cad/sketchRecords';
 import { useCadReady } from '@/viewport/cadReady';
-import type { CombineMode, FontId } from '@/types/document';
+import type { CombineMode, FontId, SurfaceFinish } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
 import type { GroupObject, SceneObject, ShapeObject, Vec3 } from '@/types/document';
 import { getShapeDefinition, getSolidBuild } from '@/cad/shapeRegistry';
@@ -48,6 +53,7 @@ import { useSketchSession } from '@/components/sketch/sketchSession';
 import { IconButton } from '@/components/ui/IconButton';
 import { Toggle } from '@/components/ui/Toggle';
 import { ObjectTree } from '@/components/hierarchy/ObjectTree';
+import { FeatureTree, SketchList } from '@/components/hierarchy/FeatureTree';
 import { AlignMenu, MirrorMenu } from '@/components/toolbar/AlignMenu';
 import { MOD } from '@/utils/platform';
 import { roundTo } from '@/utils/math';
@@ -76,27 +82,29 @@ const PALETTE = [
   '#FFFFFF',
 ];
 
-/** Right-hand panel: the inspector for the selection, above the object tree. */
-export function Inspector() {
+type BrowserView = 'bodies' | 'sketches' | 'features';
+const BROWSER_VIEWS: { id: BrowserView; label: string }[] = [
+  { id: 'bodies', label: 'Bodies' },
+  { id: 'sketches', label: 'Sketches' },
+  { id: 'features', label: 'Features' },
+];
+
+/** Right-hand panel: the Design Browser (every body in the design) above the Inspector for the selection. */
+export function Inspector({ onOpenPanel }: { onOpenPanel?: (p: LeftPanel) => void }) {
   const selection = useEditor((s) => s.selection);
   const objects = useEditor((s) => s.doc.objects);
   const count = useEditor((s) => Object.keys(s.doc.objects).length);
   const selected = selection.map((id) => objects[id]).filter(Boolean);
   const [treeOpen, setTreeOpen] = useState(true);
+  const [view, setView] = useState<BrowserView>('bodies');
   const hasSelection = selected.length > 0;
 
   return (
-    <aside className="flex w-[312px] shrink-0 flex-col border-l border-line bg-white" aria-label="Inspector" data-tour="inspector">
-      {hasSelection && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          {selected.length === 1 ? (
-            <ObjectInspector key={selected[0].id} object={selected[0]} />
-          ) : (
-            <MultiInspector count={selected.length} />
-          )}
-        </div>
-      )}
-      <div className={`flex min-h-0 flex-col border-t border-line ${hasSelection ? (treeOpen ? 'h-[34%] min-h-[180px]' : '') : 'flex-1'}`}>
+    <aside className="flex w-[312px] shrink-0 flex-col border-l border-line bg-panel" aria-label="Inspector" data-tour="inspector">
+      <div
+        className={`flex min-h-0 flex-col ${hasSelection ? `border-b border-line ${treeOpen ? 'h-[36%] min-h-[150px]' : ''}` : 'flex-1'}`}
+        data-testid="design-browser"
+      >
         <button
           type="button"
           onClick={() => setTreeOpen((v) => !v)}
@@ -104,20 +112,53 @@ export function Inspector() {
           disabled={!hasSelection}
           className="flex items-center gap-2 px-5 py-3 text-left"
         >
-          <Layers size={16} className="text-brand" />
-          <span className="flex-1 text-[14px] font-semibold text-ink">Objects</span>
+          <Layers size={16} className="text-brand-ink" />
+          <span className="flex-1 text-[14px] font-semibold text-ink">Design Browser</span>
           <span className="rounded-full bg-canvas px-2 py-0.5 text-[11px] font-medium text-muted">{count}</span>
           {hasSelection && <ChevronDown size={15} className={`text-muted transition-transform ${treeOpen ? '' : '-rotate-90'}`} />}
         </button>
         {(treeOpen || !hasSelection) && (
           <>
-            {!hasSelection && count > 0 && (
-              <p className="px-5 pb-1 text-[12px] text-muted">Drag to reorder or move into groups. Double-click to rename.</p>
+            <div role="radiogroup" aria-label="Browser view" className="mx-4 mb-2 grid grid-cols-3 rounded-lg bg-canvas p-1">
+              {BROWSER_VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={view === v.id}
+                  onClick={() => setView(v.id)}
+                  className={`rounded-md py-1 text-[12px] font-medium ${view === v.id ? 'bg-panel text-brand-ink shadow-sm' : 'text-muted hover:text-ink'}`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            {view === 'bodies' ? (
+              <>
+                {!hasSelection && count > 0 && (
+                  <p className="px-5 pb-1 text-[12px] text-muted">
+                    Every body in your design. Drag to reorder or move into groups. Double-click to rename.
+                  </p>
+                )}
+                <ObjectTree />
+              </>
+            ) : view === 'features' ? (
+              <FeatureTree />
+            ) : (
+              <SketchList />
             )}
-            <ObjectTree />
           </>
         )}
       </div>
+      {hasSelection && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {selected.length === 1 ? (
+            <ObjectInspector key={selected[0].id} object={selected[0]} onOpenPanel={onOpenPanel} />
+          ) : (
+            <MultiInspector count={selected.length} />
+          )}
+        </div>
+      )}
     </aside>
   );
 }
@@ -139,7 +180,7 @@ function UndersideSection({ locked }: { locked: boolean }) {
   const [depth, setDepth] = useState(0.6);
   const place = useEditor((st) => st.placeOnUnderside);
   const btn =
-    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-2 text-[12px] font-medium text-[#344054] hover:border-brand hover:text-brand disabled:opacity-50';
+    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-2 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50';
   return (
     <Section title="Underside">
       <p className="mb-2 text-[12px] leading-relaxed text-muted">
@@ -214,12 +255,13 @@ function Vec3Fields({
   );
 }
 
-function ObjectInspector({ object }: { object: SceneObject }) {
+function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenPanel?: (p: LeftPanel) => void }) {
   const s = useEditor.getState();
   const doc = useEditor((st) => st.doc);
   const lockProportions = useEditor((st) => st.lockProportions);
   const units = useEditor((st) => st.units);
-  const [tab, setTab] = useState<'properties' | 'appearance'>('properties');
+  const tab = useInspectorTab((st) => st.tab);
+  const setTab = useInspectorTab((st) => st.setTab);
   const locked = isEffectivelyLocked(doc, object.id);
   const inheritedLock = locked && !object.locked;
   const parent = object.parentId ? doc.objects[object.parentId] : null;
@@ -246,9 +288,9 @@ function ObjectInspector({ object }: { object: SceneObject }) {
       <header className="flex items-center gap-2.5 border-b border-line px-5 py-3.5">
         {isGroup ? (
           object.combine ? (
-            <Combine size={22} className="shrink-0 text-brand" />
+            <Combine size={22} className="shrink-0 text-brand-ink" />
           ) : (
-            <FolderOpen size={22} className="shrink-0 text-brand" />
+            <FolderOpen size={22} className="shrink-0 text-brand-ink" />
           )
         ) : (
           <span
@@ -269,34 +311,23 @@ function ObjectInspector({ object }: { object: SceneObject }) {
         </IconButton>
       </header>
 
-      <div className="px-5 pt-3">
-        <div role="tablist" className="grid grid-cols-2 rounded-lg bg-canvas p-1">
-          {(['properties', 'appearance'] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              type="button"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={`rounded-md py-1.5 text-[13px] font-medium capitalize transition-colors ${
-                tab === t ? 'bg-white text-brand shadow-sm' : 'text-muted hover:text-ink'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
+      <InspectorTabs tab={tab} setTab={setTab} opsCount={object.kind === 'shape' ? (object.feature?.ops.length ?? 0) : 0} />
 
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto pb-5">
-        {tab === 'properties' ? (
+      <div
+        className="scrollbar-thin min-h-0 flex-1 overflow-y-auto pb-5"
+        role="tabpanel"
+        id={`inspector-panel-${tab}`}
+        aria-labelledby={`inspector-tab-${tab}`}
+        data-testid={`inspector-${tab}`}
+      >
+        {locked && tab !== 'print' && (
+          <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+            <Lock size={14} />{' '}
+            {inheritedLock ? 'Locked by its group. Unlock the group to edit.' : 'This object is locked. Unlock it to edit.'}
+          </div>
+        )}
+        {tab === 'properties' && (
           <>
-            {locked && (
-              <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-                <Lock size={14} />{' '}
-                {inheritedLock ? 'Locked by its group. Unlock the group to edit.' : 'This object is locked. Unlock it to edit.'}
-              </div>
-            )}
             {parent && (
               <div className="mx-5 mt-4 flex items-start gap-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-muted">
                 <Info size={14} className="mt-px shrink-0" />
@@ -306,8 +337,6 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               </div>
             )}
             {object.kind === 'shape' && <SolidHoleSwitch object={object} locked={locked} />}
-            {object.kind === 'group' && <CombineSection group={object} locked={locked} />}
-            {object.kind === 'shape' && object.shape === 'text' && <TextSection object={object} locked={locked} />}
             <Section
               title={isGroup ? `Group size (${units})` : `Size (${units})`}
               action={
@@ -379,14 +408,6 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               />
             </Section>
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
-            {object.kind === 'shape' &&
-              object.shape !== 'text' &&
-              object.shape !== 'mesh' &&
-              object.shape !== 'profile' &&
-              object.shape !== 'solid' && <HollowSection object={object} locked={locked} />}
-            {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
-            {object.kind === 'shape' && object.shape === 'profile' && <ProfileSection object={object} locked={locked} />}
-            {object.kind === 'shape' && <PreciseSolidSection object={object} locked={locked} />}
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
               <Toggle
@@ -409,41 +430,291 @@ function ObjectInspector({ object }: { object: SceneObject }) {
               />
             </Section>
           </>
-        ) : (
-          <Section title={isGroup ? 'Colour (all shapes in group)' : 'Colour'}>
-            <div className="grid grid-cols-7 gap-2">
-              {PALETTE.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`Colour ${c}`}
-                  disabled={locked}
-                  onClick={() => s.setColor(object.id, c)}
-                  className={`aspect-square rounded-lg border transition-transform hover:scale-110 ${
-                    color.toLowerCase() === c.toLowerCase() ? 'border-brand ring-2 ring-brand/30' : 'border-black/10'
-                  }`}
-                  style={{ background: c }}
-                />
-              ))}
-            </div>
-            <label className="mt-3 flex items-center justify-between rounded-lg border border-line px-3 py-2 text-[13px] text-[#344054]">
-              Custom colour
-              <span className="flex items-center gap-2 font-mono text-[12px] uppercase text-muted">
-                {color}
-                <input
-                  type="color"
-                  aria-label="Custom colour"
-                  disabled={locked}
-                  value={color}
-                  onChange={(e) => s.setColor(object.id, e.target.value.toUpperCase())}
-                  className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
-                />
-              </span>
-            </label>
-          </Section>
         )}
+        {tab === 'appearance' && <AppearanceTab object={object} color={color} locked={locked} isGroup={isGroup} />}
+        {tab === 'features' && (
+          <>
+            {object.kind === 'group' && <CombineSection group={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape === 'text' && <TextSection object={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape === 'profile' && <ProfileSection object={object} locked={locked} />}
+            {object.kind === 'shape' && <PreciseSolidSection object={object} locked={locked} />}
+            {object.kind === 'shape' &&
+              object.shape !== 'text' &&
+              object.shape !== 'mesh' &&
+              object.shape !== 'profile' &&
+              object.shape !== 'solid' && <HollowSection object={object} locked={locked} />}
+            {object.kind === 'shape' && object.shape === 'mesh' && <MeshSection object={object} locked={locked} />}
+            {object.kind === 'group' && !object.combine && (
+              <p className="mx-5 mt-4 text-[12px] leading-relaxed text-muted">
+                An assembly keeps its parts separate. Choose Union or Intersect to make it one combined body.
+              </p>
+            )}
+          </>
+        )}
+        {tab === 'print' && <PrintTab object={object} locked={locked} onOpenPanel={onOpenPanel} />}
       </div>
     </div>
+  );
+}
+
+const TABS: { id: InspectorTab; label: string }[] = [
+  { id: 'properties', label: 'Properties' },
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'features', label: 'Features' },
+  { id: 'print', label: 'Print' },
+];
+
+function InspectorTabs({ tab, setTab, opsCount }: { tab: InspectorTab; setTab: (t: InspectorTab) => void; opsCount: number }) {
+  const onKey = (e: React.KeyboardEvent) => {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next =
+      e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    const t = TABS[(next + TABS.length) % TABS.length].id;
+    setTab(t);
+    requestAnimationFrame(() => document.getElementById(`inspector-tab-${t}`)?.focus());
+  };
+  return (
+    <div className="px-4 pt-3">
+      <div role="tablist" aria-label="Inspector" className="flex rounded-lg bg-canvas p-1" onKeyDown={onKey}>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            id={`inspector-tab-${t.id}`}
+            role="tab"
+            type="button"
+            aria-selected={tab === t.id}
+            aria-controls={`inspector-panel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
+            onClick={() => setTab(t.id)}
+            className={`flex flex-auto items-center justify-center gap-1 whitespace-nowrap rounded-md px-1 py-1.5 text-[12px] font-medium transition-colors ${
+              tab === t.id ? 'bg-panel text-brand-ink shadow-sm' : 'text-muted hover:text-ink'
+            }`}
+          >
+            {t.label}
+            {t.id === 'features' && opsCount > 0 && (
+              <span
+                className="rounded-full bg-brand-50 px-1 text-[10px] font-semibold leading-4 text-brand-ink"
+                aria-label={`${opsCount} operations`}
+              >
+                {opsCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const FINISHES: { id: SurfaceFinish; label: string }[] = [
+  { id: 'matte', label: 'Matte' },
+  { id: 'satin', label: 'Satin' },
+  { id: 'gloss', label: 'Gloss' },
+];
+
+/** Colour, plus the on-screen finish and transparency. All view-only: geometry and exports are unchanged. */
+function AppearanceTab({ object, color, locked, isGroup }: { object: SceneObject; color: string; locked: boolean; isGroup: boolean }) {
+  const s = useEditor.getState();
+  const doc = useEditor((st) => st.doc);
+  const look = object.kind === 'shape' ? object : descendantShapes(doc, [object.id])[0];
+  const finish = look?.finish ?? 'satin';
+  const opacity = look?.opacity ?? 1;
+  const transparency = Math.round((1 - opacity) * 100);
+  const [draft, setDraft] = useState(transparency);
+  useEffect(() => setDraft(transparency), [transparency]);
+  const commit = (pct: number) => {
+    if (pct !== transparency) s.setOpacity(object.id, 1 - pct / 100);
+  };
+  return (
+    <>
+      <Section title={isGroup ? 'Colour (all shapes in group)' : 'Colour'}>
+        <div className="grid grid-cols-7 gap-2">
+          {PALETTE.map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-label={`Colour ${c}`}
+              disabled={locked}
+              onClick={() => s.setColor(object.id, c)}
+              className={`aspect-square rounded-lg border transition-transform hover:scale-110 ${
+                color.toLowerCase() === c.toLowerCase() ? 'border-brand ring-2 ring-brand/30' : 'border-black/10'
+              }`}
+              style={{ background: c }}
+            />
+          ))}
+        </div>
+        <label className="mt-3 flex items-center justify-between rounded-lg border border-line px-3 py-2 text-[13px] text-ink-2">
+          Custom colour
+          <span className="flex items-center gap-2 font-mono text-[12px] uppercase text-muted">
+            {color}
+            <input
+              type="color"
+              aria-label="Custom colour"
+              disabled={locked}
+              value={color}
+              onChange={(e) => s.setColor(object.id, e.target.value.toUpperCase())}
+              className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
+            />
+          </span>
+        </label>
+      </Section>
+      <Section title="Finish">
+        <div role="radiogroup" aria-label="Finish" className="grid grid-cols-3 rounded-lg bg-canvas p-1">
+          {FINISHES.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="radio"
+              aria-checked={finish === f.id}
+              disabled={locked}
+              onClick={() => finish !== f.id && s.setFinish(object.id, f.id)}
+              className={`rounded-md py-1.5 text-[13px] font-medium ${finish === f.id ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </Section>
+      <Section title="Transparency">
+        <div className="grid grid-cols-[1fr_96px] items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={90}
+            step={5}
+            value={draft}
+            disabled={locked}
+            aria-label="Transparency"
+            onChange={(e) => setDraft(Number(e.target.value))}
+            onPointerUp={() => commit(draft)}
+            onKeyUp={() => commit(draft)}
+            onBlur={() => commit(draft)}
+            className="w-full accent-brand"
+          />
+          <NumberField
+            value={draft}
+            min={0}
+            max={90}
+            step={5}
+            decimals={0}
+            suffix="%"
+            ariaLabel="Transparency (%)"
+            disabled={locked}
+            onCommit={(v) => {
+              setDraft(v);
+              commit(v);
+            }}
+          />
+        </div>
+      </Section>
+      <p className="mx-5 mt-4 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted">
+        <Info size={13} className="mt-px shrink-0" />
+        Appearance is for viewing only: it isn’t exported or printed. Colour is still included in 3MF and GLB files.
+      </p>
+    </>
+  );
+}
+
+/** Print facts for the selection: size, volume, surface area and whether it is a closed solid. */
+function PrintTab({ object, locked, onOpenPanel }: { object: SceneObject; locked: boolean; onOpenPanel?: (p: LeftPanel) => void }) {
+  const s = useEditor.getState();
+  const doc = useEditor((st) => st.doc);
+  const version = useCadReady((st) => st.version);
+  const u = useUnits();
+  const onlyHoles = object.kind === 'shape' ? object.isHole : descendantShapes(doc, [object.id]).every((d) => d.isHole);
+  // Rebuild when fonts or the precise-solid engine finish loading (version).
+  const info = useMemo(() => {
+    const c = collectExportBodies(doc, [object.id]);
+    if (!c.bodies.length) return null;
+    let volume = 0;
+    let area = 0;
+    let boundary = 0;
+    let nonManifold = 0;
+    for (const b of c.bodies) {
+      const m = meshMeasures(b.mesh);
+      const r = meshReport(b.mesh);
+      volume += m.volume;
+      area += m.area;
+      boundary += r.boundaryEdges;
+      nonManifold += r.nonManifoldEdges;
+    }
+    const exact = object.kind === 'shape' && object.shape === 'solid' ? getSolidBuild(object) : null;
+    const size = c.bounds.getSize(new THREE.Vector3()).toArray() as Vec3;
+    return { size, volume: exact ? exact.volume : volume, exact: !!exact, area, boundary, nonManifold, bodies: c.bodies.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, object, version]);
+  const btn =
+    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-2 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50';
+  if (onlyHoles) return <p className="mx-5 mt-4 text-[12px] leading-relaxed text-muted">Holes are cutters: nothing prints from them.</p>;
+  const closed = info && info.boundary === 0 && info.nonManifold === 0;
+  return (
+    <>
+      <Section title="Print facts">
+        {info ? (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12px]" data-testid="print-facts">
+            <dt className="text-muted">Size (W × D × H)</dt>
+            <dd className="text-right font-medium text-ink" data-testid="print-size">
+              {info.size.map((v) => u.toDisplay(v).toFixed(u.decimals)).join(' × ')} {u.label}
+            </dd>
+            <dt className="text-muted">Volume</dt>
+            <dd className="text-right font-medium text-ink" data-testid="print-volume">
+              {info.exact ? '' : '≈ '}
+              {(info.volume / 1000).toFixed(3)} cm³
+            </dd>
+            <dt className="text-muted">Surface area</dt>
+            <dd className="text-right font-medium text-ink" data-testid="print-area">
+              ≈ {(info.area / 100).toFixed(2)} cm²
+            </dd>
+            {info.bodies > 1 && (
+              <>
+                <dt className="text-muted">Separate bodies</dt>
+                <dd className="text-right font-medium text-ink">{info.bodies}</dd>
+              </>
+            )}
+          </dl>
+        ) : (
+          <p className="flex items-center gap-1.5 text-[12px] text-muted">
+            <Loader2 size={14} className="animate-spin" /> Building…
+          </p>
+        )}
+        {info && (
+          <p
+            className={`mt-3 flex items-start gap-1.5 rounded-lg px-2.5 py-2 text-[12px] ${closed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}
+            data-testid="print-closed"
+          >
+            {closed ? <CircleCheck size={14} className="mt-px shrink-0" /> : <CircleAlert size={14} className="mt-px shrink-0" />}
+            {closed
+              ? 'Closed solid: ready to slice.'
+              : `${info.boundary.toLocaleString()} open edges, ${info.nonManifold.toLocaleString()} non-manifold. Your slicer may need to repair it.`}
+          </p>
+        )}
+      </Section>
+      <Section title="Placement">
+        <div className="flex gap-1.5">
+          <button type="button" className={btn} disabled={locked} onClick={() => s.setTool('layflat')}>
+            <BetweenHorizontalEnd size={14} /> Lay flat
+          </button>
+          <button type="button" className={btn} disabled={locked} onClick={() => s.dropToWorkplane([object.id])}>
+            <ArrowDownToLine size={14} /> Drop down
+          </button>
+        </div>
+      </Section>
+      {onOpenPanel && (
+        <Section title="Overhangs and thin walls">
+          <p className="mb-2 text-[12px] leading-relaxed text-muted">The full check highlights problem areas on the whole design.</p>
+          <button
+            type="button"
+            onClick={() => onOpenPanel('print')}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-2 text-[13px] font-semibold text-white hover:bg-brand-600"
+            data-testid="open-print-check"
+          >
+            <Printer size={15} /> Run full print check
+          </button>
+        </Section>
+      )}
+    </>
   );
 }
 
@@ -455,7 +726,7 @@ function HollowSection({ object, locked }: { object: ShapeObject; locked: boolea
   return (
     <Section title="Hollow">
       <div className="grid grid-cols-[1fr_120px] items-center gap-3">
-        <span className="text-[13px] text-[#344054]">Wall thickness</span>
+        <span className="text-[13px] text-ink-2">Wall thickness</span>
         <NumberField
           ariaLabel="Wall thickness"
           value={u.toDisplay(wall)}
@@ -491,7 +762,7 @@ function ShapeParams({ object, locked }: { object: ShapeObject; locked: boolean 
       <div className="space-y-2">
         {def.params.map((p) => (
           <div key={p.key} className="grid grid-cols-[1fr_120px] items-center gap-3">
-            <span className="text-[13px] text-[#344054]">{p.label}</span>
+            <span className="text-[13px] text-ink-2">{p.label}</span>
             {p.unit === 'mm' ? (
               <NumberField
                 ariaLabel={p.label}
@@ -544,7 +815,7 @@ function SolidHoleSwitch({ object, locked }: { object: ShapeObject; locked: bool
               disabled={locked}
               onClick={() => !active && s.setHole([object.id], o.hole)}
               className={`flex items-center justify-center gap-2 rounded-lg border py-2 text-[13px] font-semibold ${
-                active ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-canvas'
+                active ? 'border-brand bg-brand-50 text-brand-ink' : 'border-line text-ink-2 hover:bg-canvas'
               } disabled:opacity-50`}
             >
               <span className="h-4 w-4 rounded" style={o.swatch} />
@@ -585,7 +856,7 @@ function TextSection({ object, locked }: { object: ShapeObject; locked: boolean 
           value={object.text?.font}
           disabled={locked}
           onChange={(e) => void s.setText(object.id, { font: e.target.value as FontId })}
-          className="h-9 rounded-lg border border-line bg-white px-2 text-[13px] text-ink outline-none focus:border-brand"
+          className="h-9 rounded-lg border border-line bg-panel px-2 text-[13px] text-ink outline-none focus:border-brand"
         >
           {FONTS.map((f) => (
             <option key={f.id} value={f.id}>
@@ -644,7 +915,7 @@ function TextSection({ object, locked }: { object: ShapeObject; locked: boolean 
             aria-checked={Math.round(object.params.align ?? 0) === i}
             disabled={locked}
             onClick={() => void s.setText(object.id, { align: i })}
-            className={`rounded-md py-1 text-[12px] font-medium ${Math.round(object.params.align ?? 0) === i ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+            className={`rounded-md py-1 text-[12px] font-medium ${Math.round(object.params.align ?? 0) === i ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`}
           >
             {label}
           </button>
@@ -662,7 +933,7 @@ function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean 
   const [detail, setDetail] = useState(0.2);
   const closed = report && report.boundaryEdges === 0 && report.nonManifoldEdges === 0;
   const tool =
-    'flex h-8 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50';
+    'flex h-8 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50';
   return (
     <Section title="Mesh">
       {report ? (
@@ -709,7 +980,7 @@ function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean 
         type="button"
         disabled={locked}
         onClick={() => s.separateSelected()}
-        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
       >
         <Scissors size={15} /> Separate parts
       </button>
@@ -737,14 +1008,14 @@ function ProfileSection({ object, locked }: { object: ShapeObject; locked: boole
             aria-checked={base.kind === k}
             disabled={locked}
             onClick={() => base.kind !== k && update({ ...base, kind: k })}
-            className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${base.kind === k ? 'bg-white text-brand shadow-sm' : 'text-[#344054]'}`}
+            className={`rounded-md py-1.5 text-[13px] font-medium capitalize ${base.kind === k ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`}
           >
             {k}
           </button>
         ))}
       </div>
       <div className="mt-2 grid grid-cols-[1fr_120px] items-center gap-3">
-        <span className="text-[13px] text-[#344054]">{revolve ? 'Revolve angle' : 'Extrude depth'}</span>
+        <span className="text-[13px] text-ink-2">{revolve ? 'Revolve angle' : 'Extrude depth'}</span>
         {revolve ? (
           <NumberField
             value={angle}
@@ -775,7 +1046,7 @@ function ProfileSection({ object, locked }: { object: ShapeObject; locked: boole
         type="button"
         disabled={locked}
         onClick={() => useSketchSession.getState().open(object.id)}
-        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
         data-testid="edit-sketch"
       >
         Edit sketch
@@ -783,7 +1054,37 @@ function ProfileSection({ object, locked }: { object: ShapeObject; locked: boole
       <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
         Changing the sketch or these settings rebuilds the solid at its sketched size.
       </p>
+      <SharedSketchNote object={object} locked={locked} />
     </Section>
+  );
+}
+
+/** Which standalone sketch a sketched body uses, and whether other bodies share it. */
+function SharedSketchNote({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const doc = useEditor((st) => st.doc);
+  const rec = object.sketchId ? doc.sketches?.[object.sketchId] : undefined;
+  if (!rec) return null;
+  const others = sketchUsers(doc, rec.id).filter((u) => u.id !== object.id);
+  return (
+    <div className="mt-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="sketch-link">
+      Sketch: <strong className="font-semibold text-ink">{rec.name}</strong>
+      {others.length > 0 ? (
+        <>
+          <span className="block text-muted">
+            Also builds {others.map((o) => o.name).join(', ')}. Editing it updates {others.length === 1 ? 'both' : 'all of them'}.
+          </span>
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => useEditor.getState().unlinkSketch(object.id)}
+            className="mt-1.5 rounded-md border border-line px-2 py-1 font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50"
+            data-testid="unlink-sketch"
+          >
+            Give this body its own copy
+          </button>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -827,7 +1128,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
           type="button"
           disabled={locked || busy}
           onClick={() => void convert()}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
           data-testid="make-solid"
         >
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Gem size={15} />}
@@ -872,7 +1173,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
           type="button"
           disabled={locked}
           onClick={() => useSolidBuilder.getState().open(base.kind as 'loft' | 'sweep', object.id)}
-          className="mt-3 flex w-full items-center justify-center rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+          className="mt-3 flex w-full items-center justify-center rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
           data-testid="solid-edit-base"
         >
           Edit {base.kind}
@@ -885,7 +1186,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
             type="button"
             disabled={locked}
             onClick={() => void useFeatureTool.getState().start(object.id, k)}
-            className="flex h-8 items-center justify-center rounded-lg border border-line text-[12px] font-medium capitalize text-[#344054] hover:bg-canvas disabled:opacity-50"
+            className="flex h-8 items-center justify-center rounded-lg border border-line text-[12px] font-medium capitalize text-ink-2 hover:bg-canvas disabled:opacity-50"
             data-testid={`solid-${k}`}
           >
             {k} edges
@@ -911,7 +1212,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
                     type="button"
                     disabled={locked}
                     onClick={() => void useFeatureTool.getState().start(object.id, op.kind, op.id)}
-                    className="rounded px-1.5 py-0.5 text-brand hover:bg-brand-50 disabled:opacity-40"
+                    className="rounded px-1.5 py-0.5 text-brand-ink hover:bg-brand-50 disabled:opacity-40"
                   >
                     Edit
                   </button>
@@ -926,7 +1227,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
                         op.suppressed ? 'Unsuppress' : 'Suppress',
                       )
                     }
-                    className="rounded p-1 text-[#475467] hover:bg-canvas disabled:opacity-40"
+                    className="rounded p-1 text-ink-3 hover:bg-canvas disabled:opacity-40"
                   >
                     {op.suppressed ? <EyeOff size={13} /> : <Eye size={13} />}
                   </button>
@@ -940,7 +1241,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
                         `Delete ${op.kind}`,
                       )
                     }
-                    className="rounded p-1 text-[#475467] hover:text-red-600 disabled:opacity-40"
+                    className="rounded p-1 text-ink-3 hover:text-red-600 disabled:opacity-40"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -987,7 +1288,7 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
               aria-checked={active}
               disabled={locked}
               onClick={() => !active && s.setCombineMode(group.id, mode)}
-              className={`rounded-md py-1.5 text-[12px] font-medium ${active ? 'bg-white text-brand shadow-sm' : 'text-muted hover:text-ink'}`}
+              className={`rounded-md py-1.5 text-[12px] font-medium ${active ? 'bg-panel text-brand-ink shadow-sm' : 'text-muted hover:text-ink'}`}
             >
               {label}
             </button>
@@ -1019,7 +1320,7 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
             s.select([group.id]);
             s.bakeSelected();
           }}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
         >
           <Layers2 size={15} /> Flatten to mesh
         </button>
@@ -1039,11 +1340,20 @@ function GroupActions({ group, locked }: { group: GroupObject; locked: boolean }
           s.select([group.id]);
           s.ungroupSelected();
         }}
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
       >
         <Ungroup size={15} /> Ungroup {group.children.length} objects
       </button>
       <p className="mt-2 text-[12px] text-muted">Double-click a part in the viewport to select it inside the group.</p>
+      <div className="mt-2">
+        <Toggle
+          label="Component (reusable part)"
+          icon={<Layers size={15} className="text-muted" />}
+          checked={!!group.component}
+          disabled={locked}
+          onChange={(v) => s.setComponent(group.id, v)}
+        />
+      </div>
     </Section>
   );
 }
@@ -1095,7 +1405,7 @@ function MultiInspector({ count }: { count: number }) {
           <button
             type="button"
             onClick={() => s.dropToWorkplane(selection)}
-            className="flex items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas"
+            className="flex items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas"
           >
             <ArrowDownToLine size={15} /> Drop all
           </button>
@@ -1114,7 +1424,7 @@ function MultiInspector({ count }: { count: number }) {
                 key={op}
                 type="button"
                 onClick={() => s.combineSelected(op)}
-                className="flex flex-col items-center gap-1 rounded-lg border border-line py-2 text-[12px] font-medium text-[#344054] hover:border-brand/40 hover:bg-brand-50 hover:text-brand"
+                className="flex flex-col items-center gap-1 rounded-lg border border-line py-2 text-[12px] font-medium text-ink-2 hover:border-brand/40 hover:bg-brand-50 hover:text-brand-ink"
               >
                 <Icon size={17} />
                 {label}

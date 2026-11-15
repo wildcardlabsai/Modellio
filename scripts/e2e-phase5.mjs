@@ -75,6 +75,8 @@ const home = async () => {
   await page.waitForTimeout(800);
 };
 
+/** The Inspector shows one tab at a time (Properties, Appearance, Features, Print). */
+const inspectorTab = (name) => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
 
@@ -404,6 +406,7 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   await S((id) => window.modellio.store.getState().select([id]), box);
   const tris = () => S((id) => window.modellio.viewport.scene.getObjectByName(id)?.geometry.getAttribute('position').count ?? 0, box);
   const solidTris = await tris();
+  await inspectorTab('Features');
   const wall = page.getByLabel('Wall thickness');
   await wall.click();
   await wall.fill('2');
@@ -421,6 +424,7 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
     s.setParam(id, 'shell', 0);
   }, box);
   const sharp = await tris();
+  await inspectorTab('Properties');
   const ch = page.getByLabel('Chamfer', { exact: true });
   await ch.click();
   await ch.fill('3');

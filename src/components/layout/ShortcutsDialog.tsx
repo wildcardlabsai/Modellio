@@ -9,7 +9,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Import a file', `${MOD} O`],
       ['Export', `${MOD} E`],
       ['Undo', `${MOD} Z`],
-      ['Redo', `${MOD} ⇧ Z`],
+      ['Redo', `${MOD} ⇧ Z / ${MOD} Y`],
       ['Duplicate', `${MOD} D`],
       ['Copy / Cut / Paste', `${MOD} C / X / V`],
       ['Group', `${MOD} G`],
@@ -21,6 +21,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Toggle hole / solid', 'H'],
       ['Measure tool', 'M'],
       ['Lay flat on a face', 'L'],
+      ['New sketch', 'K'],
     ],
   },
   {
@@ -44,6 +45,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Fit selection / all', 'F'],
       ['Multi-select', '⇧ / Ctrl click'],
       ['Select inside a group', 'Double-click'],
+      ['Show these shortcuts', '?'],
     ],
   },
 ];
@@ -55,7 +57,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Keyboard shortcuts"
-        className="w-[min(720px,92vw)] rounded-2xl bg-white p-6 shadow-float"
+        className="w-[min(720px,92vw)] rounded-2xl bg-panel p-6 shadow-float"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -70,7 +72,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
               <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">{g.title}</h3>
               <ul className="space-y-1.5">
                 {g.items.map(([label, keys]) => (
-                  <li key={label} className="flex items-center justify-between gap-2 text-[13px] text-[#344054]">
+                  <li key={label} className="flex items-center justify-between gap-2 text-[13px] text-ink-2">
                     {label}
                     <kbd className="whitespace-nowrap rounded-md border border-line bg-canvas px-1.5 py-0.5 font-sans text-[11px] font-medium text-ink">
                       {keys}

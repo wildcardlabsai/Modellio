@@ -133,7 +133,7 @@ export function NumberField({
           stepBy(dir, e.shiftKey ? 10 : 1);
         }
       }}
-      className="flex h-[15px] w-4 items-center justify-center rounded-[3px] text-[#667085] hover:bg-brand-50 hover:text-brand active:bg-brand-100 disabled:opacity-30 disabled:hover:bg-transparent"
+      className="flex h-[15px] w-4 items-center justify-center rounded-[3px] text-muted hover:bg-brand-50 hover:text-brand-ink active:bg-brand-100 disabled:opacity-30 disabled:hover:bg-transparent"
     >
       <svg viewBox="0 0 8 5" className="h-[5px] w-2" aria-hidden>
         <path d={dir > 0 ? 'M0 5 4 0 8 5Z' : 'M0 0 4 5 8 0Z'} fill="currentColor" />
@@ -150,10 +150,10 @@ export function NumberField({
           (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus();
         }
       }}
-      className={`group flex h-9 min-w-0 items-center gap-1.5 rounded-lg border bg-white pl-2 pr-0.5 transition-colors ${
+      className={`group flex h-9 min-w-0 items-center gap-1.5 rounded-lg border bg-panel pl-2 pr-0.5 transition-colors ${
         error
           ? 'border-red-400 ring-2 ring-red-100'
-          : 'border-line hover:border-[#c9d2e0] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15'
+          : 'border-line hover:border-line-strong focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15'
       } ${disabled ? 'pointer-events-none opacity-50' : ''}`}
     >
       {label && <span className={`text-[11px] font-bold ${labelClass}`}>{label}</span>}

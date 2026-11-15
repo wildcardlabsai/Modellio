@@ -22,7 +22,7 @@ export function WorkplanePanel() {
   const u = useUnits();
 
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Workplane settings">
+    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-panel" aria-label="Workplane settings">
       <div className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
         <h2 className="text-[15px] font-semibold text-ink">Workplane</h2>
         <p className="mt-1 text-[12px] text-muted">Match the plate to your printer's build area.</p>
@@ -61,7 +61,7 @@ export function WorkplanePanel() {
                 type="button"
                 onClick={() => setWorkplaneSize(p.size)}
                 className={`rounded-lg border px-2 py-1.5 text-[12px] font-medium ${
-                  active ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-canvas'
+                  active ? 'border-brand bg-brand-50 text-brand-ink' : 'border-line text-ink-2 hover:bg-canvas'
                 }`}
               >
                 {p.label}
@@ -81,7 +81,7 @@ export function WorkplanePanel() {
           onChange={(v) => setSnap({ enabled: v })}
         />
         <div className="mt-2 grid grid-cols-[1fr_110px] items-center gap-2">
-          <span className="text-[13px] text-[#344054]">Move step</span>
+          <span className="text-[13px] text-ink-2">Move step</span>
           <NumberField
             ariaLabel="Move snap step"
             value={snap.translate}
@@ -92,7 +92,7 @@ export function WorkplanePanel() {
             disabled={!snap.enabled}
             onCommit={(v) => setSnap({ translate: v })}
           />
-          <span className="text-[13px] text-[#344054]">Rotate step</span>
+          <span className="text-[13px] text-ink-2">Rotate step</span>
           <NumberField
             ariaLabel="Rotate snap step"
             value={snap.rotate}

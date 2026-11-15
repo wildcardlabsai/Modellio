@@ -30,7 +30,7 @@ export function Popover({ trigger, children, align = 'left', side = 'bottom' }: 
       {open && (
         <div
           role="dialog"
-          className={`absolute z-40 rounded-xl border border-line bg-white p-3 shadow-float ${align === 'right' ? 'right-0' : 'left-0'} ${
+          className={`absolute z-40 rounded-xl border border-line bg-panel p-3 shadow-float ${align === 'right' ? 'right-0' : 'left-0'} ${
             side === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'
           }`}
         >

@@ -132,7 +132,7 @@ export function AssistantPanel() {
 
   return (
     <aside
-      className="flex w-[300px] shrink-0 flex-col border-r border-line bg-white"
+      className="flex w-[300px] shrink-0 flex-col border-r border-line bg-panel"
       aria-label="AI assistant"
       data-testid="assistant-panel"
     >
@@ -159,13 +159,13 @@ export function AssistantPanel() {
         )}
         {available === 'ready' && !turns.length && (
           <div className="space-y-1.5">
-            <p className="text-[12px] font-medium text-[#344054]">Try:</p>
+            <p className="text-[12px] font-medium text-ink-2">Try:</p>
             {EXAMPLES.map((ex) => (
               <button
                 key={ex}
                 type="button"
                 onClick={() => void send(ex)}
-                className="block w-full rounded-lg border border-line px-3 py-2 text-left text-[12px] text-[#344054] hover:border-brand hover:text-brand"
+                className="block w-full rounded-lg border border-line px-3 py-2 text-left text-[12px] text-ink-2 hover:border-brand hover:text-brand-ink"
               >
                 {ex}
               </button>
@@ -185,7 +185,7 @@ export function AssistantPanel() {
             <div key={i} className="mr-4 rounded-xl rounded-bl-sm bg-canvas px-3 py-2 text-[13px] text-ink" data-testid="assistant-reply">
               <p>{t.text}</p>
               {t.steps && t.steps.length > 0 && (
-                <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-[12px] text-[#344054]" data-testid="assistant-steps">
+                <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-[12px] text-ink-2" data-testid="assistant-steps">
                   {t.steps.map((s, k) => (
                     <li key={k}>{s}</li>
                   ))}
@@ -204,7 +204,7 @@ export function AssistantPanel() {
                   <button
                     type="button"
                     onClick={() => void decide(i, false)}
-                    className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-[#344054] hover:bg-white"
+                    className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:bg-panel"
                   >
                     <X size={14} /> Discard
                   </button>

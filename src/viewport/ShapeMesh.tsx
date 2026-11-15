@@ -12,6 +12,8 @@ import { gizmoRecentlyUsed } from './viewportBridge';
 import { useCadReady } from './cadReady';
 import { startSurfaceDrag } from './surfaceDrag';
 import { DEG2RAD } from '@/utils/math';
+import { appearanceProps } from './appearance';
+import { useHover } from './hover';
 
 export const HOLE_COLOR = '#8C97AB';
 
@@ -44,6 +46,8 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
   useEffect(() => () => geometry?.dispose(), [geometry]);
 
   const [hovered, setHovered] = useState(false);
+  // Pointed at from the Design Browser or the history timeline.
+  const pointed = useHover((h) => h.ids.includes(object.id));
   // Editing this loft / sweep: its preview is drawn instead.
   const replaced = useSolidBuilder((s) => s.session?.editingId === object.id && s.session.preview.state === 'ok');
 
@@ -102,11 +106,12 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
         />
       ) : (
         <meshStandardMaterial
+          // Rebuilt when transparency switches on or off: three.js only changes blending on a new material.
+          key={appearanceProps(object).transparent ? 'see-through' : 'solid'}
           color={color}
-          roughness={0.42}
-          metalness={0.04}
+          {...appearanceProps(object)}
           emissive={color}
-          emissiveIntensity={hovered && !active ? 0.12 : 0}
+          emissiveIntensity={(hovered || pointed) && !active ? 0.12 : 0}
           polygonOffset
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}

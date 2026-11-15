@@ -125,8 +125,8 @@ function ImportDialogInner({ item, onDone }: { item: ReturnType<typeof useFileUi
       </div>
 
       {parsed.parts.length > 1 && (
-        <label className="mt-4 flex items-center gap-2 text-[13px] text-[#344054]">
-          <input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} className="h-4 w-4 accent-[#2463EB]" />
+        <label className="mt-4 flex items-center gap-2 text-[13px] text-ink-2">
+          <input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} className="h-4 w-4 accent-brand" />
           Merge all parts into one object (otherwise they are imported as a group)
         </label>
       )}

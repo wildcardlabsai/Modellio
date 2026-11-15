@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, History } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
+import { changedObjectIds } from '@/cad/featureTree';
+import { useHover } from '@/viewport/hover';
+import type { ModelDocument } from '@/types/document';
 
 const KEY = 'modellio:timeline';
 
@@ -13,6 +16,15 @@ export function HistoryTimeline() {
   const past = useEditor((s) => s.history.past);
   const future = useEditor((s) => s.history.future);
   const jump = useEditor((s) => s.jumpHistory);
+  const doc = useEditor((s) => s.doc);
+  const setHover = useHover((s) => s.set);
+  /** Point at what a step changed (between the document before and after it). */
+  const point = (before: ModelDocument, after: ModelDocument) => () => setHover(changedObjectIds(before, after));
+  const names = (before: ModelDocument, after: ModelDocument) => {
+    const ids = changedObjectIds(before, after);
+    const n = ids.map((id) => (after.objects[id] ?? before.objects[id])?.name).filter(Boolean);
+    return n.length ? ` (${n.slice(0, 3).join(', ')}${n.length > 3 ? ` and ${n.length - 3} more` : ''})` : '';
+  };
   const [open, setOpen] = useState(() => {
     try {
       return localStorage.getItem(KEY) !== 'closed';
@@ -36,33 +48,49 @@ export function HistoryTimeline() {
   const ahead = [...future].reverse();
   const steps = past.length + ahead.length;
   return (
-    <section className="shrink-0 border-t border-line bg-white" aria-label="History" data-testid="history-timeline">
-      <div className="flex h-9 items-center gap-2 px-3">
+    <section className="shrink-0 border-t border-line bg-panel" aria-label="History" data-testid="history-timeline">
+      <div className="flex h-10 items-center gap-2 px-3">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-semibold text-[#344054] hover:bg-canvas"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-semibold text-ink-2 hover:bg-canvas"
         >
           <History size={14} /> History
           <span className="font-normal text-muted">({steps})</span>
           {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </button>
         {open && (
-          <ol ref={strip} className="scrollbar-thin flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1">
+          <ol
+            ref={strip}
+            className="scrollbar-thin flex min-w-0 flex-1 items-center overflow-x-auto py-1"
+            onMouseLeave={() => setHover([])}
+          >
             <li>
               <Step label="Start" state={past.length === 0 ? 'current' : 'done'} onClick={() => jump(-past.length)} />
             </li>
             {past.map((e, i) => (
-              <li key={`p${i}`} className="flex items-center gap-1">
-                <span className="h-px w-2 bg-line" aria-hidden />
-                <Step label={e.label} state={i === past.length - 1 ? 'current' : 'done'} onClick={() => jump(i + 1 - past.length)} />
+              <li key={`p${i}`} className="flex items-center">
+                <span className="h-0.5 w-4 rounded-full bg-brand/60" aria-hidden />
+                <Step
+                  label={e.label}
+                  state={i === past.length - 1 ? 'current' : 'done'}
+                  onClick={() => jump(i + 1 - past.length)}
+                  changed={names(e.state, past[i + 1]?.state ?? doc)}
+                  onPoint={point(e.state, past[i + 1]?.state ?? doc)}
+                />
               </li>
             ))}
             {ahead.map((e, i) => (
-              <li key={`f${i}`} className="flex items-center gap-1">
-                <span className="h-px w-2 bg-line" aria-hidden />
-                <Step label={e.label} state="undone" onClick={() => jump(i + 1)} />
+              <li key={`f${i}`} className="flex items-center">
+                <span className="h-0.5 w-4 rounded-full border-t border-dashed border-line-strong" aria-hidden />
+                <Step
+                  label={e.label}
+                  state="undone"
+                  onClick={() => jump(i + 1)}
+                  changed={names(ahead[i - 1]?.state ?? doc, e.state)}
+                  onPoint={point(ahead[i - 1]?.state ?? doc, e.state)}
+                />
               </li>
             ))}
           </ol>
@@ -72,25 +100,54 @@ export function HistoryTimeline() {
   );
 }
 
-function Step({ label, state, onClick }: { label: string; state: 'done' | 'current' | 'undone'; onClick: () => void }) {
+function Step({
+  label,
+  state,
+  onClick,
+  changed = '',
+  onPoint,
+}: {
+  label: string;
+  state: 'done' | 'current' | 'undone';
+  onClick: () => void;
+  /** Names of the objects the step changed, for the tooltip. */
+  changed?: string;
+  onPoint?: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onPoint}
+      onFocus={onPoint}
       aria-current={state === 'current' ? 'step' : undefined}
       title={
-        state === 'undone' ? `Redo up to “${label}”` : state === 'current' ? `Now: after “${label}”` : `Go back to just after “${label}”`
+        (state === 'undone'
+          ? `Redo up to “${label}”`
+          : state === 'current'
+            ? `Now: after “${label}”`
+            : `Go back to just after “${label}”`) + changed
       }
-      className={`max-w-[160px] shrink-0 truncate rounded-full border px-2.5 py-0.5 text-[12px] font-medium ${
+      className={`group flex max-w-[170px] shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium ${
         state === 'current'
-          ? 'border-brand bg-brand text-white'
+          ? 'bg-brand-50 text-brand-ink'
           : state === 'done'
-            ? 'border-line bg-white text-[#344054] hover:border-brand hover:text-brand'
-            : 'border-dashed border-line bg-canvas text-muted hover:text-ink'
+            ? 'text-ink-2 hover:bg-canvas hover:text-ink'
+            : 'text-muted hover:bg-canvas'
       }`}
       data-testid="history-step"
     >
-      {label}
+      <span
+        aria-hidden
+        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+          state === 'current'
+            ? 'bg-brand ring-4 ring-brand/25'
+            : state === 'done'
+              ? 'bg-brand/70 group-hover:bg-brand'
+              : 'border border-dashed border-line-strong'
+        }`}
+      />
+      <span className="truncate">{label}</span>
     </button>
   );
 }

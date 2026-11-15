@@ -50,6 +50,8 @@ const clear = () =>
     window.modellio.store.getState().deleteSelected();
   });
 
+/** The Inspector shows one tab at a time (Properties, Appearance, Features, Print). */
+const inspectorTab = (name) => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 await page.goto(`${URL}/?studio=design`, { waitUntil: 'networkidle' });
 await page.getByTestId('viewport').waitFor();
 await page.waitForTimeout(1500);
@@ -162,6 +164,7 @@ const textId = await S(() => window.modellio.store.getState().addText('MAKER', [
 await S((id) => window.modellio.store.setState({ selection: [id] }), textId);
 await page.waitForTimeout(500);
 const w0 = await until(() => S((id) => window.modellio.store.getState().doc.objects[id].size[0], textId));
+await inspectorTab('Features');
 const ls = page.getByLabel('Letter spacing (em)', { exact: true });
 await ls.fill('0.5');
 await ls.press('Enter');
@@ -370,6 +373,184 @@ check(
   JSON.stringify(undone?.size),
 );
 await page.screenshot({ path: `${OUT}/studio2-03-profile.png` });
+
+/** The rendered colour of one screen pixel. */
+const pixelAt = async (x, y) => {
+  const png = await page.screenshot({ clip: { x: Math.round(x) - 1, y: Math.round(y) - 1, width: 3, height: 3 } });
+  return S(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(1, 1, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, png.toString('base64'));
+};
+const brightness = ([r, g, b]) => (r + g + b) / 3;
+
+// 7b. Workspace theme (Stage 2.2c): dark by default in the Studio, light on request, remembered.
+const vp = await page.getByTestId('viewport').boundingBox();
+const sky = () => pixelAt(vp.x + vp.width / 2, vp.y + 12);
+const darkSky = await sky();
+check('35. The 3D workspace is dark by default', brightness(darkSky) < 60, String(darkSky));
+await page.getByRole('button', { name: 'Light workspace' }).click();
+await page.waitForTimeout(400);
+const lightSky = await sky();
+check(
+  '35b. "Light workspace" switches it to light, and the button now offers dark',
+  brightness(lightSky) > 150 &&
+    brightness(lightSky) - brightness(darkSky) > 90 &&
+    (await page.getByRole('button', { name: 'Dark workspace' }).count()) === 1,
+  String(lightSky),
+);
+
+// 8. Right panel: Design Browser and the tabbed Inspector (Stage 2.2b).
+await clear();
+const pbox = await S(() => window.modellio.store.getState().addShape('box'));
+await S((id) => window.modellio.store.getState().select([id]), pbox);
+const tabs = page.getByRole('tablist', { name: 'Inspector' }).getByRole('tab');
+check(
+  '29. The Inspector has Properties, Appearance, Features and Print tabs',
+  JSON.stringify(await tabs.allTextContents()) === JSON.stringify(['Properties', 'Appearance', 'Features', 'Print']),
+);
+await inspectorTab('Properties');
+await page.getByRole('tab', { name: 'Properties' }).focus();
+await page.keyboard.press('ArrowRight');
+check(
+  '29b. Arrow keys move between tabs, and the panel is labelled by its tab',
+  (await page.getByRole('tab', { name: 'Appearance' }).getAttribute('aria-selected')) === 'true' &&
+    (await page.getByRole('tabpanel', { name: 'Appearance' }).count()) === 1,
+);
+check(
+  '29c. The Design Browser lists the box with its type',
+  (await page.getByTestId('design-browser').getByTestId('tree-kind').first().getAttribute('data-kind')) === 'shape',
+);
+const mat = () =>
+  S((id) => {
+    const m = window.modellio.viewport.scene.getObjectByName(id)?.material;
+    return m && { roughness: m.roughness, transparent: m.transparent, opacity: m.opacity };
+  }, pbox);
+const satin = await mat();
+await page.getByRole('radiogroup', { name: 'Finish' }).getByRole('radio', { name: 'Gloss' }).click();
+const gloss = await until(async () => {
+  const m = await mat();
+  return m && m.roughness < satin.roughness && m;
+});
+check('30. Gloss finish makes the surface shinier on screen', !!gloss, `${satin?.roughness} → ${gloss?.roughness}`);
+await page.keyboard.press('Control+z');
+check('30b. One undo restores the finish', (await until(async () => (await mat())?.roughness === satin.roughness)) === true);
+/** The rendered colour on the box's top face (nothing selected, so no gizmo or outline covers it). */
+const topPixel = async () => {
+  const sel = await S(() => window.modellio.store.getState().selection);
+  await S(() => window.modellio.store.getState().select([]));
+  await page.waitForTimeout(500);
+  const p = await S(
+    ([id]) => {
+      const o = window.modellio.store.getState().doc.objects[id];
+      const [x, y] = o.transform.position;
+      return window.modellio.worldToScreen(x + 4, y + 4, o.size[2]);
+    },
+    [pbox],
+  );
+  const px = await pixelAt(p.x, p.y);
+  await S((ids) => window.modellio.store.getState().select(ids), sel);
+  return px;
+};
+const solidPx = await topPixel();
+const pct = page.getByLabel('Transparency (%)', { exact: true });
+await pct.fill('50');
+await pct.press('Enter');
+check(
+  '31. 50% transparency makes the shape see-through',
+  (await until(async () => {
+    const m = await mat();
+    return m?.transparent && Math.abs(m.opacity - 0.5) < 1e-6;
+  })) === true,
+);
+const clearPx = await topPixel();
+// The light workplane shows through, so the blue face gets clearly lighter (red channel rises).
+check('31a. …and it really draws see-through (the workplane shows through)', clearPx[0] - solidPx[0] > 40, `${solidPx} → ${clearPx}`);
+const dup = await S(() => {
+  window.modellio.store.getState().duplicateSelected();
+  const s = window.modellio.store.getState();
+  return s.doc.objects[s.selection[0]].opacity;
+});
+check('31b. A duplicate keeps the transparency', dup === 0.5);
+await page.keyboard.press('Control+z');
+
+// The Print tab: real measurements of the selected body.
+await S((id) => window.modellio.store.getState().select([id]), pbox);
+await inspectorTab('Print');
+const printed = await until(async () => {
+  const t = await page
+    .getByTestId('print-facts')
+    .textContent()
+    .catch(() => '');
+  return /cm²/.test(t) && t;
+});
+check(
+  '32. Print tab: a 20 mm box measures 20 × 20 × 20 mm, 8 cm³, 24 cm²',
+  /20\.00 × 20\.00 × 20\.00 mm/.test(printed) && /8\.000 cm³/.test(printed) && /24\.00 cm²/.test(printed),
+  printed,
+);
+check('32b. …and is a closed solid', /Closed solid/.test(await page.getByTestId('print-closed').textContent()));
+await page.getByTestId('open-print-check').click();
+check(
+  '32c. "Run full print check" opens the Print panel',
+  await page
+    .getByRole('complementary', { name: 'Print preparation' })
+    .waitFor({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false),
+);
+await page.getByRole('button', { name: 'Shapes', exact: true }).first().click();
+
+// Appearance is view-only: an STL of the 50% transparent box is identical to an opaque one.
+const stl = async () => {
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('radio', { name: 'STL (binary)' }).click();
+  const [d] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Download STL/ }).click()]);
+  const bytes = fs.readFileSync(await d.path());
+  await page.keyboard.press('Escape');
+  return bytes;
+};
+const seeThrough = await stl();
+await S((id) => window.modellio.store.getState().setOpacity(id, 1), pbox);
+const opaque = await stl();
+check('33. Appearance never changes exported geometry', seeThrough.length > 84 && seeThrough.equals(opaque));
+await page.keyboard.press('Control+z');
+
+// Saved and reopened.
+await S(() => window.modellio.projects.getState().saveNow());
+await page.reload({ waitUntil: 'networkidle' });
+await page.getByTestId('viewport').waitFor();
+const reopened = await until(() => S((id) => window.modellio.store.getState().doc.objects[id]?.opacity, pbox));
+check('34. Transparency survives saving and reopening', reopened === 0.5, String(reopened));
+check('35c. The workspace theme is remembered after reloading', (await page.getByRole('button', { name: 'Dark workspace' }).count()) === 1);
+await page.getByRole('button', { name: 'Dark workspace' }).click();
+
+// 9. Docked feature panel (Stage 2.2c): folds away while Apply / Cancel stay.
+await S((id) => window.modellio.store.getState().select([id]), pbox);
+await S((id) => window.modellio.features.getState().start(id, 'fillet'), pbox);
+const panel = page.getByRole('dialog', { name: 'Fillet edges' });
+await panel.waitFor();
+const radius = panel.getByLabel('Radius (mm)');
+check('36. The fillet panel is docked at the left of the 3D view', (await panel.boundingBox()).x - vp.x < 80);
+await panel.getByRole('button', { name: 'Fold panel' }).click();
+check(
+  '36b. Folding hides the settings but keeps Cancel and Apply',
+  (await radius.count()) === 0 &&
+    (await panel.getByRole('button', { name: 'Cancel' }).isVisible()) &&
+    (await panel.getByTestId('feature-apply').isVisible()),
+);
+await panel.getByRole('button', { name: 'Unfold panel' }).click();
+check('36c. Unfolding shows them again', await radius.isVisible());
+await panel.getByRole('button', { name: 'Cancel' }).click();
+check('36d. Cancel closes the panel', (await panel.count()) === 0);
 
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

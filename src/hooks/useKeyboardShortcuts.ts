@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { useProjects } from '@/store/projectStore';
 import { openMeshPicker, useFileUi } from '@/components/files/fileIntake';
 import { useStudio } from '@/app/studio';
+import { useSketchSession } from '@/components/sketch/sketchSession';
 import { isEffectivelyLocked, topLevel, translateWorldDraft } from '@/cad/hierarchy';
 
 export function isTypingTarget(target: EventTarget | null): boolean {
@@ -146,6 +147,10 @@ export function useKeyboardShortcuts() {
           break;
         case 'l':
           s.setTool(s.tool === 'layflat' ? 'select' : 'layflat');
+          break;
+        case 'k':
+          // New sketch (the sketch editor is modal, so this never fires while one is open).
+          if (!s.readOnly) useSketchSession.getState().open(null);
           break;
       }
     };

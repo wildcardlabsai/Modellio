@@ -12,7 +12,7 @@ export function SharedBanner() {
       aria-label="Shared design"
       className="flex shrink-0 items-center gap-3 border-b border-brand/20 bg-brand-50 px-4 py-2 text-[13px] text-ink"
     >
-      <Eye size={16} className="shrink-0 text-brand" />
+      <Eye size={16} className="shrink-0 text-brand-ink" />
       <span className="flex-1">
         Viewing <strong className="font-semibold">“{shared.meta.name}”</strong>, shared with you. It is view-only — make a copy to edit it.
       </span>
@@ -27,7 +27,7 @@ export function SharedBanner() {
         type="button"
         onClick={() => void closeShared()}
         aria-label="Close shared design"
-        className="rounded-lg p-1.5 text-muted hover:bg-white"
+        className="rounded-lg p-1.5 text-muted hover:bg-panel"
       >
         <X size={16} />
       </button>

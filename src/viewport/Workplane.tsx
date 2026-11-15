@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Grid } from '@react-three/drei';
+import { useWorkspaceTheme, WORKSPACE_COLORS } from './workspaceTheme';
 
 interface Props {
   size: [number, number];
@@ -10,6 +11,7 @@ interface Props {
 /** The build plate: a fine 1 mm grid with 10 mm sections plus X/Y/Z axes, in the XY plane. */
 export function Workplane({ size, showGrid }: Props) {
   const [w, h] = size;
+  const c = WORKSPACE_COLORS[useWorkspaceTheme((s) => s.theme)];
 
   const axes = useMemo(() => {
     const ext = Math.max(w, h) * 0.75;
@@ -28,11 +30,11 @@ export function Workplane({ size, showGrid }: Props) {
       {/* Plate surface, also receives shadows. */}
       <mesh position={[0, 0, -0.05]} receiveShadow renderOrder={-2}>
         <planeGeometry args={[w, h]} />
-        <meshStandardMaterial color="#eef3fb" roughness={1} metalness={0} />
+        <meshStandardMaterial color={c.plate} roughness={1} metalness={0} />
       </mesh>
       <mesh position={[0, 0, -0.02]} receiveShadow renderOrder={-1}>
         <planeGeometry args={[w, h]} />
-        <shadowMaterial transparent opacity={0.12} />
+        <shadowMaterial transparent opacity={c.shadow} />
       </mesh>
       {/* drei's Grid lives in its local XZ plane; rotate it into world XY. */}
       {showGrid && (
@@ -41,12 +43,12 @@ export function Workplane({ size, showGrid }: Props) {
           args={[w, h]}
           cellSize={1}
           cellThickness={0.6}
-          cellColor="#c9d4e6"
+          cellColor={c.cell}
           sectionSize={10}
           sectionThickness={1}
-          sectionColor="#9fb3d6"
+          sectionColor={c.section}
           fadeDistance={Math.max(w, h) * 4}
-          fadeStrength={1.2}
+          fadeStrength={c.fadeStrength}
           side={THREE.DoubleSide}
         />
       )}

@@ -56,6 +56,38 @@ export function applyMeshTool(k: ManifoldToplevel, mesh: MeshData, tool: MeshToo
   }
 }
 
+/**
+ * Volume (mm³, from signed tetrahedra; always positive) and surface area (mm²) of a triangle mesh.
+ * The volume is only meaningful for a closed mesh.
+ */
+export function meshMeasures(mesh: MeshData): { volume: number; area: number } {
+  const P = mesh.positions;
+  const I = mesh.indices;
+  let six = 0;
+  let twice = 0;
+  for (let t = 0; t < I.length; t += 3) {
+    const a = I[t] * 3;
+    const b = I[t + 1] * 3;
+    const c = I[t + 2] * 3;
+    const ax = P[a],
+      ay = P[a + 1],
+      az = P[a + 2];
+    const bx = P[b] - ax,
+      by = P[b + 1] - ay,
+      bz = P[b + 2] - az;
+    const cx = P[c] - ax,
+      cy = P[c + 1] - ay,
+      cz = P[c + 2] - az;
+    const nx = by * cz - bz * cy;
+    const ny = bz * cx - bx * cz;
+    const nz = bx * cy - by * cx;
+    twice += Math.hypot(nx, ny, nz);
+    // Signed volume of the tetrahedron (origin, a, b, c) = a · ((b−a) × (c−a)) / 6.
+    six += ax * nx + ay * ny + az * nz;
+  }
+  return { volume: Math.abs(six) / 6, area: twice / 2 };
+}
+
 /** Boundary and non-manifold edge counts: 0 and 0 means a closed, printable solid. */
 export function meshReport(mesh: MeshData): { triangles: number; boundaryEdges: number; nonManifoldEdges: number } {
   const counts = new Map<string, number>();

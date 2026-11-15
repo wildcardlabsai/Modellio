@@ -46,6 +46,8 @@ const renderedTriangles = (id) =>
     return n;
   }, id);
 
+/** The Inspector shows one tab at a time (Properties, Appearance, Features, Print). */
+const inspectorTab = (name) => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 await page.goto(`${URL}/?studio=design`, { waitUntil: 'networkidle' });
 await page.getByTestId('viewport').waitFor();
 await page.waitForTimeout(1000);
@@ -62,6 +64,7 @@ check('1. The precise-solid engine is not loaded up front', wasmBefore === 0);
 // 2. Box → precise solid.
 const id = await S(() => window.modellio.store.getState().addShape('box'));
 await S((id) => window.modellio.store.getState().select([id]), id);
+await inspectorTab('Features');
 await page.getByTestId('make-solid').click();
 const converted = await until(async () => (await obj(id))?.shape === 'solid');
 check('2. "Make precise solid" turns the box into a precise solid', converted);
@@ -83,8 +86,10 @@ check(
 await page.screenshot({ path: `${OUT}/advanced-01-solid.png` });
 
 // 3. Resize: the solid is rebuilt exactly at the new size.
+await inspectorTab('Properties');
 await page.getByLabel('Size X', { exact: true }).fill('40');
 await page.getByLabel('Size X', { exact: true }).press('Enter');
+await inspectorTab('Features');
 const vol2 = await until(async () => {
   const t = await page.getByTestId('solid-volume').textContent();
   return t === '16.000 cm³' && t;
@@ -196,6 +201,7 @@ check(
   '18. Apply adds one fillet operation',
   applied.feature.ops.length === 1 && applied.feature.ops[0].kind === 'fillet' && applied.feature.ops[0].radius === 3,
 );
+await inspectorTab('Features');
 const vAfter = await until(async () => {
   const t = await page.getByTestId('solid-volume').textContent();
   return t === `${expected.toFixed(3)} cm³` && t;

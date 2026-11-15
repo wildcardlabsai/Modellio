@@ -70,7 +70,7 @@ export function ProjectsPage() {
         {repoKind === 'cloud' && (
           <p className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-muted">
             Projects are saved to your account.
-            <button type="button" onClick={() => void copyLocalToCloud()} className="font-semibold text-brand hover:underline">
+            <button type="button" onClick={() => void copyLocalToCloud()} className="font-semibold text-brand-ink hover:underline">
               Copy projects from this browser
             </button>
           </p>
@@ -95,7 +95,7 @@ export function ProjectsPage() {
             <button
               type="button"
               onClick={() => void p.newProject()}
-              className="flex aspect-[4/3.6] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#c9d2e0] text-muted transition-colors hover:border-brand hover:bg-brand-50 hover:text-brand"
+              className="flex aspect-[4/3.6] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line-strong text-muted transition-colors hover:border-brand hover:bg-brand-50 hover:text-brand-ink"
             >
               <Plus size={28} />
               <span className="text-[14px] font-semibold">New design</span>
@@ -106,11 +106,11 @@ export function ProjectsPage() {
               <button
                 type="button"
                 onClick={() => void p.open(m.id)}
-                className={`block w-full overflow-hidden rounded-2xl border bg-white text-left shadow-panel transition-shadow hover:shadow-float ${
+                className={`block w-full overflow-hidden rounded-2xl border bg-panel text-left shadow-panel transition-shadow hover:shadow-float ${
                   current?.id === m.id ? 'border-brand ring-2 ring-brand/20' : 'border-line'
                 }`}
               >
-                <div className="flex aspect-[16/10] items-center justify-center overflow-hidden bg-[#eef3fb]">
+                <div className="flex aspect-[16/10] items-center justify-center overflow-hidden bg-canvas">
                   {m.thumbnail ? (
                     <img src={m.thumbnail} alt="" className="h-full w-full object-cover" draggable={false} />
                   ) : (
@@ -124,7 +124,7 @@ export function ProjectsPage() {
                   </p>
                   <p className="mt-0.5 text-[12px] text-muted">
                     {ago(m.updatedAt)} · {m.objectCount} object{m.objectCount === 1 ? '' : 's'}
-                    {current?.id === m.id && <span className="ml-1 font-medium text-brand">· open</span>}
+                    {current?.id === m.id && <span className="ml-1 font-medium text-brand-ink">· open</span>}
                   </p>
                 </div>
               </button>
@@ -159,7 +159,7 @@ export function ProjectsPage() {
                             close();
                           }}
                           className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] font-medium ${
-                            danger ? 'text-red-600 hover:bg-red-50' : 'text-[#344054] hover:bg-brand-50 hover:text-brand'
+                            danger ? 'text-red-600 hover:bg-red-50' : 'text-ink-2 hover:bg-brand-50 hover:text-brand-ink'
                           }`}
                         >
                           <Icon size={15} /> {label}
@@ -198,9 +198,7 @@ export function ProjectsPage() {
             </>
           }
         >
-          <p className="text-[14px] text-[#344054]">
-            “{deleting.name}” will be permanently removed from this browser. This can't be undone.
-          </p>
+          <p className="text-[14px] text-ink-2">“{deleting.name}” will be permanently removed from this browser. This can't be undone.</p>
         </Modal>
       )}
     </section>

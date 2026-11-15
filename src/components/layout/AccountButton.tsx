@@ -59,7 +59,7 @@ export function AccountButton() {
                 await (await getSupabase()).auth.signOut();
                 location.reload();
               }}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas"
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas"
             >
               <LogOut size={15} /> Sign out
             </button>

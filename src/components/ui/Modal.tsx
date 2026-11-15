@@ -52,7 +52,7 @@ export function Modal({ title, onClose, children, footer, width = 520 }: Props) 
         aria-modal="true"
         aria-label={title}
         ref={panel}
-        className="flex max-h-[90vh] w-full flex-col rounded-2xl bg-white shadow-float"
+        className="flex max-h-[90vh] w-full flex-col rounded-2xl bg-panel shadow-float"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -94,7 +94,7 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`rounded-md px-2 py-1.5 text-[13px] font-medium ${value === o.value ? 'bg-white text-brand shadow-sm' : 'text-muted hover:text-ink'}`}
+          className={`rounded-md px-2 py-1.5 text-[13px] font-medium ${value === o.value ? 'bg-panel text-brand-ink shadow-sm' : 'text-muted hover:text-ink'}`}
         >
           {o.label}
         </button>
@@ -106,4 +106,4 @@ export function Segmented<T extends string>({
 export const primaryBtn =
   'inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-[13px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50';
 export const secondaryBtn =
-  'inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-[13px] font-medium text-[#344054] hover:bg-canvas';
+  'inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas';

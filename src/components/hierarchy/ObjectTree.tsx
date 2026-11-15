@@ -1,7 +1,23 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react';
-import { ChevronRight, Eye, EyeOff, Lock, Unlock, Trash2, FolderClosed, FolderOpen, Combine } from 'lucide-react';
+import { memo, useMemo, useRef, useState, type DragEvent } from 'react';
+import {
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
+  Trash2,
+  FolderClosed,
+  FolderOpen,
+  Combine,
+  Box,
+  Type,
+  Gem,
+  PencilRuler,
+  Shapes,
+} from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
-import type { ModelDocument, ObjectId } from '@/types/document';
+import { useHover } from '@/viewport/hover';
+import type { ModelDocument, ObjectId, ShapeObject } from '@/types/document';
 import { isEffectivelyLocked, siblingsOf } from '@/cad/hierarchy';
 
 const TREE_MIME = 'application/x-modellio-tree';
@@ -170,6 +186,8 @@ export function ObjectTree() {
         const dropHere = drop?.id === id ? drop.zone : null;
         return (
           <li
+            onMouseEnter={() => useHover.getState().set([id])}
+            onMouseLeave={() => useHover.getState().set([])}
             key={id}
             role="treeitem"
             aria-selected={active}
@@ -205,7 +223,7 @@ export function ObjectTree() {
               onClick={(e) => onRowClick(id, e)}
               onDoubleClick={() => setRenaming(id)}
               className={`group flex h-9 cursor-pointer items-center gap-1.5 rounded-lg pr-1.5 text-[13px] ${
-                active ? 'bg-brand-50 font-medium text-brand' : 'text-[#344054] hover:bg-canvas'
+                active ? 'bg-brand-50 font-medium text-brand-ink' : 'text-ink-2 hover:bg-canvas'
               } ${dropHere === 'into' ? 'ring-2 ring-brand/50' : ''} ${o.visible ? '' : 'opacity-50'}`}
               style={{ paddingLeft: 6 + depth * 16 }}
             >
@@ -218,7 +236,7 @@ export function ObjectTree() {
                     e.stopPropagation();
                     s.toggleCollapsed(id);
                   }}
-                  className="rounded p-0.5 text-muted hover:bg-white"
+                  className="rounded p-0.5 text-muted hover:bg-panel"
                 >
                   <ChevronRight size={14} className={`transition-transform ${collapsed[id] ? '' : 'rotate-90'}`} />
                 </button>
@@ -227,7 +245,7 @@ export function ObjectTree() {
               )}
               {isGroup ? (
                 o.combine ? (
-                  <Combine size={15} className="shrink-0 text-brand" />
+                  <Combine size={15} className="shrink-0 text-brand-ink" />
                 ) : collapsed[id] ? (
                   <FolderClosed size={15} className="shrink-0 text-muted" />
                 ) : (
@@ -244,6 +262,7 @@ export function ObjectTree() {
                   }
                 />
               )}
+              {!isGroup && <KindIcon object={o} />}
               {renaming === id ? (
                 <input
                   autoFocus
@@ -259,7 +278,7 @@ export function ObjectTree() {
                     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                     if (e.key === 'Escape') setRenaming(null);
                   }}
-                  className="min-w-0 flex-1 rounded border border-brand bg-white px-1 py-0.5 text-[13px] text-ink outline-none"
+                  className="min-w-0 flex-1 rounded border border-brand bg-panel px-1 py-0.5 text-[13px] text-ink outline-none"
                 />
               ) : (
                 <span className="min-w-0 flex-1 truncate" title="Double-click to rename">
@@ -277,7 +296,7 @@ export function ObjectTree() {
                   s.select([id]);
                   s.deleteSelected();
                 }}
-                className="rounded p-1 text-muted opacity-0 hover:bg-white hover:text-red-600 group-hover:opacity-100 disabled:hidden"
+                className="rounded p-1 text-muted opacity-0 hover:bg-panel hover:text-red-600 group-hover:opacity-100 disabled:hidden"
               >
                 <Trash2 size={14} />
               </button>
@@ -290,7 +309,7 @@ export function ObjectTree() {
                   e.stopPropagation();
                   s.setLocked(id, !o.locked);
                 }}
-                className={`rounded p-1 hover:bg-white ${
+                className={`rounded p-1 hover:bg-panel ${
                   o.locked ? 'text-amber-600' : inheritedLock ? 'text-amber-600/40' : 'text-muted opacity-0 group-hover:opacity-100'
                 }`}
               >
@@ -304,7 +323,7 @@ export function ObjectTree() {
                   e.stopPropagation();
                   s.setVisible(id, !o.visible);
                 }}
-                className={`rounded p-1 hover:bg-white ${o.visible ? 'text-muted opacity-0 group-hover:opacity-100' : 'text-muted'}`}
+                className={`rounded p-1 hover:bg-panel ${o.visible ? 'text-muted opacity-0 group-hover:opacity-100' : 'text-muted'}`}
               >
                 {o.visible ? <Eye size={14} /> : <EyeOff size={14} />}
               </button>
@@ -316,3 +335,32 @@ export function ObjectTree() {
     </ul>
   );
 }
+
+/** What kind of body a row is: a plain shape, text, an imported mesh, a sketched solid or a precise solid. */
+// Memoised: the tree re-renders every row on each selection change; an icon only changes with its object.
+const KindIcon = memo(function KindIcon({ object }: { object: ShapeObject }) {
+  const [Icon, label] =
+    object.shape === 'text'
+      ? [Type, 'Text']
+      : object.shape === 'mesh'
+        ? [Shapes, 'Imported mesh']
+        : object.shape === 'profile'
+          ? [PencilRuler, 'Sketched solid']
+          : object.shape === 'solid'
+            ? [Gem, 'Precise solid']
+            : [Box, 'Shape'];
+  return (
+    <span
+      title={label}
+      className="shrink-0 text-muted"
+      data-testid="tree-kind"
+      data-kind={
+        object.shape === 'text' || object.shape === 'mesh' || object.shape === 'profile' || object.shape === 'solid'
+          ? object.shape
+          : 'shape'
+      }
+    >
+      <Icon size={13} aria-hidden />
+    </span>
+  );
+});

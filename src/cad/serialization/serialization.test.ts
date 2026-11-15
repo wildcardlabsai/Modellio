@@ -68,6 +68,23 @@ describe('project file (.modellio)', () => {
     expect(doc.rootIds.sort()).toEqual(['g1', Object.values(doc.objects).find((o) => o.kind === 'shape' && o.shape === 'mesh')!.id].sort());
   });
 
+  it('keeps a valid appearance (finish, opacity) and drops invalid values', () => {
+    const p = sampleProject();
+    const raw = JSON.parse(JSON.stringify(p.document));
+    const shapes = Object.values(raw.objects as Record<string, Record<string, unknown>>).filter((o) => o.kind === 'shape');
+    const [a, b] = shapes;
+    Object.assign(a, { finish: 'gloss', opacity: 0.5 });
+    Object.assign(b, { finish: 'chrome', opacity: 0.01 });
+    const doc = migrateDocument(raw);
+    expect(doc.objects[a.id as string]).toMatchObject({ finish: 'gloss', opacity: 0.5 });
+    const fixed = doc.objects[b.id as string] as ShapeObject;
+    expect(fixed.finish).toBeUndefined();
+    expect(fixed.opacity).toBe(0.1);
+    // Saving and reopening keeps it.
+    const back = projectFromFile(projectToFile({ ...p, document: doc }));
+    expect(back.document.objects[a.id as string]).toMatchObject({ finish: 'gloss', opacity: 0.5 });
+  });
+
   it('round-trips precise solids (feature recipes) and rejects invalid ones', () => {
     const p = sampleProject();
     const solid = createShape(p.document, 'solid', [0, 40, 10]);

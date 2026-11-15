@@ -11,13 +11,13 @@ export function PrintPanel() {
   const setTool = useEditor((s) => s.setTool);
 
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white" aria-label="Print preparation">
+    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-panel" aria-label="Print preparation">
       <div className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
         <h2 className="text-[15px] font-semibold text-ink">Prepare to print</h2>
         <p className="mt-1 text-[12px] text-muted">Find problems before you slice: overhangs, thin walls and placement.</p>
 
         <div className="mt-4 grid grid-cols-[1fr_96px] items-center gap-2">
-          <span className="text-[13px] text-[#344054]">Max overhang</span>
+          <span className="text-[13px] text-ink-2">Max overhang</span>
           <NumberField
             ariaLabel="Maximum overhang angle"
             value={settings.overhangAngle}
@@ -28,7 +28,7 @@ export function PrintPanel() {
             suffix="°"
             onCommit={(v) => setSettings({ overhangAngle: v })}
           />
-          <span className="text-[13px] text-[#344054]">Min wall</span>
+          <span className="text-[13px] text-ink-2">Min wall</span>
           <NumberField
             ariaLabel="Minimum wall thickness"
             value={settings.minWall}
@@ -90,8 +90,8 @@ export function PrintPanel() {
         )}
 
         <div className="mt-5 rounded-xl border border-dashed border-line p-3 text-[12px] leading-relaxed text-muted">
-          <span className="font-semibold text-[#344054]">Tip:</span> reduce overhangs by choosing the best face to print on.{' '}
-          <button type="button" onClick={() => setTool('layflat')} className="font-semibold text-brand hover:underline">
+          <span className="font-semibold text-ink-2">Tip:</span> reduce overhangs by choosing the best face to print on.{' '}
+          <button type="button" onClick={() => setTool('layflat')} className="font-semibold text-brand-ink hover:underline">
             Lay flat (L)
           </button>{' '}
           then click a face.

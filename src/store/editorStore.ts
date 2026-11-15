@@ -56,7 +56,8 @@ import type { FeatureOp, FeatureRecipe } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
-import type { CombineMode, TextContent } from '@/types/document';
+import type { CombineMode, SketchId, SurfaceFinish, TextContent } from '@/types/document';
+import { addSketchRecordDraft, forkSketchLinksDraft, sketchRecords, sketchUsers } from '@/cad/sketchRecords';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
 import { normalizeDegrees, roundTo } from '@/utils/math';
@@ -167,6 +168,10 @@ export interface EditorState {
   setRotation: (id: ObjectId, rotation: Vec3) => void;
   setParam: (id: ObjectId, key: string, value: number) => void;
   setColor: (id: ObjectId, color: string) => void;
+  /** On-screen finish of a shape (or every shape in a group). Appearance only. */
+  setFinish: (id: ObjectId, finish: SurfaceFinish) => void;
+  /** On-screen opacity (0.1–1) of a shape (or every shape in a group). Appearance only. */
+  setOpacity: (id: ObjectId, opacity: number) => void;
   rename: (id: ObjectId, name: string) => void;
   setVisible: (id: ObjectId, visible: boolean) => void;
   setLocked: (id: ObjectId, locked: boolean) => void;
@@ -192,7 +197,27 @@ export interface EditorState {
    * Its size follows the sketch's real dimensions. Returns the object id, or null (with a
    * message) when the sketch has no closed outline.
    */
-  saveSketch: (id: ObjectId | null, sketch: Sketch, op: ProfileOp) => Promise<ObjectId | null>;
+  /** Save a sketch into a body: edit body `id`, or make a new one (linked to `sketchId` when given, else to a new sketch). */
+  saveSketch: (id: ObjectId | null, sketch: Sketch, op: ProfileOp, sketchId?: SketchId) => Promise<ObjectId | null>;
+
+  // --- standalone sketches and components (schema 2) ---
+  /** Keep a sketch on its own, without making a body from it. */
+  saveSketchOnly: (sketch: Sketch, name?: string) => SketchId | null;
+  /** Change a standalone sketch; every body built from it is rebuilt. */
+  updateSketchRecord: (sketchId: SketchId, sketch: Sketch) => Promise<boolean>;
+  /** Make a new body from a standalone sketch (it stays linked: editing the sketch updates it). */
+  bodyFromSketch: (sketchId: SketchId, op: ProfileOp) => Promise<ObjectId | null>;
+  renameSketchRecord: (sketchId: SketchId, name: string) => void;
+  /** Delete a sketch no body uses. */
+  deleteSketchRecord: (sketchId: SketchId) => void;
+  /** Give a body its own copy of its sketch, so editing the shared one no longer changes it. */
+  unlinkSketch: (objectId: ObjectId) => void;
+  /** Mark a group as a component (or back to a plain assembly). */
+  setComponent: (groupId: ObjectId, on: boolean) => void;
+  /** Make the selection a component (grouping it first when needed). */
+  makeComponent: () => void;
+  /** Add another copy of a component to the design. */
+  insertComponent: (groupId: ObjectId) => void;
   /**
    * Turn a box, cylinder, cone, sphere, torus, wedge, tube or sketch into a precise solid (exact
    * OpenCascade geometry that can take fillets and chamfers). Checks the build first; resolves
@@ -250,6 +275,60 @@ export const useEditor = create<EditorState>()((set, get) => {
       const o = doc.objects[id];
       if (o && o.kind === 'shape') fn(o);
     });
+
+  /**
+   * Rebuild the bodies made from a sketch record with a new sketch (each keeps its own extrude or
+   * revolve). Bodies the new sketch cannot build are reported and keep their old shape.
+   */
+  const rebuildUsers = async (sketchId: SketchId, sketch: Sketch, exceptId?: ObjectId) => {
+    const k = await initKernel();
+    const ok: { id: ObjectId; size: Vec3 }[] = [];
+    const failed: ShapeObject[] = [];
+    for (const u of sketchUsers(get().doc, sketchId)) {
+      if (u.id === exceptId) continue;
+      const revolve = (u.params.op ?? 0) >= 1;
+      const mesh = buildProfileMesh(k, sketch, {
+        kind: revolve ? 'revolve' : 'extrude',
+        depth: u.params.depth ?? 5,
+        angle: u.params.angle ?? 360,
+      });
+      if (!mesh) {
+        failed.push(u);
+        continue;
+      }
+      const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());
+      ok.push({ id: u.id, size: [roundTo(ext.x), roundTo(ext.y), roundTo(ext.z)] });
+    }
+    return { ok, failed };
+  };
+  /** Write a sketch to its record and the bodies rebuilt from it; bodies it could not build get their own copy of the old sketch. */
+  const writeSketch = (
+    d: ModelDocument,
+    sketchId: SketchId | undefined,
+    sketch: Sketch,
+    users: { ok: { id: ObjectId; size: Vec3 }[]; failed: ShapeObject[] },
+  ) => {
+    const rec = sketchId ? d.sketches?.[sketchId] : undefined;
+    if (!rec) return;
+    if (users.failed.length)
+      forkSketchLinksDraft(
+        d,
+        users.failed.map((f) => f.id),
+      );
+    rec.sketch = sketch;
+    for (const u of users.ok) {
+      const t = d.objects[u.id];
+      if (t?.kind !== 'shape') continue;
+      t.sketch = sketch;
+      t.size = u.size;
+    }
+  };
+  const reportFailed = (failed: ShapeObject[]) => {
+    if (failed.length)
+      get().notify(
+        `${failed.map((f) => f.name).join(', ')} could not use the new sketch, so ${failed.length === 1 ? 'it keeps' : 'they keep'} the old one.`,
+      );
+  };
 
   /** Top-level, unlocked selected ids. */
   const editableSelection = () => {
@@ -476,6 +555,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       let created: ObjectId[] = [];
       get().apply(ids.length > 1 ? `Duplicate ${ids.length} objects` : 'Duplicate', (d) => {
         created = duplicateObjectsDraft(d, ids, DUPLICATE_OFFSET);
+        forkSketchLinksDraft(d, created);
       });
       set({ selection: created });
     },
@@ -500,6 +580,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       let created: ObjectId[] = [];
       get().apply('Paste', (d) => {
         created = pasteDraft(d, clip, DUPLICATE_OFFSET);
+        forkSketchLinksDraft(d, created);
       });
       // Successive pastes cascade instead of stacking.
       set({
@@ -600,6 +681,23 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply('Change colour', (doc) => {
         // Colouring a group colours every shape inside it.
         for (const s of descendantShapes(doc, [id])) (doc.objects[s.id] as ShapeObject).color = color;
+      }),
+    setFinish: (id, finish) =>
+      get().apply('Change finish', (doc) => {
+        for (const s of descendantShapes(doc, [id])) {
+          const o = doc.objects[s.id] as ShapeObject;
+          if (finish === 'satin') delete o.finish;
+          else o.finish = finish;
+        }
+      }),
+    setOpacity: (id, opacity) =>
+      get().apply('Change transparency', (doc) => {
+        const v = Math.min(1, Math.max(0.1, opacity));
+        for (const s of descendantShapes(doc, [id])) {
+          const o = doc.objects[s.id] as ShapeObject;
+          if (v >= 1) delete o.opacity;
+          else o.opacity = Math.round(v * 100) / 100;
+        }
       }),
     rename: (id, name) =>
       get().apply('Rename', (doc) => {
@@ -702,7 +800,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selection: created });
     },
 
-    saveSketch: async (id, sketch, op) => {
+    saveSketch: async (id, sketch, op, linkTo) => {
       if (get().readOnly) {
         refuseReadOnly();
         return null;
@@ -722,21 +820,124 @@ export const useEditor = create<EditorState>()((set, get) => {
       const params = { op: op.kind === 'revolve' ? 1 : 0, depth: op.depth, angle: op.angle };
       const existing = id ? get().doc.objects[id] : undefined;
       if (existing?.kind === 'shape' && existing.shape === 'profile') {
+        const others = existing.sketchId ? await rebuildUsers(existing.sketchId, sketch, existing.id) : { ok: [], failed: [] };
         get().apply('Edit sketch', (d) => {
           const t = d.objects[existing.id];
           if (t?.kind !== 'shape') return;
           t.sketch = sketch;
           t.params = { ...t.params, ...params };
           t.size = size;
+          writeSketch(d, existing.sketchId, sketch, others);
         });
+        reportFailed(others.failed);
         return existing.id;
       }
       const doc = get().doc;
       const pos = findFreePosition(doc, size, [0, 0]);
-      const obj = { ...createShape(doc, 'profile', [pos[0], pos[1], size[2] / 2]), sketch, params, size, name: uniqueName(doc, 'Sketch') };
-      get().apply('Sketch', (d) => addObjectDraft(d, obj));
+      const name = uniqueName(doc, 'Sketch');
+      const obj = { ...createShape(doc, 'profile', [pos[0], pos[1], size[2] / 2]), sketch, params, size, name };
+      get().apply('Sketch', (d) => {
+        addObjectDraft(d, obj);
+        (d.objects[obj.id] as ShapeObject).sketchId = linkTo && d.sketches?.[linkTo] ? linkTo : addSketchRecordDraft(d, sketch, name);
+      });
       set({ selection: [obj.id] });
       return obj.id;
+    },
+
+    saveSketchOnly: (sketch, name = 'Sketch') => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      let id: SketchId | null = null;
+      get().apply('Save sketch', (d) => {
+        id = addSketchRecordDraft(d, sketch, name);
+      });
+      return id;
+    },
+
+    updateSketchRecord: async (sketchId, sketch) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return false;
+      }
+      if (!sketchRecords(get().doc)[sketchId]) return false;
+      const users = await rebuildUsers(sketchId, sketch);
+      get().apply('Edit sketch', (d) => writeSketch(d, sketchId, sketch, users));
+      reportFailed(users.failed);
+      return true;
+    },
+
+    bodyFromSketch: async (sketchId, op) => {
+      const rec = sketchRecords(get().doc)[sketchId];
+      if (!rec) return null;
+      return get().saveSketch(null, rec.sketch, op, sketchId);
+    },
+
+    renameSketchRecord: (sketchId, name) =>
+      get().apply('Rename sketch', (d) => {
+        const r = d.sketches?.[sketchId];
+        const n = name.trim();
+        if (r && n) r.name = n;
+      }),
+
+    deleteSketchRecord: (sketchId) => {
+      const doc = get().doc;
+      if (!sketchRecords(doc)[sketchId]) return;
+      const users = sketchUsers(doc, sketchId);
+      if (users.length) {
+        get().notify(
+          `This sketch builds ${users.map((u) => u.name).join(', ')}. Delete or unlink ${users.length === 1 ? 'it' : 'them'} first.`,
+        );
+        return;
+      }
+      get().apply('Delete sketch', (d) => {
+        if (d.sketches) delete d.sketches[sketchId];
+      });
+    },
+
+    unlinkSketch: (objectId) => {
+      const o = get().doc.objects[objectId];
+      if (o?.kind !== 'shape' || o.shape !== 'profile' || !o.sketch) return;
+      get().apply('Unlink sketch', (d) => forkSketchLinksDraft(d, [objectId]));
+    },
+
+    setComponent: (groupId, on) =>
+      get().apply(on ? 'Make component' : 'Make assembly', (d) => {
+        const g = d.objects[groupId];
+        if (g?.kind !== 'group') return;
+        if (on) g.component = true;
+        else delete g.component;
+      }),
+
+    makeComponent: () => {
+      const ids = editableSelection();
+      if (!ids.length) return;
+      const doc = get().doc;
+      const single = ids.length === 1 ? doc.objects[ids[0]] : undefined;
+      if (single?.kind === 'group') return get().setComponent(single.id, true);
+      if (ids.length < 2) {
+        get().notify('Pick a group, or two or more parts, to make a component.');
+        return;
+      }
+      const gid = createId('grp');
+      get().apply('Make component', (d) => {
+        if (!groupDraft(d, ids, { id: gid, name: uniqueName(d, 'Component') })) return;
+        const g = d.objects[gid];
+        if (g?.kind === 'group') g.component = true;
+      });
+      if (get().doc.objects[gid]) set({ selection: [gid] });
+    },
+
+    insertComponent: (groupId) => {
+      const g = get().doc.objects[groupId];
+      if (g?.kind !== 'group' || !g.component) return;
+      let created: ObjectId[] = [];
+      get().apply(`Insert ${g.name}`, (d) => {
+        created = duplicateObjectsDraft(d, [groupId], DUPLICATE_OFFSET);
+        forkSketchLinksDraft(d, created);
+      });
+      set({ selection: created });
     },
 
     convertToSolid: async (id) => {
@@ -771,6 +972,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         t.feature = conv.recipe;
         t.params = {};
         delete t.sketch;
+        // The sketch record stays in the design (Sketches), no longer driving this body.
+        delete t.sketchId;
       });
       return true;
     },
