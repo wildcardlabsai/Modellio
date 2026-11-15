@@ -88,7 +88,10 @@ export function unitOutline(el: DesignElement): { polys: Poly[]; aspect: number 
   else {
     const font = getLoadedFont(el.font);
     if (!font) {
-      void loadFont(el.font).then(() => listeners.forEach((l) => l()));
+      void loadFont(el.font)
+        .then(() => listeners.forEach((l) => l()))
+        // A font that cannot be downloaded leaves the text unshaped rather than failing the page.
+        .catch((e) => console.warn(`Font ${el.font} could not be loaded:`, e));
       return null;
     }
     const contours = textContours(font, { content: el.text || ' ', fontSize: 10, depth: 1, curveSegments: 8 }) as Poly[];
