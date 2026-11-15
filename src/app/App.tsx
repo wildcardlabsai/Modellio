@@ -211,7 +211,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
           <div className={compact ? 'absolute bottom-0 left-[76px] top-0 z-30 flex shadow-float' : 'contents'} data-testid="left-panel">
             <Suspense fallback={<PanelLoading />}>
               {panel === 'shapes' ? (
-                <ShapeLibrary />
+                <ShapeLibrary onOpenPanel={choosePanel} />
               ) : panel === 'text' ? (
                 <TextPanel />
               ) : panel === 'assets' ? (

@@ -56,7 +56,18 @@ export interface SketchUse {
   onDone: (s: Sketch) => void;
 }
 
-export function SketchEditor({ objectId, onClose, use }: { objectId: string | null; onClose: () => void; use?: SketchUse }) {
+export function SketchEditor({
+  objectId,
+  onClose,
+  use,
+  initialOp,
+}: {
+  objectId: string | null;
+  onClose: () => void;
+  use?: SketchUse;
+  /** For a new sketch: extrude or revolve to start with. */
+  initialOp?: 'extrude' | 'revolve';
+}) {
   const existing = useEditor((s) => (objectId ? s.doc.objects[objectId] : undefined));
   const start = use ? use.initial : existing?.kind === 'shape' && existing.sketch ? existing.sketch : emptySketch();
   const [sketch, setSketchRaw] = useState<Sketch>(start);
@@ -70,7 +81,8 @@ export function SketchEditor({ objectId, onClose, use }: { objectId: string | nu
   const [hover, setHover] = useState<[number, number] | null>(null);
   const [op, setOp] = useState<ProfileOp>(() => {
     const p = existing?.kind === 'shape' ? existing.params : {};
-    return { kind: (p.op ?? 0) >= 1 ? 'revolve' : 'extrude', depth: p.depth ?? 5, angle: p.angle ?? 360 };
+    const kind = existing ? ((p.op ?? 0) >= 1 ? 'revolve' : 'extrude') : (initialOp ?? 'extrude');
+    return { kind, depth: p.depth ?? 5, angle: p.angle ?? 360 };
   });
   const [view, setView] = useState(() => fitView(start));
   const svg = useRef<SVGSVGElement>(null);

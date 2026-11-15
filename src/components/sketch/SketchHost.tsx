@@ -10,7 +10,7 @@ export function SketchHost() {
   if (!editing) return null;
   return (
     <Suspense fallback={null}>
-      <SketchEditor key={editing.id ?? 'new'} objectId={editing.id} onClose={close} />
+      <SketchEditor key={editing.id ?? `new-${editing.op ?? ''}`} objectId={editing.id} initialOp={editing.op} onClose={close} />
     </Suspense>
   );
 }
