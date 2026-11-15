@@ -9,7 +9,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Import a file', `${MOD} O`],
       ['Export', `${MOD} E`],
       ['Undo', `${MOD} Z`],
-      ['Redo', `${MOD} ⇧ Z`],
+      ['Redo', `${MOD} ⇧ Z / ${MOD} Y`],
       ['Duplicate', `${MOD} D`],
       ['Copy / Cut / Paste', `${MOD} C / X / V`],
       ['Group', `${MOD} G`],
@@ -21,6 +21,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Toggle hole / solid', 'H'],
       ['Measure tool', 'M'],
       ['Lay flat on a face', 'L'],
+      ['New sketch', 'K'],
     ],
   },
   {
@@ -44,6 +45,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Fit selection / all', 'F'],
       ['Multi-select', '⇧ / Ctrl click'],
       ['Select inside a group', 'Double-click'],
+      ['Show these shortcuts', '?'],
     ],
   },
 ];

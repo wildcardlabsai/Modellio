@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEven
 import { Circle, Hexagon, MousePointer2, Redo2, Slash, Spline, Square, Trash2, Undo2, X } from 'lucide-react';
 import { NumberField } from '@/components/ui/NumberField';
 import { useEditor } from '@/store/editorStore';
+import { sketchUsers } from '@/cad/sketchRecords';
 import { solveSketch } from '@/cad/sketch/solver';
 import { sketchLoops, type ProfileOp } from '@/cad/sketch/profile';
 import { emptySketch, type Constraint, type Sketch, type SketchEntity, type SketchStatus } from '@/cad/sketch/types';
@@ -54,6 +55,8 @@ export interface SketchUse {
   /** Why the sketch cannot be used yet, or null. */
   check: (s: Sketch) => string | null;
   onDone: (s: Sketch) => void;
+  /** The button's words (default "Use this sketch"). */
+  action?: string;
 }
 
 export function SketchEditor({
@@ -90,6 +93,11 @@ export function SketchEditor({
   const status = useMemo(() => solveSketch(sketch).status, [sketch]);
   const loops = useMemo(() => sketchLoops(sketch), [sketch]);
   const useProblem = useMemo(() => (use ? use.check(sketch) : null), [use, sketch]);
+  // How many bodies share this body's standalone sketch.
+  const shared = useEditor((st) => {
+    const o = objectId ? st.doc.objects[objectId] : undefined;
+    return o?.kind === 'shape' && o.sketchId ? sketchUsers(st.doc, o.sketchId).length : 0;
+  });
 
   /** Commit a change: solve it, and record it for undo (unless it is part of a drag). */
   const commit = (next: Sketch, opts: { pinned?: string[]; transient?: boolean } = {}) => {
@@ -509,7 +517,7 @@ export function SketchEditor({
                 className="mt-3 h-10 w-full rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                 data-testid="sketch-use"
               >
-                Use this sketch
+                {use.action ?? 'Use this sketch'}
               </button>
             </section>
           ) : (
@@ -568,6 +576,24 @@ export function SketchEditor({
               >
                 {objectId ? 'Update solid' : 'Create solid'}
               </button>
+              {!objectId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (useEditor.getState().saveSketchOnly(sketch)) onClose();
+                  }}
+                  disabled={!sketch.entities.length}
+                  className="mt-2 h-9 w-full rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
+                  data-testid="sketch-save-only"
+                >
+                  Save sketch only
+                </button>
+              )}
+              {shared > 1 && (
+                <p className="mt-2 text-[11px] leading-relaxed text-muted" data-testid="sketch-shared-note">
+                  This sketch builds {shared} bodies: updating it updates all of them.
+                </p>
+              )}
             </section>
           )}
         </aside>

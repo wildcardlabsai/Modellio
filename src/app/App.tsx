@@ -7,6 +7,7 @@ import { Toolbar } from '@/components/toolbar/Toolbar';
 import { LeftRail, type LeftPanel } from '@/components/layout/LeftRail';
 const WorkplanePanel = lazy(() => import('@/components/layout/WorkplanePanel').then((m) => ({ default: m.WorkplanePanel })));
 const TextPanel = lazy(() => import('@/components/layout/TextPanel').then((m) => ({ default: m.TextPanel })));
+const ComponentsPanel = lazy(() => import('@/components/layout/ComponentsPanel').then((m) => ({ default: m.ComponentsPanel })));
 const AssetsPanel = lazy(() => import('@/components/layout/AssetsPanel').then((m) => ({ default: m.AssetsPanel })));
 const AssistantPanel = lazy(() => import('@/components/assistant/AssistantPanel').then((m) => ({ default: m.AssistantPanel })));
 const PrintPanel = lazy(() => import('@/components/print/PrintPanel').then((m) => ({ default: m.PrintPanel })));
@@ -41,6 +42,7 @@ import { useStudio, type StudioId } from './studio';
 import { WORKSPACE_LABEL } from '@/platform/catalog';
 import { LandingPage } from '@/landing/LandingPage';
 import { useFeatureTool } from '@/components/features/featureTool';
+import { useHover } from '@/viewport/hover';
 const SplitStudio = lazy(() => import('@/split/ui/SplitStudio'));
 const CookieStudio = lazy(() => import('@/makers/cookie/CookieStudio'));
 const VaseStudio = lazy(() => import('@/makers/vase/VaseStudio'));
@@ -96,6 +98,7 @@ export function App() {
       booleanStats,
       templates: TEMPLATES,
       features: useFeatureTool,
+      hover: useHover,
     };
   }, []);
 
@@ -216,6 +219,8 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
                 <TextPanel />
               ) : panel === 'assets' ? (
                 <AssetsPanel />
+              ) : panel === 'components' ? (
+                <ComponentsPanel />
               ) : panel === 'print' ? (
                 <PrintPanel />
               ) : panel === 'assistant' ? (

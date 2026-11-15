@@ -1,13 +1,14 @@
-import { Shapes, Type, Ruler, Grid3x3, Package, Printer, Sparkles, PencilRuler } from 'lucide-react';
+import { Shapes, Type, Ruler, Grid3x3, Package, Printer, Sparkles, PencilRuler, Component } from 'lucide-react';
 import { useSketchSession } from '@/components/sketch/sketchSession';
 import { useEditor } from '@/store/editorStore';
 
-export type LeftPanel = 'shapes' | 'text' | 'assets' | 'workplane' | 'print' | 'assistant';
+export type LeftPanel = 'shapes' | 'text' | 'assets' | 'components' | 'workplane' | 'print' | 'assistant';
 
 const PANELS: { id: LeftPanel; label: string; Icon: typeof Shapes }[] = [
   { id: 'shapes', label: 'Shapes', Icon: Shapes },
   { id: 'text', label: 'Text', Icon: Type },
   { id: 'assets', label: 'Assets', Icon: Package },
+  { id: 'components', label: 'Components', Icon: Component },
   { id: 'workplane', label: 'Workplane', Icon: Grid3x3 },
   { id: 'print', label: 'Print', Icon: Printer },
   { id: 'assistant', label: 'Assistant', Icon: Sparkles },
@@ -26,7 +27,10 @@ export function LeftRail({ panel, onChange }: { panel: LeftPanel; onChange: (p: 
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
   return (
-    <nav className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-3" aria-label="Tools">
+    <nav
+      className="scrollbar-thin flex w-[76px] shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-line bg-panel py-3"
+      aria-label="Tools"
+    >
       {PANELS.map(({ id, label, Icon }) => {
         const active = id === panel;
         return (

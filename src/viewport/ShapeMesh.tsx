@@ -13,6 +13,7 @@ import { useCadReady } from './cadReady';
 import { startSurfaceDrag } from './surfaceDrag';
 import { DEG2RAD } from '@/utils/math';
 import { appearanceProps } from './appearance';
+import { useHover } from './hover';
 
 export const HOLE_COLOR = '#8C97AB';
 
@@ -45,6 +46,8 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
   useEffect(() => () => geometry?.dispose(), [geometry]);
 
   const [hovered, setHovered] = useState(false);
+  // Pointed at from the Design Browser or the history timeline.
+  const pointed = useHover((h) => h.ids.includes(object.id));
   // Editing this loft / sweep: its preview is drawn instead.
   const replaced = useSolidBuilder((s) => s.session?.editingId === object.id && s.session.preview.state === 'ok');
 
@@ -108,7 +111,7 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
           color={color}
           {...appearanceProps(object)}
           emissive={color}
-          emissiveIntensity={hovered && !active ? 0.12 : 0}
+          emissiveIntensity={(hovered || pointed) && !active ? 0.12 : 0}
           polygonOffset
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}

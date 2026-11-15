@@ -16,6 +16,7 @@ import {
   Shapes,
 } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
+import { useHover } from '@/viewport/hover';
 import type { ModelDocument, ObjectId, ShapeObject } from '@/types/document';
 import { isEffectivelyLocked, siblingsOf } from '@/cad/hierarchy';
 
@@ -185,6 +186,8 @@ export function ObjectTree() {
         const dropHere = drop?.id === id ? drop.zone : null;
         return (
           <li
+            onMouseEnter={() => useHover.getState().set([id])}
+            onMouseLeave={() => useHover.getState().set([])}
             key={id}
             role="treeitem"
             aria-selected={active}

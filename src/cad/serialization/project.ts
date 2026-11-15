@@ -1,3 +1,4 @@
+import { migrateSketchesDraft } from '@/cad/sketchRecords';
 import { validateRecipe } from '@/cad/brep/types';
 import type { ModelDocument, SceneObject } from '@/types/document';
 import type { MeshData } from '../kernel/meshData';
@@ -54,8 +55,10 @@ export const workspaceOf = (meta: Pick<ProjectMeta, 'workspace'>) => meta.worksp
 export const PROJECT_FILE_FORMAT = 'modellio-project';
 /** v2 (MODELLIO 2.0): adds `meta.workspace` and `maker`. v1 files open as Design Studio projects. */
 /** 3: precise solids (`solid` shapes with a feature recipe). */
-export const PROJECT_FILE_VERSION = 3;
-export const CURRENT_SCHEMA = 1;
+/** 4: carries schema-2 documents (standalone sketches, components). */
+export const PROJECT_FILE_VERSION = 4;
+/** 2: standalone sketches and components (version 1 documents are upgraded on load). */
+export const CURRENT_SCHEMA = 2;
 
 export class ProjectFormatError extends Error {}
 
@@ -107,6 +110,7 @@ export function migrateDocument(raw: unknown): ModelDocument {
     o.visible = o.visible !== false;
     o.locked = o.locked === true;
     o.parentId = typeof o.parentId === 'string' ? o.parentId : null;
+    if (o.kind === 'group' && o.component !== undefined && o.component !== true) delete o.component;
     if (o.kind === 'shape') {
       o.params = isObj(o.params) ? o.params : {};
       o.color = typeof o.color === 'string' ? o.color : '#2463EB';
@@ -119,6 +123,8 @@ export function migrateDocument(raw: unknown): ModelDocument {
     }
     doc.objects[id] = o;
   }
+  // Standalone sketches (schema 2): keep valid records and link every sketched body to one.
+  migrateSketchesDraft(doc, raw.sketches);
   // Repair references.
   for (const o of Object.values(doc.objects)) {
     if (o.kind === 'group') o.children = o.children.filter((c) => doc.objects[c]?.parentId === o.id);

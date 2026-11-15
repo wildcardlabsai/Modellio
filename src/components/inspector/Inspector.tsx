@@ -29,7 +29,7 @@ import {
   EyeOff,
   Printer,
 } from 'lucide-react';
-import { create } from 'zustand';
+import { useInspectorTab, type InspectorTab } from './inspectorTab';
 import { collectExportBodies } from '@/cad/export/collect';
 import type { LeftPanel } from '@/components/layout/LeftRail';
 import { useBrepEngine } from '@/cad/brep/client';
@@ -40,6 +40,7 @@ import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
 import { meshMeasures, meshReport } from '@/cad/operations/meshTools';
+import { sketchUsers } from '@/cad/sketchRecords';
 import { useCadReady } from '@/viewport/cadReady';
 import type { CombineMode, FontId, SurfaceFinish } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
@@ -52,6 +53,7 @@ import { useSketchSession } from '@/components/sketch/sketchSession';
 import { IconButton } from '@/components/ui/IconButton';
 import { Toggle } from '@/components/ui/Toggle';
 import { ObjectTree } from '@/components/hierarchy/ObjectTree';
+import { FeatureTree, SketchList } from '@/components/hierarchy/FeatureTree';
 import { AlignMenu, MirrorMenu } from '@/components/toolbar/AlignMenu';
 import { MOD } from '@/utils/platform';
 import { roundTo } from '@/utils/math';
@@ -80,12 +82,12 @@ const PALETTE = [
   '#FFFFFF',
 ];
 
-/** Which Inspector tab is showing; remembered while you move between objects (not saved). */
-type InspectorTab = 'properties' | 'appearance' | 'features' | 'print';
-const useInspectorTab = create<{ tab: InspectorTab; setTab: (t: InspectorTab) => void }>((set) => ({
-  tab: 'properties',
-  setTab: (tab) => set({ tab }),
-}));
+type BrowserView = 'bodies' | 'sketches' | 'features';
+const BROWSER_VIEWS: { id: BrowserView; label: string }[] = [
+  { id: 'bodies', label: 'Bodies' },
+  { id: 'sketches', label: 'Sketches' },
+  { id: 'features', label: 'Features' },
+];
 
 /** Right-hand panel: the Design Browser (every body in the design) above the Inspector for the selection. */
 export function Inspector({ onOpenPanel }: { onOpenPanel?: (p: LeftPanel) => void }) {
@@ -94,6 +96,7 @@ export function Inspector({ onOpenPanel }: { onOpenPanel?: (p: LeftPanel) => voi
   const count = useEditor((s) => Object.keys(s.doc.objects).length);
   const selected = selection.map((id) => objects[id]).filter(Boolean);
   const [treeOpen, setTreeOpen] = useState(true);
+  const [view, setView] = useState<BrowserView>('bodies');
   const hasSelection = selected.length > 0;
 
   return (
@@ -116,12 +119,34 @@ export function Inspector({ onOpenPanel }: { onOpenPanel?: (p: LeftPanel) => voi
         </button>
         {(treeOpen || !hasSelection) && (
           <>
-            {!hasSelection && count > 0 && (
-              <p className="px-5 pb-1 text-[12px] text-muted">
-                Every body in your design. Drag to reorder or move into groups. Double-click to rename.
-              </p>
+            <div role="radiogroup" aria-label="Browser view" className="mx-4 mb-2 grid grid-cols-3 rounded-lg bg-canvas p-1">
+              {BROWSER_VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={view === v.id}
+                  onClick={() => setView(v.id)}
+                  className={`rounded-md py-1 text-[12px] font-medium ${view === v.id ? 'bg-panel text-brand-ink shadow-sm' : 'text-muted hover:text-ink'}`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            {view === 'bodies' ? (
+              <>
+                {!hasSelection && count > 0 && (
+                  <p className="px-5 pb-1 text-[12px] text-muted">
+                    Every body in your design. Drag to reorder or move into groups. Double-click to rename.
+                  </p>
+                )}
+                <ObjectTree />
+              </>
+            ) : view === 'features' ? (
+              <FeatureTree />
+            ) : (
+              <SketchList />
             )}
-            <ObjectTree />
           </>
         )}
       </div>
@@ -1029,7 +1054,37 @@ function ProfileSection({ object, locked }: { object: ShapeObject; locked: boole
       <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
         Changing the sketch or these settings rebuilds the solid at its sketched size.
       </p>
+      <SharedSketchNote object={object} locked={locked} />
     </Section>
+  );
+}
+
+/** Which standalone sketch a sketched body uses, and whether other bodies share it. */
+function SharedSketchNote({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const doc = useEditor((st) => st.doc);
+  const rec = object.sketchId ? doc.sketches?.[object.sketchId] : undefined;
+  if (!rec) return null;
+  const others = sketchUsers(doc, rec.id).filter((u) => u.id !== object.id);
+  return (
+    <div className="mt-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="sketch-link">
+      Sketch: <strong className="font-semibold text-ink">{rec.name}</strong>
+      {others.length > 0 ? (
+        <>
+          <span className="block text-muted">
+            Also builds {others.map((o) => o.name).join(', ')}. Editing it updates {others.length === 1 ? 'both' : 'all of them'}.
+          </span>
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => useEditor.getState().unlinkSketch(object.id)}
+            className="mt-1.5 rounded-md border border-line px-2 py-1 font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50"
+            data-testid="unlink-sketch"
+          >
+            Give this body its own copy
+          </button>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -1290,6 +1345,15 @@ function GroupActions({ group, locked }: { group: GroupObject; locked: boolean }
         <Ungroup size={15} /> Ungroup {group.children.length} objects
       </button>
       <p className="mt-2 text-[12px] text-muted">Double-click a part in the viewport to select it inside the group.</p>
+      <div className="mt-2">
+        <Toggle
+          label="Component (reusable part)"
+          icon={<Layers size={15} className="text-muted" />}
+          checked={!!group.component}
+          disabled={locked}
+          onChange={(v) => s.setComponent(group.id, v)}
+        />
+      </div>
     </Section>
   );
 }

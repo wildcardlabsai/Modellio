@@ -101,8 +101,13 @@ export interface ShapeObject extends BaseObject {
   text?: TextContent;
   /** Mesh shapes only: id in the immutable asset store (mesh is centred on its bounds). */
   meshId?: string;
-  /** Profile shapes only: the editable 2D sketch the solid is made from. */
+  /** Profile shapes only: the editable 2D sketch the solid is made from (its resolved copy). */
   sketch?: Sketch;
+  /**
+   * Profile shapes only (schema 2+): the standalone sketch this body is built from. Editing that
+   * sketch updates every body that uses it; `sketch` is kept equal to it.
+   */
+  sketchId?: SketchId;
   /** Solid shapes only: the feature recipe (base + ordered operations). */
   feature?: FeatureRecipe;
 }
@@ -119,6 +124,8 @@ export type CombineMode = 'union' | 'intersect';
 export interface GroupObject extends BaseObject {
   kind: 'group';
   combine?: CombineMode;
+  /** A component (schema 2+): a named, reusable part listed under Components. Plain groups are assemblies. */
+  component?: boolean;
   /** Child ids in display order. Children's transforms are relative to this group. */
   children: ObjectId[];
 }
@@ -131,8 +138,20 @@ export interface DocumentSettings {
   workplane: [number, number];
 }
 
+export type SketchId = string;
+
+/** A standalone sketch (schema 2+): exists on its own and can drive several bodies. */
+export interface SketchRecord {
+  id: SketchId;
+  name: string;
+  sketch: Sketch;
+}
+
 export interface ModelDocument {
-  schemaVersion: 1;
+  /** 2 adds standalone sketches and components. Version 1 documents are migrated on load. */
+  schemaVersion: 1 | 2;
+  /** Standalone sketches by id (schema 2+; absent in version 1 documents). */
+  sketches?: Record<SketchId, SketchRecord>;
   objects: Record<ObjectId, SceneObject>;
   /** Top-level draw / hierarchy order. */
   rootIds: ObjectId[];

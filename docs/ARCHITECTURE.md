@@ -224,6 +224,17 @@ because non-watertight meshes can still be displayed and exported but are refuse
 * **`.modellio` files:** JSON with `format`/`version`, the document, and base64 little-endian mesh buffers.
   `migrateDocument` validates untrusted input (types, transforms, shapes, groups), repairs dangling references
   rather than losing objects, and refuses newer schema versions. Index buffers are bounds-checked.
+* **Document schema 2 (MODELLIO 2.2, file format 4):** adds `doc.sketches`, standalone sketch records
+  (`{ id, name, sketch }`), and `component: true` on groups. Sketched bodies (`shape: 'profile'`) reference a record
+  by `sketchId` and keep a resolved copy in `sketch`, so geometry, export, Booleans and the makers read bodies exactly
+  as before. All edits go through the record (`saveSketch`, `updateSketchRecord`) and rewrite every body that uses it
+  in one undo step; duplicates and pastes get their own record (`forkSketchLinksDraft`), so copies stay independent.
+  `migrateSketchesDraft` upgrades version 1 documents (one record per sketched body), drops invalid records, and
+  re-links a body whose link points nowhere or disagrees with its own copy. Version 3 project files open unchanged.
+* **Derived views:** the Design Browser's Features and Sketches views (`src/cad/featureTree.ts`) are computed from
+  the document on every change, never stored, so they cannot drift. History steps don't store which objects they
+  changed: `changedObjectIds` compares the documents before and after a step (structural sharing makes it a reference
+  check).
 
 ### Toward cloud storage (Supabase)
 

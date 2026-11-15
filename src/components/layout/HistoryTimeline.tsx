@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, History } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
+import { changedObjectIds } from '@/cad/featureTree';
+import { useHover } from '@/viewport/hover';
+import type { ModelDocument } from '@/types/document';
 
 const KEY = 'modellio:timeline';
 
@@ -13,6 +16,15 @@ export function HistoryTimeline() {
   const past = useEditor((s) => s.history.past);
   const future = useEditor((s) => s.history.future);
   const jump = useEditor((s) => s.jumpHistory);
+  const doc = useEditor((s) => s.doc);
+  const setHover = useHover((s) => s.set);
+  /** Point at what a step changed (between the document before and after it). */
+  const point = (before: ModelDocument, after: ModelDocument) => () => setHover(changedObjectIds(before, after));
+  const names = (before: ModelDocument, after: ModelDocument) => {
+    const ids = changedObjectIds(before, after);
+    const n = ids.map((id) => (after.objects[id] ?? before.objects[id])?.name).filter(Boolean);
+    return n.length ? ` (${n.slice(0, 3).join(', ')}${n.length > 3 ? ` and ${n.length - 3} more` : ''})` : '';
+  };
   const [open, setOpen] = useState(() => {
     try {
       return localStorage.getItem(KEY) !== 'closed';
@@ -49,20 +61,36 @@ export function HistoryTimeline() {
           {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </button>
         {open && (
-          <ol ref={strip} className="scrollbar-thin flex min-w-0 flex-1 items-center overflow-x-auto py-1">
+          <ol
+            ref={strip}
+            className="scrollbar-thin flex min-w-0 flex-1 items-center overflow-x-auto py-1"
+            onMouseLeave={() => setHover([])}
+          >
             <li>
               <Step label="Start" state={past.length === 0 ? 'current' : 'done'} onClick={() => jump(-past.length)} />
             </li>
             {past.map((e, i) => (
               <li key={`p${i}`} className="flex items-center">
                 <span className="h-0.5 w-4 rounded-full bg-brand/60" aria-hidden />
-                <Step label={e.label} state={i === past.length - 1 ? 'current' : 'done'} onClick={() => jump(i + 1 - past.length)} />
+                <Step
+                  label={e.label}
+                  state={i === past.length - 1 ? 'current' : 'done'}
+                  onClick={() => jump(i + 1 - past.length)}
+                  changed={names(e.state, past[i + 1]?.state ?? doc)}
+                  onPoint={point(e.state, past[i + 1]?.state ?? doc)}
+                />
               </li>
             ))}
             {ahead.map((e, i) => (
               <li key={`f${i}`} className="flex items-center">
                 <span className="h-0.5 w-4 rounded-full border-t border-dashed border-line-strong" aria-hidden />
-                <Step label={e.label} state="undone" onClick={() => jump(i + 1)} />
+                <Step
+                  label={e.label}
+                  state="undone"
+                  onClick={() => jump(i + 1)}
+                  changed={names(ahead[i - 1]?.state ?? doc, e.state)}
+                  onPoint={point(ahead[i - 1]?.state ?? doc, e.state)}
+                />
               </li>
             ))}
           </ol>
@@ -72,14 +100,33 @@ export function HistoryTimeline() {
   );
 }
 
-function Step({ label, state, onClick }: { label: string; state: 'done' | 'current' | 'undone'; onClick: () => void }) {
+function Step({
+  label,
+  state,
+  onClick,
+  changed = '',
+  onPoint,
+}: {
+  label: string;
+  state: 'done' | 'current' | 'undone';
+  onClick: () => void;
+  /** Names of the objects the step changed, for the tooltip. */
+  changed?: string;
+  onPoint?: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onPoint}
+      onFocus={onPoint}
       aria-current={state === 'current' ? 'step' : undefined}
       title={
-        state === 'undone' ? `Redo up to “${label}”` : state === 'current' ? `Now: after “${label}”` : `Go back to just after “${label}”`
+        (state === 'undone'
+          ? `Redo up to “${label}”`
+          : state === 'current'
+            ? `Now: after “${label}”`
+            : `Go back to just after “${label}”`) + changed
       }
       className={`group flex max-w-[170px] shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium ${
         state === 'current'
