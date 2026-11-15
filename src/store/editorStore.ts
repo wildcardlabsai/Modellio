@@ -37,6 +37,7 @@ import {
   moveObjectsDraft,
   scaleGroupDraft,
   setWorldMatrixDraft,
+  translateWorldDraft,
   topLevel,
   ungroupDraft,
   worldBoundsOf,
@@ -162,6 +163,17 @@ export interface EditorState {
   alignSelected: (axis: Axis, mode: AlignMode) => void;
   distributeSelected: (axis: Axis) => void;
   mirrorSelected: (axis: Axis) => void;
+  /** Add a mirrored copy of the selection, touching it on the + side of the axis; both are grouped. */
+  mirrorCopySelected: (axis: Axis) => void;
+  /**
+   * Copies of the selection in a row (along an axis, `spacing` mm apart) or round a circle (about
+   * the vertical axis through `centre`, spread over `angle` degrees), grouped with the original.
+   */
+  patternSelected: (
+    p:
+      | { kind: 'linear'; count: number; spacing: number; axis: Axis }
+      | { kind: 'circular'; count: number; angle: number; centre: 'origin' | 'selection' },
+  ) => void;
   moveInTree: (ids: ObjectId[], parentId: ObjectId | null, index: number) => void;
   setSize: (id: ObjectId, size: Vec3) => void;
   setGroupSize: (id: ObjectId, size: Vec3) => void;
@@ -646,6 +658,68 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (!ids.length) return;
       const center = worldBoundsOf(doc, ids).getCenter(new THREE.Vector3());
       get().apply(`Mirror ${AXIS_NAMES[axis]}`, (d) => mirrorDraft(d, ids, axis, center));
+    },
+
+    mirrorCopySelected: (axis) => {
+      const { doc } = get();
+      const ids = editableSelection();
+      if (!ids.length) return;
+      const box = worldBoundsOf(doc, ids);
+      const centre = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const gid = createId('grp');
+      get().apply(`Mirror copy ${AXIS_NAMES[axis]}`, (d) => {
+        const copies = duplicateObjectsDraft(d, ids, [0, 0, 0]);
+        forkSketchLinksDraft(d, copies);
+        // Mirror in place, then move across so the copy touches the original on the + side.
+        mirrorDraft(d, copies, axis, centre);
+        const shift = new THREE.Vector3();
+        shift.setComponent(axis, size.getComponent(axis));
+        for (const id of copies) translateWorldDraft(d, id, shift);
+        groupDraft(d, [...ids, ...copies], { id: gid, name: uniqueName(d, 'Mirrored') });
+      });
+      if (get().doc.objects[gid]) set({ selection: [gid] });
+    },
+
+    patternSelected: (p) => {
+      const { doc } = get();
+      const ids = editableSelection();
+      const count = Math.round(p.count);
+      if (!ids.length || count < 2) return;
+      if (count > 200) {
+        get().notify('That is a lot of copies: use at most 200.');
+        return;
+      }
+      const pivot =
+        p.kind === 'circular' && p.centre === 'selection' ? worldBoundsOf(doc, ids).getCenter(new THREE.Vector3()) : new THREE.Vector3();
+      // A full turn spreads copies evenly without doubling the first; a part turn includes both ends.
+      const full = p.kind === 'circular' && Math.abs(Math.abs(p.angle) - 360) < 1e-6;
+      const step = p.kind === 'circular' ? p.angle / (full ? count : count - 1) : 0;
+      const gid = createId('grp');
+      get().apply(`Pattern ×${count}`, (d) => {
+        const all = [...ids];
+        for (let i = 1; i < count; i++) {
+          const copies = duplicateObjectsDraft(d, ids, [0, 0, 0]);
+          forkSketchLinksDraft(d, copies);
+          for (const id of copies) {
+            if (p.kind === 'linear') {
+              const move = new THREE.Vector3();
+              move.setComponent(p.axis, p.spacing * i);
+              translateWorldDraft(d, id, move);
+            } else {
+              // Turn the copy about the vertical axis through the pivot.
+              const turn = new THREE.Matrix4()
+                .makeTranslation(pivot.x, pivot.y, pivot.z)
+                .multiply(new THREE.Matrix4().makeRotationZ((step * i * Math.PI) / 180))
+                .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+              setWorldMatrixDraft(d, id, turn.multiply(worldMatrix(d, id)));
+            }
+          }
+          all.push(...copies);
+        }
+        groupDraft(d, all, { id: gid, name: uniqueName(d, 'Pattern') });
+      });
+      if (get().doc.objects[gid]) set({ selection: [gid] });
     },
 
     moveInTree: (ids, parentId, index) => {

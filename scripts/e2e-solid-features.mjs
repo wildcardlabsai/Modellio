@@ -234,6 +234,41 @@ await page.keyboard.press('Control+z');
 await page.keyboard.press('Control+z');
 check('6f. Undo brings the editable group back', !!(await obj(gid)) && (await obj(cyl)).isHole === true);
 
+// 7. Copies: a row of three, and a mirrored copy, from the Inspector.
+const peg = await S(() => {
+  const s = window.modellio.store.getState();
+  const id = s.addShape('cylinder');
+  s.setPosition(id, [60, -60, 10]);
+  s.select([id]);
+  return id;
+});
+await page.getByRole('tab', { name: 'Properties' }).click();
+await field('Pattern count').fill('3');
+await field('Pattern count').press('Enter');
+await field('Pattern spacing (mm)').fill('25');
+await field('Pattern spacing (mm)').press('Enter');
+await page.getByTestId('make-pattern').click();
+const rowGroup = await S(() => {
+  const s = window.modellio.store.getState();
+  const g = s.doc.objects[s.selection[0]];
+  return g?.kind === 'group' && g.children.map((c) => s.doc.objects[c].transform.position[0]).sort((a, b) => a - b);
+});
+// Positions are relative to the new group: check the spacing.
+check(
+  '7. "Make pattern" makes a row of three, 25 mm apart, grouped',
+  rowGroup && rowGroup.length === 3 && Math.abs(rowGroup[1] - rowGroup[0] - 25) < 1e-6 && Math.abs(rowGroup[2] - rowGroup[1] - 25) < 1e-6,
+  JSON.stringify(rowGroup),
+);
+await page.keyboard.press('Control+z');
+await S((id) => window.modellio.store.getState().select([id]), peg);
+await page.getByRole('button', { name: 'Mirror a copy across Y' }).click();
+const mirrored = await S((peg) => {
+  const s = window.modellio.store.getState();
+  const g = s.doc.objects[s.selection[0]];
+  return g?.kind === 'group' && g.children.length === 2 && g.children.includes(peg);
+}, peg);
+check('7b. "Mirror a copy" adds a mirrored copy grouped with it', mirrored);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

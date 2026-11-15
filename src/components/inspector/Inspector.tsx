@@ -28,6 +28,7 @@ import {
   Loader2,
   EyeOff,
   Printer,
+  FlipHorizontal2,
 } from 'lucide-react';
 import { useInspectorTab, type InspectorTab } from './inspectorTab';
 import { collectExportBodies } from '@/cad/export/collect';
@@ -409,6 +410,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
               />
             </Section>
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
+            <CopiesSection locked={locked} />
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
               <Toggle
@@ -1343,6 +1345,140 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
           <Layers2 size={15} /> Flatten to mesh
         </button>
       )}
+    </Section>
+  );
+}
+
+/** Mirrored copies and patterns of the selection (real copies, grouped with it). */
+function CopiesSection({ locked }: { locked: boolean }) {
+  const s = useEditor.getState();
+  const [kind, setKind] = useState<'linear' | 'circular'>('linear');
+  const [count, setCount] = useState(3);
+  const [spacing, setSpacing] = useState(30);
+  const [axis, setAxis] = useState<0 | 1 | 2>(0);
+  const [angle, setAngle] = useState(360);
+  const [centre, setCentre] = useState<'origin' | 'selection'>('origin');
+  const seg = (on: boolean) => `flex-1 rounded-md py-1 text-[12px] font-medium ${on ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`;
+  const btn =
+    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50';
+  return (
+    <Section title="Copies">
+      <p className="mb-1.5 text-[12px] text-muted">Mirror a copy (placed touching this one):</p>
+      <div className="flex gap-1.5">
+        {(['X', 'Y', 'Z'] as const).map((a, i) => (
+          <button
+            key={a}
+            type="button"
+            className={btn}
+            disabled={locked}
+            onClick={() => s.mirrorCopySelected(i as 0 | 1 | 2)}
+            aria-label={`Mirror a copy across ${a}`}
+          >
+            <FlipHorizontal2 size={14} /> {a}
+          </button>
+        ))}
+      </div>
+      <p className="mb-1.5 mt-3 text-[12px] text-muted">Or repeat it in a pattern:</p>
+      <div role="radiogroup" aria-label="Pattern type" className="flex rounded-lg bg-canvas p-0.5">
+        {(
+          [
+            ['linear', 'Row'],
+            ['circular', 'Circle'],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={seg(kind === k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-[1fr_120px] items-center gap-2 text-[12px] text-ink-2">
+        <span>Copies (with this one)</span>
+        <NumberField
+          value={count}
+          onCommit={(v) => setCount(Math.max(2, Math.round(v)))}
+          min={2}
+          max={200}
+          step={1}
+          decimals={0}
+          ariaLabel="Pattern count"
+        />
+        {kind === 'linear' ? (
+          <>
+            <span>Spacing</span>
+            <NumberField
+              value={spacing}
+              onCommit={setSpacing}
+              min={-10000}
+              max={10000}
+              step={1}
+              decimals={2}
+              suffix="mm"
+              ariaLabel="Pattern spacing (mm)"
+            />
+            <span>Along</span>
+            <div role="radiogroup" aria-label="Pattern axis" className="flex rounded-lg bg-canvas p-0.5">
+              {(['X', 'Y', 'Z'] as const).map((a, i) => (
+                <button
+                  key={a}
+                  type="button"
+                  role="radio"
+                  aria-checked={axis === i}
+                  onClick={() => setAxis(i as 0 | 1 | 2)}
+                  className={seg(axis === i)}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <span>Over</span>
+            <NumberField
+              value={angle}
+              onCommit={setAngle}
+              min={1}
+              max={360}
+              step={15}
+              decimals={0}
+              suffix="°"
+              ariaLabel="Pattern angle (°)"
+            />
+            <span>Round</span>
+            <div role="radiogroup" aria-label="Pattern centre" className="flex rounded-lg bg-canvas p-0.5">
+              {(
+                [
+                  ['origin', 'Origin'],
+                  ['selection', 'Itself'],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={centre === k}
+                  onClick={() => setCentre(k)}
+                  className={seg(centre === k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => s.patternSelected(kind === 'linear' ? { kind, count, spacing, axis } : { kind, count, angle, centre })}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50"
+        data-testid="make-pattern"
+      >
+        <Copy size={15} /> Make pattern
+      </button>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted">
+        Circles turn about the vertical axis. The copies are grouped with the original; each copy is independent.
+      </p>
     </Section>
   );
 }
