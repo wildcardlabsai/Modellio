@@ -83,8 +83,9 @@ Read alongside [`ARCHITECTURE.md`](ARCHITECTURE.md) and
    as groups computed by Manifold, so the feature history stops at a Boolean.
 3. **Duplicated sketch-to-profile code.** Loop walking exists twice, in `src/cad/sketch/profile.ts` (mesh) and
    `src/cad/brep/build.ts` (exact), with a third copy of the arc maths in `sketchPath`.
-   - Revolve differs between the two: the exact path clips to x ≥ 0, the mesh path does not. A revolved sketch
-     crossing the axis can therefore differ between the preview mesh and the precise solid.
+   - *Corrected in Stage 1:* the audit said revolve differs between the two engines. Measured, it does not: both
+     use only the part right of the axis (a −5…10 mm square revolves to 3139 mm³ in Manifold against 3142 mm³ in
+     OpenCascade, the gap being faceting). Tests now pin this down.
    - At a junction of more than two edges the walk takes the first unused edge, with no validation.
 4. **One OpenCascade worker, first in first out.** A slow STEP import or a heavy fillet blocks every other build,
    and there is no cancellation or priority.
@@ -92,7 +93,9 @@ Read alongside [`ARCHITECTURE.md`](ARCHITECTURE.md) and
    - meshing every part before a Boolean is sent to the worker;
    - the print check;
    - mesh tools;
-   - a second Manifold instance (one in the worker, one on the main thread).
+   - *Corrected in Stage 1:* "a second Manifold instance" is not a defect. Each worker needs its own WebAssembly
+     instance (memory cannot be shared between threads), and the main-thread instance is required to build
+     display meshes synchronously as shapes are edited.
 6. **Thin-wall analysis is unreliable:** one ray per sampled triangle centre with no spatial index. It misses thin
    regions, is wrong on open meshes, and is slow on large models.
 7. **The assistant sees only top-level objects (≤100)** and has no knowledge of features. Its rate limit is in
@@ -149,7 +152,8 @@ and leaves the application stable. The full regression runs at the end of every 
 - Matching scores all candidates and refuses (`ambiguous-edges`) when the best two are too close, instead of
   guessing.
 - A new `FaceRef`: surface kind, centroid and normal (normalised), area.
-- Viewport face picking reuses the edge-pick tool pattern (`src/viewport/EdgePickTool.tsx`).
+- Viewport face picking reuses the edge-pick tool pattern (`src/viewport/EdgePickTool.tsx`). *Moved to Stage 2*,
+  with its first user (shell), so no picking mode appears before something uses it.
 
 **Shared code and parity:**
 - One shared sketch-to-loops module used by both kernels.
@@ -159,9 +163,10 @@ and leaves the application stable. The full regression runs at the end of every 
 **Workers:**
 - Job priorities (interactive previews before STEP).
 - Cancellation of superseded previews.
-- A single Manifold instance.
+- ~~A single Manifold instance.~~ Not applicable (see §3, item 5).
 
-**Schema 3 scaffold:** the version bump, migration plumbing and tests. The new fields arrive with stages 2–4.
+**Schema 3:** *deferred* to the first stage that adds document fields. Bumping the version with no new fields would
+only stop the live 2.2 app opening new saves.
 
 **Tests:**
 - unit: reference matching, including symmetric-part ambiguity and resize stability; face references; loop
@@ -348,7 +353,7 @@ fixture scenes; rollback on failure; e2e with a mocked server.
 | 2 | 1 (face and edge references, worker priorities) |
 | 3 | 1 (shared loops); placement uses 1 (face picking) |
 | 4 | 1 (schema 3); joints use 1 (face and edge picking) |
-| 5 | 1 (single Manifold, worker infrastructure) |
+| 5 | 1 (worker infrastructure) |
 | 6 | 2 (operation framework) |
 | 7 | 2 and 3 (the operations it drives) |
 | 8 | all |
@@ -380,6 +385,24 @@ Stages 4 and 5 could swap if assemblies matter less than printing for current us
 - **No existing check is weakened or removed.** Where an interface change moves a control, the suite is updated to
   reach it and keeps asserting the same behaviour.
 
-## 9. Implementation order
+## 9. Progress
+
+### Stage 1: foundations (done)
+
+| Item | Result |
+| --- | --- |
+| Edge references | Each straight or curved edge records the normals of the two faces it joins. Matching uses them to separate edges in the same place, and returns *ambiguous* when two different edges fit almost equally well, so the operation is flagged and nothing is guessed. Circles keep centre, axis and radius only (their two halves must stay one reference). References saved by 2.2, without face normals, still apply. |
+| Face references | `FaceRef` (surface kind, centre and outward normal in normalised space, area scaled by orientation), and each build lists its faces with their triangle ranges. `faceId` in OpenCascade's mesh output was confirmed to be the face hash, in the same order as the faces, so triangles map to faces exactly. `matchFaces` finds faces again after resizes and refuses on ties. |
+| Shared outlines | `src/cad/sketch/outline.ts` is the one sketch walk, used by the mesh engine (sampled polygons) and the exact engine (true arcs) and by sweep paths. It also reports points where more than two curves meet and outlines that cross. The sketch editor shows these, plus a note when a revolve profile reaches left of the axis. |
+| Worker queue | Priorities: tool previews, then 3D-view builds, then STEP jobs. Preview lanes: a newer fillet, chamfer, loft or sweep preview cancels an older one that has not started, so dragging a value builds only the latest. A running job always finishes. The worker is injectable for unit tests. |
+| Not done, by decision | Face picking (moved to Stage 2); schema 3 (deferred); single Manifold (not applicable). |
+
+**Tests added:**
+- **Unit:** face-normal tie-breaking, ambiguity refusal, circle halves, box edges found after an uneven resize,
+  face references and triangle coverage, face ties, 2.2 references still applying, outline branches, crossings and
+  arc direction, revolve parity in both engines, queue priorities and lanes.
+- **Browser:** new `e2e-cad-foundations` suite (8 checks).
+
+## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.

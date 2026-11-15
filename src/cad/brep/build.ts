@@ -1,7 +1,8 @@
 import type * as Replicad from 'replicad';
 import type { Sketch, SketchEntity } from '@/cad/sketch/types';
+import { pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
 import type { Vec3 } from '@/types/document';
-import type { BrepBuild, BrepEdge, BrepRequest, EdgeRef, FeatureBase } from './types';
+import type { BrepBuild, BrepEdge, BrepFace, BrepRequest, EdgeRef, FaceRef, FeatureBase } from './types';
 
 /**
  * Recipe → exact OpenCascade solid → mesh, edges and volume. Runs wherever OpenCascade is
@@ -19,6 +20,9 @@ const as3d = (s: Replicad.AnyShape) => s as Shape3D;
 /** A single closed drawing sketches to one Sketch. */
 const asSketch = (s: ReturnType<Drawing['sketchOnPlane']>) => s as Replicad.Sketch;
 const MATCH_TOLERANCE = 0.02;
+/** Two candidates closer than this to each other's score are "equally good": refuse, don't guess. */
+const AMBIGUITY = MATCH_TOLERANCE / 4;
+const FACE_TOLERANCE = 0.05;
 
 // --- bases -----------------------------------------------------------------------------------
 function primitive(r: R, base: Extract<FeatureBase, { kind: 'primitive' }>, size: Vec3): Shape3D {
@@ -79,62 +83,7 @@ function primitive(r: R, base: Extract<FeatureBase, { kind: 'primitive' }>, size
   }
 }
 
-type Segment =
-  | { kind: 'line'; from: [number, number]; to: [number, number] }
-  | { kind: 'arc'; from: [number, number]; to: [number, number]; mid: [number, number] };
-
-/** Closed outlines of a sketch with exact arcs: chains of lines/arcs, and circles. */
-export function sketchOutlines(s: Sketch): { chains: Segment[][]; circles: { c: [number, number]; r: number }[] } {
-  const pts = new Map(s.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
-  const edges = s.entities.filter(
-    (e): e is Extract<SketchEntity, { kind: 'line' | 'arc' }> => (e.kind === 'line' || e.kind === 'arc') && !e.construction,
-  );
-  const circles = s.entities
-    .filter((e): e is Extract<SketchEntity, { kind: 'circle' }> => e.kind === 'circle' && !e.construction && e.r > 0 && pts.has(e.c))
-    .map((e) => ({ c: pts.get(e.c)!, r: e.r }));
-  const byPoint = new Map<string, typeof edges>();
-  for (const e of edges)
-    for (const id of [e.a, e.b]) {
-      if (!byPoint.has(id)) byPoint.set(id, []);
-      byPoint.get(id)!.push(e);
-    }
-  const used = new Set<string>();
-  const chains: Segment[][] = [];
-  for (const start of edges) {
-    if (used.has(start.id)) continue;
-    const chain: Segment[] = [];
-    let e = start;
-    let from = start.a;
-    let closed = false;
-    for (let guard = 0; guard <= edges.length; guard++) {
-      used.add(e.id);
-      const to = e.a === from ? e.b : e.a;
-      const pa = pts.get(from)!;
-      const pb = pts.get(to)!;
-      if (e.kind === 'arc') {
-        // Arcs run a → b counter-clockwise around c.
-        const c = pts.get(e.c)!;
-        const [ea, eb] = [pts.get(e.a)!, pts.get(e.b)!];
-        const a0 = Math.atan2(ea[1] - c[1], ea[0] - c[0]);
-        let sweep = Math.atan2(eb[1] - c[1], eb[0] - c[0]) - a0;
-        while (sweep <= 0) sweep += 2 * Math.PI;
-        const rad = Math.hypot(ea[0] - c[0], ea[1] - c[1]);
-        const mid: [number, number] = [c[0] + rad * Math.cos(a0 + sweep / 2), c[1] + rad * Math.sin(a0 + sweep / 2)];
-        chain.push({ kind: 'arc', from: pa, to: pb, mid });
-      } else chain.push({ kind: 'line', from: pa, to: pb });
-      if (to === start.a) {
-        closed = true;
-        break;
-      }
-      const next = (byPoint.get(to) ?? []).find((x) => x.id !== e.id && !used.has(x.id));
-      if (!next) break;
-      from = to;
-      e = next;
-    }
-    if (closed && chain.length >= 2) chains.push(chain);
-  }
-  return { chains, circles };
-}
+export { sketchOutlines };
 
 function polygonOf(chain: Segment[]): [number, number][] {
   const out: [number, number][] = [];
@@ -210,10 +159,8 @@ export function singleOutline(r: R, s: Sketch, what: string): Drawing {
  * Returns an error message when the sketch is not one chain.
  */
 export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } | { circle: { c: [number, number]; r: number } } | string {
-  const pts = new Map(s.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
-  const edges = s.entities.filter(
-    (e): e is Extract<SketchEntity, { kind: 'line' | 'arc' }> => (e.kind === 'line' || e.kind === 'arc') && !e.construction,
-  );
+  const pts = pointMap(s);
+  const edges = solidEdges(s);
   const circles = s.entities.filter((e): e is Extract<SketchEntity, { kind: 'circle' }> => e.kind === 'circle' && !e.construction);
   if (!edges.length && circles.length === 1 && pts.has(circles[0].c)) return { circle: { c: pts.get(circles[0].c)!, r: circles[0].r } };
   if (circles.length) return 'A path is one chain of lines and arcs (or a single circle).';
@@ -232,17 +179,7 @@ export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } 
     if (!e) break;
     used.add(e.id);
     const to = e.a === from ? e.b : e.a;
-    const pa = pts.get(from)!;
-    const pb = pts.get(to)!;
-    if (e.kind === 'arc') {
-      const c = pts.get(e.c)!;
-      const [ea, eb] = [pts.get(e.a)!, pts.get(e.b)!];
-      const a0 = Math.atan2(ea[1] - c[1], ea[0] - c[0]);
-      let sweep = Math.atan2(eb[1] - c[1], eb[0] - c[0]) - a0;
-      while (sweep <= 0) sweep += 2 * Math.PI;
-      const rad = Math.hypot(ea[0] - c[0], ea[1] - c[1]);
-      segments.push({ kind: 'arc', from: pa, to: pb, mid: [c[0] + rad * Math.cos(a0 + sweep / 2), c[1] + rad * Math.sin(a0 + sweep / 2)] });
-    } else segments.push({ kind: 'line', from: pa, to: pb });
+    segments.push(segmentOf(pts, e, from));
     from = to;
   }
   if (used.size !== edges.length) return 'The path must be one connected chain.';
@@ -317,7 +254,7 @@ interface EdgeInfo {
 }
 
 /** Signature and display polyline of one edge, relative to `centre` and half-extents `half`. */
-function describeEdge(e: Replicad.Edge, centre: V, half: V): EdgeInfo {
+function describeEdge(e: Replicad.Edge, centre: V, half: V, faces?: [V, V]): EdgeInfo {
   const type = e.geomType;
   const kind: EdgeRef['kind'] = type === 'LINE' ? 'line' : type === 'CIRCLE' ? 'circle' : 'curve';
   const at = (t: number) => sub(v(e.pointAt(t)), centre);
@@ -337,58 +274,145 @@ function describeEdge(e: Replicad.Edge, centre: V, half: V): EdgeInfo {
     const t2 = cross(ac, axis).map((x) => x * dot(ab, ab));
     const centreC: V = [a[0] + (t1[0] + t2[0]) / d, a[1] + (t1[1] + t2[1]) / d, a[2] + (t1[2] + t2[2]) / d];
     const radius = Math.hypot(...sub(a, centreC));
+    // A circle is fixed by centre, axis and radius; face normals vary along it (and between the two
+    // halves OpenCascade splits it into), so they are not part of its reference.
     return { ref: tidy({ kind, mid: scaleN(centreC), dir: canon(norm(axis)), radius: radius / meanHalf }), points };
   }
   const t = v(e.tangentAt(0.5));
   return {
-    ref: tidy({ kind, mid: scaleN(at(0.5)), dir: canon(norm([t[0] / half[0], t[1] / half[1], t[2] / half[2]])), radius: 0 }),
+    ref: tidy({ kind, mid: scaleN(at(0.5)), dir: canon(norm([t[0] / half[0], t[1] / half[1], t[2] / half[2]])), radius: 0, faces }),
     points,
   };
 }
 
 /** Rounded so the two halves of a circle (and repeated builds) give identical references. */
+const q9 = (x: number) => Math.round(x * 1e9) / 1e9 + 0; // + 0 turns −0 into 0
 const tidy = (ref: EdgeRef): EdgeRef => {
-  const q = (x: number) => Math.round(x * 1e9) / 1e9 + 0; // + 0 turns −0 into 0
-  return { kind: ref.kind, mid: ref.mid.map(q) as Vec3, dir: ref.dir.map(q) as Vec3, radius: q(ref.radius) };
+  const out: EdgeRef = { kind: ref.kind, mid: ref.mid.map(q9) as Vec3, dir: ref.dir.map(q9) as Vec3, radius: q9(ref.radius) };
+  if (ref.faces) out.faces = ref.faces.map((n) => n.map(q9)) as [Vec3, Vec3];
+  return out;
 };
 
-/**
- * The solid's real edges. Seam edges (where a curved face meets itself, e.g. the join line of a
- * cylinder's side) belong to a single face: they are not edges of the part and cannot be filleted.
- */
-function realEdges(shape: Shape3D): Replicad.Edge[] {
-  const faces = new Map<number, Set<number>>();
-  shape.faces.forEach((f, fi) => {
-    for (const e of f.edges) {
-      const h = e.hashCode;
-      if (!faces.has(h)) faces.set(h, new Set());
-      faces.get(h)!.add(fi);
-      e.delete();
-    }
-    f.delete();
-  });
-  return shape.edges.filter((e) => {
-    const keep = (faces.get(e.hashCode)?.size ?? 0) !== 1;
-    if (!keep) e.delete();
-    return keep;
-  });
+/** A surface normal in the normalised space of `mid` (normals scale by the inverse, i.e. by `half`). */
+const scaleNormal = (n: V, half: V): V => norm([n[0] * half[0], n[1] * half[1], n[2] * half[2]]);
+/** The two face normals in a fixed order, so a reference does not depend on face order. */
+const sortPair = (a: V, b: V): [V, V] => ((a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) <= 0 ? [a, b] : [b, a]);
+
+const FACE_KIND: Record<string, FaceRef['kind']> = {
+  PLANE: 'plane',
+  CYLINDRE: 'cylinder',
+  CONE: 'cone',
+  SPHERE: 'sphere',
+  TORUS: 'torus',
+};
+
+/** Reference of one face, relative to `centre` and half-extents `half`. */
+function describeFace(r: R, f: Replicad.Face, centre: V, half: V): FaceRef {
+  const c = sub(v(f.center), centre);
+  // A point on the surface itself (the centroid of a curved face may lie off it, e.g. on a cylinder's axis).
+  const onSurface = f.pointOnSurface(0.5, 0.5);
+  const nv = f.normalAt(onSurface);
+  const raw = norm(v(nv));
+  nv.delete();
+  onSurface.delete();
+  // Area in the normalised space: a patch with unit normal m scales by |h ⊙ m| / (hx·hy·hz). Exact
+  // for flat faces, a good estimate for curved ones (taken at their representative normal).
+  const k = Math.hypot(raw[0] * half[0], raw[1] * half[1], raw[2] * half[2]) / (half[0] * half[1] * half[2]);
+  return {
+    kind: FACE_KIND[f.geomType] ?? 'other',
+    centre: [q9(c[0] / half[0]), q9(c[1] / half[1]), q9(c[2] / half[2])],
+    normal: scaleNormal(raw, half).map(q9) as Vec3,
+    area: q9(r.measureArea(f) * k),
+  };
 }
 
-const distance = (a: EdgeRef, b: EdgeRef) =>
-  a.kind !== b.kind ? Infinity : Math.hypot(...sub(a.mid, b.mid)) + 0.5 * (1 - Math.abs(dot(a.dir, b.dir))) + Math.abs(a.radius - b.radius);
+/**
+ * The solid's real edges, each with the normals of its two faces, and the references of all its
+ * faces (in the order OpenCascade meshes them). Everything OpenCascade allocated is released.
+ */
+function topology(r: R, shape: Shape3D, centre: V, half: V): { edges: EdgeInfo[]; faces: FaceRef[]; faceHashes: number[] } {
+  const faceList = shape.faces;
+  const byEdge = new Map<number, number[]>();
+  faceList.forEach((f, fi) => {
+    for (const e of f.edges) {
+      const list = byEdge.get(e.hashCode) ?? [];
+      if (!list.includes(fi)) list.push(fi);
+      byEdge.set(e.hashCode, list);
+      e.delete();
+    }
+  });
+  const edges: EdgeInfo[] = [];
+  for (const e of shape.edges) {
+    const owners = byEdge.get(e.hashCode) ?? [];
+    // Seam edges (where a curved face meets itself) belong to one face: not edges of the part.
+    if (owners.length >= 2) {
+      const p = e.pointAt(0.5);
+      const normals = owners.slice(0, 2).map((fi) => {
+        const nv = faceList[fi].normalAt(p);
+        const out = scaleNormal(v(nv), half);
+        nv.delete();
+        return out;
+      });
+      p.delete();
+      edges.push(describeEdge(e, centre, half, sortPair(normals[0], normals[1])));
+    }
+    e.delete();
+  }
+  const faces = faceList.map((f) => describeFace(r, f, centre, half));
+  const faceHashes = faceList.map((f) => f.hashCode);
+  faceList.forEach((f) => f.delete());
+  return { edges, faces, faceHashes };
+}
 
-/** For each reference, the closest edge of the same kind within tolerance (or −1). */
-export function matchEdges(refs: EdgeRef[], edges: EdgeRef[]): number[] {
+/** How different two face-normal pairs are (0 = the same), whichever way round they are stored. */
+const pairCost = (a: [Vec3, Vec3], b: [Vec3, Vec3]) =>
+  Math.min(2 - dot(a[0], b[0]) - dot(a[1], b[1]), 2 - dot(a[0], b[1]) - dot(a[1], b[0])) / 2;
+
+const distance = (a: EdgeRef, b: EdgeRef) =>
+  a.kind !== b.kind
+    ? Infinity
+    : Math.hypot(...sub(a.mid, b.mid)) +
+      0.5 * (1 - Math.abs(dot(a.dir, b.dir))) +
+      Math.abs(a.radius - b.radius) +
+      (a.faces && b.faces ? 0.25 * pairCost(a.faces, b.faces) : 0);
+
+const faceDistance = (a: FaceRef, b: FaceRef) =>
+  a.kind !== b.kind
+    ? Infinity
+    : Math.hypot(...sub(a.centre, b.centre)) +
+      0.5 * (1 - dot(a.normal, b.normal)) +
+      (0.5 * Math.abs(a.area - b.area)) / Math.max(a.area, b.area, EPS);
+
+/** Not found, or more than one candidate fits equally well. */
+export const NO_MATCH = -1;
+export const AMBIGUOUS = -2;
+
+/**
+ * For each reference, the index of the closest candidate within `tolerance`. Returns NO_MATCH when
+ * nothing is close enough and AMBIGUOUS when a different candidate is (almost) as close: the
+ * caller then flags the operation instead of guessing. Candidates with identical references (the
+ * two halves OpenCascade splits a full circle into) count as one.
+ */
+function match<T>(refs: T[], cands: T[], dist: (a: T, b: T) => number, tolerance: number): number[] {
   return refs.map((ref) => {
-    let best = -1;
-    let bestD = MATCH_TOLERANCE;
-    edges.forEach((e, i) => {
-      const d = distance(ref, e);
+    let best = NO_MATCH;
+    let bestD = tolerance;
+    cands.forEach((c, i) => {
+      const d = dist(ref, c);
       if (d < bestD) [best, bestD] = [i, d];
     });
+    if (best < 0) return NO_MATCH;
+    for (let i = 0; i < cands.length; i++) {
+      if (i === best || dist(cands[best], cands[i]) < 1e-9) continue;
+      const d = dist(ref, cands[i]);
+      if (d < tolerance && d - bestD < AMBIGUITY) return AMBIGUOUS;
+    }
     return best;
   });
 }
+
+export const matchEdges = (refs: EdgeRef[], edges: EdgeRef[]) => match(refs, edges, distance, MATCH_TOLERANCE);
+export const matchFaces = (refs: FaceRef[], faces: FaceRef[]) => match(refs, faces, faceDistance, FACE_TOLERANCE);
 
 const friendly = (e: unknown, what: string) => {
   const msg = e instanceof Error ? e.message : '';
@@ -437,17 +461,21 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
 
   for (const op of recipe.ops) {
     if (op.suppressed) continue;
-    const infos = realEdges(shape).map((e) => {
-      const info = describeEdge(e, centre, half);
-      e.delete();
-      return info;
-    });
+    const infos = topology(r, shape, centre, half).edges;
     const hit = matchEdges(
       op.edges,
       infos.map((i) => i.ref),
     );
-    if (hit.some((i) => i < 0)) {
+    if (hit.some((i) => i === NO_MATCH)) {
       problems.push({ id: op.id, reason: 'missing-edges', message: 'Some of its edges no longer exist after an earlier change.' });
+      continue;
+    }
+    if (hit.some((i) => i === AMBIGUOUS)) {
+      problems.push({
+        id: op.id,
+        reason: 'ambiguous-edges',
+        message: 'After an earlier change, more than one edge fits equally well, so none was chosen.',
+      });
       continue;
     }
     const chosen = hit.map((i) => infos[i].ref);
@@ -481,15 +509,19 @@ export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): Brep
       positions[i + 1] = mesh.vertices[i + 1] - centre[1];
       positions[i + 2] = mesh.vertices[i + 2] - centre[2];
     }
-    const edges: BrepEdge[] = realEdges(shape).map((e) => {
-      const info = describeEdge(e, centre, half);
-      e.delete();
-      return info;
-    });
+    const topo = topology(r, shape, centre, half);
+    const edges: BrepEdge[] = topo.edges;
+    // OpenCascade meshes face by face; each group names its face by hash code.
+    const faces: BrepFace[] = [];
+    for (const g of mesh.faceGroups) {
+      const fi = topo.faceHashes.indexOf(g.faceId);
+      if (fi >= 0) faces.push({ ref: topo.faces[fi], start: g.start / 3, count: g.count / 3 });
+    }
     return {
       positions,
       indices: Uint32Array.from(mesh.triangles),
       edges,
+      faces,
       volume: r.measureVolume(shape),
       size,
       centre: [...centre] as Vec3,

@@ -92,6 +92,8 @@ export function SketchEditor({
   const drag = useRef<{ id: string; moved: boolean } | null>(null);
   const status = useMemo(() => solveSketch(sketch).status, [sketch]);
   const loops = useMemo(() => sketchLoops(sketch), [sketch]);
+  // Revolves use only the part right of the Y axis (in both geometry engines).
+  const leftOfAxis = useMemo(() => loops.loops.some((l) => l.some((p) => p[0] < -1e-6)), [loops]);
   const useProblem = useMemo(() => (use ? use.check(sketch) : null), [use, sketch]);
   // How many bodies share this body's standalone sketch.
   const shared = useEditor((st) => {
@@ -478,6 +480,20 @@ export function SketchEditor({
               {loops.loops.length} closed outline{loops.loops.length === 1 ? '' : 's'}
               {loops.open ? ` · ${loops.open} open chain${loops.open === 1 ? '' : 's'} (not part of the solid)` : ''}
             </p>
+            {(loops.branches > 0 || loops.crossing || (!use && op.kind === 'revolve' && leftOfAxis)) && (
+              <ul className="mt-2 space-y-1 text-[12px] leading-snug text-amber-800" data-testid="sketch-warnings">
+                {loops.branches > 0 && (
+                  <li>
+                    {loops.branches} point{loops.branches === 1 ? ' joins' : 's join'} more than two curves, so the outline there is
+                    ambiguous. Trim or join the extra curves.
+                  </li>
+                )}
+                {loops.crossing && <li>Outlines cross each other or themselves; the solid may not be what you expect.</li>}
+                {!use && op.kind === 'revolve' && leftOfAxis && (
+                  <li>Part of the outline is left of the green Y axis. A revolve only uses the part to its right.</li>
+                )}
+              </ul>
+            )}
           </section>
           <SelectionPanel sketch={sketch} selected={selected} commit={commit} onDelete={removeSelected} />
           <section className="border-b border-line p-4">

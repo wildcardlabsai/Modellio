@@ -83,7 +83,7 @@ export const useFeatureTool = create<FeatureToolState>((set, get) => {
       const seq = ++previewSeq;
       const { recipe, opId } = recipeWithSession(o.feature, cur);
       try {
-        const build = await buildBrepAsync(solidRequest({ feature: recipe, size: o.size })!);
+        const build = await buildBrepAsync(solidRequest({ feature: recipe, size: o.size })!, { lane: 'fillet-chamfer-preview' });
         if (seq !== previewSeq || !get().session) return;
         const problem = build.problems.find((p) => p.id === opId);
         const now = get().session!;

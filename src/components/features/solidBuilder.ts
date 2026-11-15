@@ -109,7 +109,7 @@ export const useSolidBuilder = create<BuilderState>((set, get) => {
       if (!cur) return;
       const mine = ++seq;
       try {
-        const build = await buildBrepAsync({ recipe: { base: cur.base, ops: [] }, size: [0, 0, 0] });
+        const build = await buildBrepAsync({ recipe: { base: cur.base, ops: [] }, size: [0, 0, 0] }, { lane: 'loft-sweep-preview' });
         if (mine !== seq || !get().session) return;
         const editor = useEditor.getState();
         const existing = cur.editingId ? editor.doc.objects[cur.editingId] : undefined;

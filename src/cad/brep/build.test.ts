@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import type * as Replicad from 'replicad';
-import { buildBrep, matchEdges, sketchOutlines } from './build';
-import { validateRecipe, type BrepBuild, type EdgeRef, type FeatureRecipe } from './types';
+import { AMBIGUOUS, buildBrep, matchEdges, matchFaces, NO_MATCH, sketchOutlines } from './build';
+import { validateRecipe, type BrepBuild, type EdgeRef, type FaceRef, type FeatureRecipe } from './types';
 import type { Sketch } from '@/cad/sketch/types';
 import type { Vec3 } from '@/types/document';
 
@@ -131,6 +131,25 @@ describe('sketch bases', () => {
     const b = build({ base: { kind: 'sketch', sketch: sq, op: 'revolve', depth: 0, angle: 360 }, ops: [] }, [20, 20, 10]);
     near(b.volume, Math.PI * (100 - 25) * 10);
   });
+  it('ignores the part of a revolved profile left of the axis (as the mesh engine does)', () => {
+    const sq: Sketch = {
+      points: [
+        { id: 'a', x: -5, y: 0 },
+        { id: 'b', x: 10, y: 0 },
+        { id: 'c', x: 10, y: 10 },
+        { id: 'd', x: -5, y: 10 },
+      ],
+      entities: [
+        { id: 'l1', kind: 'line', a: 'a', b: 'b' },
+        { id: 'l2', kind: 'line', a: 'b', b: 'c' },
+        { id: 'l3', kind: 'line', a: 'c', b: 'd' },
+        { id: 'l4', kind: 'line', a: 'd', b: 'a' },
+      ],
+      constraints: [],
+    };
+    const b = build({ base: { kind: 'sketch', sketch: sq, op: 'revolve', depth: 0, angle: 360 }, ops: [] }, [20, 20, 10]);
+    near(b.volume, Math.PI * 100 * 10);
+  });
 });
 
 describe('fillet and chamfer', () => {
@@ -144,6 +163,15 @@ describe('fillet and chamfer', () => {
     const b = build({ ...prim('box'), ops: [{ id: 'f1', kind: 'fillet', edges: [edge], radius: 3 }] }, [20, 20, 10]);
     near(b.volume, 4000 - (9 - (Math.PI * 9) / 4) * 20, 1e-6);
     expect(b.edges).toHaveLength(15);
+    expect(b.problems).toEqual([]);
+  });
+
+  it('still applies a fillet saved before edges recorded their faces (MODELLIO 2.2 files)', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const { faces: _faces, ...old } = topFrontEdge(base)!;
+    expect(old).not.toHaveProperty('faces');
+    const b = build({ ...prim('box'), ops: [{ id: 'f1', kind: 'fillet', edges: [old as EdgeRef], radius: 3 }] }, [20, 20, 10]);
+    near(b.volume, 4000 - (9 - (Math.PI * 9) / 4) * 20, 1e-6);
     expect(b.problems).toEqual([]);
   });
 
@@ -220,6 +248,72 @@ describe('edge matching and validation', () => {
     expect(matchEdges([a], [b, { ...a, mid: [0.001, -1, 1] }])).toEqual([1]);
     expect(matchEdges([a], [b])).toEqual([-1]);
     expect(matchEdges([a], [{ ...a, kind: 'circle' }])).toEqual([-1]);
+  });
+  it('uses the faces on either side to tell apart edges in the same place', () => {
+    const up: Vec3 = [0, 0, 1];
+    const side: Vec3 = [0, -1, 0];
+    const inward: Vec3 = [0, 1, 0];
+    const outer: EdgeRef = { kind: 'line', mid: [0, -1, 1], dir: [1, 0, 0], radius: 0, faces: [side, up] };
+    const inner: EdgeRef = { ...outer, mid: [0, -0.995, 1], faces: [inward, up] };
+    expect(matchEdges([outer], [inner, outer])).toEqual([1]);
+    expect(matchEdges([inner], [outer, inner])).toEqual([1]);
+  });
+  it('refuses to guess when two different edges fit equally well', () => {
+    const ref: EdgeRef = { kind: 'line', mid: [0, 0, 1], dir: [1, 0, 0], radius: 0 };
+    const left: EdgeRef = { ...ref, mid: [-0.008, 0, 1] };
+    const right: EdgeRef = { ...ref, mid: [0.008, 0, 1] };
+    expect(matchEdges([ref], [left, right])).toEqual([AMBIGUOUS]);
+    // One clearly better candidate is not ambiguous.
+    expect(matchEdges([ref], [{ ...ref, mid: [0.001, 0, 1] }, right])).toEqual([0]);
+    // Two identical references (a circle's two halves) count as one.
+    expect(matchEdges([ref], [left, left])).toEqual([0]);
+    expect(matchEdges([ref], [{ ...ref, mid: [0.5, 0, 1] }])).toEqual([NO_MATCH]);
+  });
+  it('real edges carry both face normals and are found again after a resize', () => {
+    const a = build(prim('box'), [20, 20, 20]);
+    const b = build(prim('box'), [40, 10, 6]);
+    expect(a.edges).toHaveLength(12);
+    expect(a.edges.every((e) => e.ref.faces?.length === 2)).toBe(true);
+    const hit = matchEdges(
+      a.edges.map((e) => e.ref),
+      b.edges.map((e) => e.ref),
+    );
+    expect(new Set(hit).size).toBe(12);
+    expect(hit.every((i) => i >= 0)).toBe(true);
+  });
+  it('describes faces with their triangles, and finds them again after a resize', () => {
+    const a = build(prim('cylinder'), [20, 20, 10]);
+    // Two flat ends; the side is cylindrical (OpenCascade may split it into halves).
+    expect(a.faces.filter((f) => f.ref.kind === 'plane')).toHaveLength(2);
+    expect(a.faces.filter((f) => f.ref.kind !== 'plane').every((f) => f.ref.kind === 'cylinder')).toBe(true);
+    // Every triangle belongs to exactly one face.
+    expect(a.faces.reduce((n, f) => n + f.count, 0)).toBe(a.indices.length / 3);
+    const top = a.faces.find((f) => f.ref.kind === 'plane' && f.ref.normal[2] > 0.9)!;
+    expect(top.ref.centre[2]).toBeCloseTo(1, 6);
+    const b = build(prim('cylinder'), [30, 30, 25]);
+    const [i] = matchFaces(
+      [top.ref],
+      b.faces.map((f) => f.ref),
+    );
+    expect(b.faces[i].ref.normal[2]).toBeGreaterThan(0.9);
+    // A box's faces are all planes with outward normals.
+    const box = build(prim('box'), [20, 20, 20]);
+    expect(box.faces).toHaveLength(6);
+    for (const f of box.faces) expect(Math.hypot(...f.ref.centre.map((c, k) => c - f.ref.normal[k]))).toBeLessThan(1e-6);
+  });
+  it('refuses to guess between two equally good faces', () => {
+    const ref: FaceRef = { kind: 'plane', centre: [0, 0, 1], normal: [0, 0, 1], area: 1 };
+    expect(
+      matchFaces(
+        [ref],
+        [
+          { ...ref, centre: [-0.01, 0, 1] },
+          { ...ref, centre: [0.01, 0, 1] },
+        ],
+      ),
+    ).toEqual([AMBIGUOUS]);
+    expect(matchFaces([ref], [{ ...ref, normal: [0, 0, -1] }])).toEqual([NO_MATCH]);
+    expect(matchFaces([ref], [{ ...ref, kind: 'cylinder' }])).toEqual([NO_MATCH]);
   });
   it('validates recipes from files', () => {
     expect(validateRecipe(prim('box'))).toBeNull();

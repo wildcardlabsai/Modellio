@@ -1249,7 +1249,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
                 {problem && (
                   <p className="mt-1 flex items-start gap-1 text-amber-800" data-testid="solid-problem">
                     <CircleAlert size={13} className="mt-px shrink-0" />
-                    {problem.reason === 'missing-edges'
+                    {problem.reason === 'missing-edges' || problem.reason === 'ambiguous-edges'
                       ? `Needs attention: ${problem.message} Edit it to pick the edges again.`
                       : problem.message}
                   </p>

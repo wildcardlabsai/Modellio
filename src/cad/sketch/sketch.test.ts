@@ -3,6 +3,7 @@ import { initKernel } from '../kernel/kernel';
 import { validatePart } from '@/split/geometry/split';
 import { solveSketch } from './solver';
 import { buildProfileMesh, sketchLoops } from './profile';
+import { meshMeasures } from '../operations/meshTools';
 import type { Sketch } from './types';
 
 /** A rough rectangle drawn by hand: corners near (0,0), (40,1), (41,22), (-1,20). */
@@ -108,6 +109,27 @@ describe('profiles', () => {
     let area = 0;
     for (let i = 0; i < 4; i++) area += q[i].x * q[(i + 1) % 4].y - q[(i + 1) % 4].x * q[i].y;
     expect(r.volume).toBeCloseTo((Math.abs(area) / 2 - Math.PI * 16) * 5, -1);
+  });
+
+  it('revolves only the part right of the axis (as the exact engine does)', async () => {
+    const s: Sketch = {
+      points: [
+        { id: 'a', x: -5, y: 0 },
+        { id: 'b', x: 10, y: 0 },
+        { id: 'c', x: 10, y: 10 },
+        { id: 'd', x: -5, y: 10 },
+      ],
+      entities: [
+        { id: 'l1', kind: 'line', a: 'a', b: 'b' },
+        { id: 'l2', kind: 'line', a: 'b', b: 'c' },
+        { id: 'l3', kind: 'line', a: 'c', b: 'd' },
+        { id: 'l4', kind: 'line', a: 'd', b: 'a' },
+      ],
+      constraints: [],
+    };
+    const m = buildProfileMesh(await initKernel(), s, { kind: 'revolve', depth: 0, angle: 360 })!;
+    // A solid cylinder r = 10, h = 10 (the part at x < 0 is ignored), within the faceting error.
+    expect(Math.abs(meshMeasures(m).volume - Math.PI * 1000) / (Math.PI * 1000)).toBeLessThan(0.002);
   });
 
   it('revolves a profile around the Y axis into a ring', async () => {

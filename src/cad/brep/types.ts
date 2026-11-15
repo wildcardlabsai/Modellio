@@ -52,6 +52,24 @@ export interface EdgeRef {
   mid: Vec3;
   dir: Vec3;
   radius: number;
+  /**
+   * Outward normals of the two faces that meet at the edge, at its midpoint (in the same
+   * normalised space as `mid`). They tell apart edges that sit close together, e.g. the inner and
+   * outer rim of a thin wall. Absent in references saved before MODELLIO 2.3.
+   */
+  faces?: [Vec3, Vec3];
+}
+
+/**
+ * A face of a solid, described so it can be found again after the part changes (the same idea as
+ * `EdgeRef`): surface kind, centre and outward normal relative to the base's bounding box
+ * (normalised by its half-extents), and area relative to the mean half-extent squared.
+ */
+export interface FaceRef {
+  kind: 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus' | 'other';
+  centre: Vec3;
+  normal: Vec3;
+  area: number;
 }
 
 export type FeatureOp =
@@ -63,6 +81,14 @@ export interface FeatureRecipe {
   ops: FeatureOp[];
 }
 
+/** One face of a built solid: its reference and its triangles in the display mesh (for picking). */
+export interface BrepFace {
+  ref: FaceRef;
+  /** First triangle index (into `indices`, in triangles not indices) and triangle count. */
+  start: number;
+  count: number;
+}
+
 /** One edge of a built solid, for display and picking (object-local mm, centred like the mesh). */
 export interface BrepEdge {
   ref: EdgeRef;
@@ -70,20 +96,25 @@ export interface BrepEdge {
   points: number[];
 }
 
+export type BrepProblemReason = 'missing-edges' | 'ambiguous-edges' | 'missing-faces' | 'ambiguous-faces' | 'failed';
+
 export interface BrepBuild {
   positions: Float32Array;
   indices: Uint32Array;
   edges: BrepEdge[];
+  /** The solid's faces, in mesh order, with their triangles (for face picking). */
+  faces: BrepFace[];
   volume: number;
   /** Size of the solid in mm (X, Y, Z). */
   size: Vec3;
   /** Centre of the base's bounding box in its own coordinates (mesh and edges are relative to it). */
   centre: Vec3;
   /**
-   * Operations that were skipped: their edges could not be found after an edit (never guessed),
-   * or OpenCascade could not make them (e.g. a radius larger than the faces next to the edge).
+   * Operations that were skipped: their edges could not be found after an edit, or more than one
+   * edge fitted equally well (never guessed), or OpenCascade could not make them (e.g. a radius
+   * larger than the faces next to the edge).
    */
-  problems: { id: string; reason: 'missing-edges' | 'failed'; message: string }[];
+  problems: { id: string; reason: BrepProblemReason; message: string }[];
 }
 
 /** The build request: the recipe at the object's current size. */
@@ -99,7 +130,20 @@ const vec3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.
 function validEdgeRef(r: unknown): r is EdgeRef {
   if (typeof r !== 'object' || r === null) return false;
   const e = r as EdgeRef;
-  return (e.kind === 'line' || e.kind === 'circle' || e.kind === 'curve') && vec3(e.mid) && vec3(e.dir) && finite(e.radius);
+  return (
+    (e.kind === 'line' || e.kind === 'circle' || e.kind === 'curve') &&
+    vec3(e.mid) &&
+    vec3(e.dir) &&
+    finite(e.radius) &&
+    (e.faces === undefined || (Array.isArray(e.faces) && e.faces.length === 2 && e.faces.every(vec3)))
+  );
+}
+
+const FACE_KINDS: FaceRef['kind'][] = ['plane', 'cylinder', 'cone', 'sphere', 'torus', 'other'];
+export function validFaceRef(r: unknown): r is FaceRef {
+  if (typeof r !== 'object' || r === null) return false;
+  const f = r as FaceRef;
+  return FACE_KINDS.includes(f.kind) && vec3(f.centre) && vec3(f.normal) && finite(f.area) && f.area >= 0;
 }
 
 /** Check a recipe read from a file or a share link. Returns an error message, or null when valid. */
