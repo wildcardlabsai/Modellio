@@ -252,7 +252,7 @@ for (const [x, y] of [
   await click(x, y);
 check('15. The spline tool draws one Bézier per span', (await page.getByTestId('sketch-spline').count()) === 4);
 check('16. Each span has two handles', (await page.getByTestId('sketch-handle').count()) === 8);
-const outlines = async () => (await page.getByTestId('sketch-status').locator('xpath=following-sibling::p').first().textContent()) ?? '';
+const outlines = async () => (await page.getByTestId('sketch-outlines').textContent()) ?? '';
 check('17. Clicking the first point closes it into an outline', /^1 closed outline/.test(await outlines()), await outlines());
 const handlesNow = () =>
   S(() =>
@@ -366,6 +366,96 @@ check('27. The label shows the new value', ((await dims.allTextContents()) ?? []
 await editDim(1, -3);
 check('28. A negative length is refused', /not a valid size/.test((await page.getByTestId('sketch-notice').textContent()) ?? ''));
 await page.screenshot({ path: `${OUT}/sketching-05-dimensions.png` });
+await page.getByRole('button', { name: 'Close sketch without saving' }).click();
+
+// 7. Editing tools: trim, extend, fillet, chamfer and offset, each previewed before the click.
+await page.getByTestId('new-sketch').click();
+await editor().waitFor();
+await tool('Rectangle');
+await click(0, 0);
+await click(30, 20);
+await tool('Line');
+await click(10, -5);
+await click(10, 25);
+await page.keyboard.press('Escape');
+await tool('Line');
+await click(-20, 10);
+await click(-10, 10);
+await page.keyboard.press('Escape');
+const counts = async () => ({
+  lines: await page.getByTestId('sketch-line').count(),
+  arcs: await page.getByTestId('sketch-arc').count(),
+});
+const hoverAt = async (x, y) => {
+  const [sx, sy] = await toScreen(x, y);
+  await page.mouse.move(sx, sy);
+  await page.waitForTimeout(100);
+};
+const lineThrough = (pts, pred) => pts.lines.find(pred);
+// Trim the part of the vertical line above the rectangle.
+await tool('Trim');
+await hoverAt(10, 23);
+check(
+  '29. Trim shows what it will cut before the click',
+  (await page.locator('[data-preview="remove"]').count()) >= 1 && (await page.locator('[data-preview="add"]').count()) >= 1,
+);
+await click(10, 23);
+let dd = await drawn();
+const vert = lineThrough(dd, ([a, b]) => Math.abs(a[0] - 10) < 1e-6 && Math.abs(b[0] - 10) < 1e-6);
+check(
+  '30. Trim cuts the line back to where it crosses the rectangle',
+  vert && Math.abs(Math.max(vert[0][1], vert[1][1]) - 20) < 1e-6 && Math.abs(Math.min(vert[0][1], vert[1][1]) + 5) < 1e-6,
+  JSON.stringify(vert),
+);
+check('31. It says what it did', /Trimmed/.test((await page.getByTestId('sketch-info').textContent()) ?? ''));
+// Extend the short line on to the rectangle's left side.
+await tool('Extend');
+await click(-11, 10);
+dd = await drawn();
+const ext = lineThrough(dd, ([a, b]) => Math.abs(a[1] - 10) < 1e-6 && Math.abs(b[1] - 10) < 1e-6 && Math.min(a[0], b[0]) < -19);
+check('32. Extend runs the line on to the next curve', ext && Math.abs(Math.max(ext[0][0], ext[1][0])) < 1e-6, JSON.stringify(ext));
+// Fillet the bottom-right corner; a radius too big is refused with the reason, before and on click.
+await tool('Fillet');
+const r0 = page.getByLabel('Fillet radius (mm)', { exact: true });
+await r0.fill('50');
+await r0.press('Enter');
+await hoverAt(0, 20);
+const why = (await page.getByTestId('sketch-edit-refusal').textContent()) ?? '';
+check('33. A fillet too big for the lines is refused before the click, with the reason', /too big for these lines/.test(why), why);
+const k0 = await counts();
+await click(0, 20);
+check(
+  '34. Clicking anyway changes nothing and says why',
+  JSON.stringify(await counts()) === JSON.stringify(k0) && /too big/.test((await page.getByTestId('sketch-notice').textContent()) ?? ''),
+);
+await r0.fill('3');
+await r0.press('Enter');
+await click(30, 0);
+const k1 = await counts();
+check('35. A fillet adds a tangent arc at the corner', k1.arcs === 1 && k1.lines === k0.lines, JSON.stringify(k1));
+check('36. The sketch still solves', !/Conflicting/.test(await status()), await status());
+// Chamfer the bottom-left corner.
+await tool('Chamfer');
+await click(0, 0);
+check('37. A chamfer adds a line across the corner', (await counts()).lines === k1.lines + 1);
+// Offset the whole outline outward by 2 mm.
+await tool('Offset');
+await click(15, 0);
+await hoverAt(15, -10);
+check('38. Offset previews the copy', (await page.locator('[data-preview="add"]').count()) === 6);
+await page.getByTestId('sketch-offset-apply').click();
+dd = await drawn();
+const xs = dd.lines.flatMap(([a, b]) => [a[0], b[0]]);
+const ys = dd.lines.flatMap(([a, b]) => [a[1], b[1]]);
+check(
+  '39. Offset adds a copy 2 mm outside, joined at the corners',
+  (await counts()).arcs === 2 && Math.abs(Math.max(...ys) - 22) < 1e-6 && Math.abs(Math.max(...xs) - 32) < 1e-6,
+  `${Math.max(...xs)}, ${Math.max(...ys)}`,
+);
+check('40. Both outlines are closed', /^2 closed outlines/.test(await outlines()), await outlines());
+await page.screenshot({ path: `${OUT}/sketching-06-edit-tools.png` });
+await page.keyboard.press('Control+z');
+check('41. One undo removes the offset', (await counts()).arcs === 1);
 await page.getByRole('button', { name: 'Close sketch without saving' }).click();
 
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));

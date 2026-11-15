@@ -1,16 +1,34 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { Circle, Hexagon, MousePointer2, PenTool, Redo2, Slash, Spline, Square, Trash2, Undo2, X } from 'lucide-react';
+import {
+  ArrowRightToLine,
+  Circle,
+  CopyPlus,
+  Hexagon,
+  MousePointer2,
+  PenTool,
+  Redo2,
+  Scissors,
+  Slash,
+  Spline,
+  Square,
+  SquareRoundCorner,
+  Trash2,
+  Triangle,
+  Undo2,
+  X,
+} from 'lucide-react';
 import { NumberField } from '@/components/ui/NumberField';
 import { useEditor } from '@/store/editorStore';
 import { sketchUsers } from '@/cad/sketchRecords';
 import { entityPoints, solveSketch, tryConstraint } from '@/cad/sketch/solver';
 import { constraintRefs, describeConstraint, nameConstraints } from '@/cad/sketch/describe';
-import { extendSpline, handleAt, mergePoints } from '@/cad/sketch/edit';
+import { cornerAt, extendAt, extendSpline, handleAt, mergePoints, offsetChain, trimAt, type EditResult } from '@/cad/sketch/edit';
 import { dimensionMarks, type DimensionMark } from '@/cad/sketch/dimensions';
 import { sketchLoops, type ProfileOp } from '@/cad/sketch/profile';
 import { emptySketch, type Constraint, type Sketch, type SketchEntity, type SketchStatus } from '@/cad/sketch/types';
 
-type Tool = 'select' | 'line' | 'spline' | 'rect' | 'circle' | 'arc' | 'polygon';
+type Tool = 'select' | 'line' | 'spline' | 'rect' | 'circle' | 'arc' | 'polygon' | EditTool;
+type EditTool = 'trim' | 'extend' | 'offset' | 'fillet' | 'chamfer';
 const TOOLS: { id: Tool; label: string; Icon: typeof Slash; hint: string }[] = [
   { id: 'select', label: 'Select', Icon: MousePointer2, hint: 'Click to select, Shift-click for more; drag points to move them.' },
   { id: 'line', label: 'Line', Icon: Slash, hint: 'Click points to draw connected lines. Click the first point to close; Esc to stop.' },
@@ -25,6 +43,21 @@ const TOOLS: { id: Tool; label: string; Icon: typeof Slash; hint: string }[] = [
   { id: 'arc', label: 'Arc', Icon: Spline, hint: 'Click the centre, the start, then the end (anticlockwise).' },
   { id: 'polygon', label: 'Polygon', Icon: Hexagon, hint: 'Click the centre, then a corner.' },
 ];
+/** Tools that change existing geometry. Each shows the result before you click. */
+const EDIT_TOOLS: { id: EditTool; label: string; Icon: typeof Slash; hint: string }[] = [
+  { id: 'trim', label: 'Trim', Icon: Scissors, hint: 'Click the part of a curve to cut away (up to where it crosses other curves).' },
+  { id: 'extend', label: 'Extend', Icon: ArrowRightToLine, hint: 'Click a line near the end to run it on to the next curve.' },
+  {
+    id: 'offset',
+    label: 'Offset',
+    Icon: CopyPlus,
+    hint: 'Click a chain of lines and arcs (or a circle), set the distance, then Apply. Negative goes the other way.',
+  },
+  { id: 'fillet', label: 'Fillet', Icon: SquareRoundCorner, hint: 'Click a corner where two lines meet to round it.' },
+  { id: 'chamfer', label: 'Chamfer', Icon: Triangle, hint: 'Click a corner where two lines meet to bevel it.' },
+];
+const isEditTool = (t: Tool): t is EditTool => EDIT_TOOLS.some((x) => x.id === t);
+const ALL_TOOLS = [...TOOLS, ...EDIT_TOOLS];
 
 let seq = 0;
 const nid = (p: string) => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -116,6 +149,10 @@ export function SketchEditor({
   );
   /** Why the last constraint or dimension was refused (nothing changed). */
   const [notice, setNotice] = useState<string | null>(null);
+  /** What the last editing tool did (shown until the next change). */
+  const [info, setInfo] = useState<string | null>(null);
+  /** Sizes for the editing tools: fillet radius, chamfer distance, offset distance (mm). */
+  const [editSize, setEditSize] = useState({ fillet: 2, chamfer: 1, offset: 2 });
   /** The dimension being edited on the canvas. */
   const [editingDim, setEditingDim] = useState<string | null>(null);
   const loops = useMemo(() => sketchLoops(sketch), [sketch]);
@@ -132,6 +169,7 @@ export function SketchEditor({
   const commit = (next: Sketch, opts: { pinned?: string[]; transient?: boolean } = {}) => {
     const solved = solveSketch(next, opts.pinned).sketch;
     setNotice(null);
+    setInfo(null);
     if (!opts.transient) {
       setPast((p) => [...p.slice(-99), sketch]);
       setFuture([]);
@@ -232,6 +270,48 @@ export function SketchEditor({
     constraints: [...s.constraints, ...constraints],
   });
 
+  /** What an editing tool would do at (x, y), or null when nothing is under the cursor. */
+  const editAt = (t: EditTool, x: number, y: number): EditResult | null => {
+    if (t === 'fillet' || t === 'chamfer') {
+      const p = pointAt(x, y);
+      return p ? cornerAt(sketch, p, t, editSize[t], nid) : null;
+    }
+    if (t === 'offset') return sel.length ? offsetChain(sketch, sel, editSize.offset, nid) : null;
+    const ent = entityAt(sketch, x, y, 6 * px);
+    if (!ent) return null;
+    return t === 'trim' ? trimAt(sketch, ent, [x, y], nid) : extendAt(sketch, ent, [x, y]);
+  };
+  /** Apply an editing tool's result: one undo step, with what happened (or why not) shown. */
+  const applyEdit = (r: EditResult | null) => {
+    if (!r) return;
+    if (!r.ok) {
+      setNotice(`${r.reason} Nothing was changed.`);
+      return;
+    }
+    commit(r.sketch);
+    setSel([]);
+    setInfo(r.message);
+  };
+  /** The chain of lines and arcs joined to entity `id` (stopping where curves branch). */
+  const chainOf = (id: string): string[] => {
+    const e0 = sketch.entities.find((e) => e.id === id);
+    if (!e0 || e0.kind === 'circle' || e0.kind === 'bezier') return e0 ? [id] : [];
+    const out = new Set([id]);
+    const ends = (e: SketchEntity) => (e.kind === 'line' || e.kind === 'arc' ? [e.a, e.b] : []);
+    const queue = [...ends(e0)];
+    while (queue.length) {
+      const p = queue.pop()!;
+      const at = sketch.entities.filter((e) => (e.kind === 'line' || e.kind === 'arc') && (e.a === p || e.b === p) && !e.construction);
+      if (at.length !== 2) continue;
+      for (const e of at)
+        if (!out.has(e.id)) {
+          out.add(e.id);
+          queue.push(...ends(e));
+        }
+    }
+    return [...out];
+  };
+
   const onDown = (e: RPointerEvent<SVGSVGElement>) => {
     if (e.button === 2) {
       setPending([]);
@@ -249,10 +329,23 @@ export function SketchEditor({
         return;
       }
       setSel((cur) => (e.shiftKey ? (cur.includes(id) ? cur.filter((c) => c !== id) : [...cur, id]) : [id]));
+      setInfo(null);
       if (p) {
         drag.current = { id: p, moved: false };
         svg.current!.setPointerCapture(e.pointerId);
       }
+      return;
+    }
+    if (tool === 'offset') {
+      // Pick what to offset: a click takes the whole joined chain, Shift-click adds or removes one curve.
+      const ent = entityAt(sketch, x, y, 6 * px);
+      setNotice(null);
+      if (!ent) return setSel([]);
+      setSel((cur) => (e.shiftKey ? (cur.includes(ent) ? cur.filter((c) => c !== ent) : [...cur, ent]) : chainOf(ent)));
+      return;
+    }
+    if (isEditTool(tool)) {
+      applyEdit(editAt(tool, x, y));
       return;
     }
     const [s0, id] = pointOrNew(sketch, x, y);
@@ -421,6 +514,9 @@ export function SketchEditor({
     setView((v) => ({ minX: x - (x - v.minX) * k, minY: y - (y - v.minY) * k, w: v.w * k, h: v.h * k }));
   };
 
+  // What the editing tool under the cursor would do: drawn before you click.
+  const editPreview =
+    isEditTool(tool) && (tool === 'offset' ? sel.length > 0 : !!hover) ? editAt(tool, hover?.[0] ?? 0, hover?.[1] ?? 0) : null;
   const selected = sel.map((id) => sketch.entities.find((e) => e.id === id) ?? sketch.points.find((p) => p.id === id)).filter(Boolean);
   return (
     <div
@@ -432,22 +528,61 @@ export function SketchEditor({
     >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
         <h2 className="mr-2 text-[14px] font-semibold text-ink">{use?.title ?? 'Sketch'}</h2>
-        <div role="toolbar" aria-label="Sketch tools" className="flex items-center gap-1">
-          {TOOLS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              aria-pressed={tool === t.id}
-              title={t.hint}
-              onClick={() => {
-                setTool(t.id);
-                setPending([]);
-              }}
-              className={`flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium ${tool === t.id ? 'bg-brand-50 text-brand-ink' : 'text-ink-2 hover:bg-canvas'}`}
-            >
-              <t.Icon size={15} /> {t.label}
-            </button>
-          ))}
+        <div role="toolbar" aria-label="Sketch tools" className="flex min-w-0 items-center gap-1 overflow-x-auto">
+          {[...TOOLS, null, ...EDIT_TOOLS].map((t) =>
+            !t ? (
+              <span key="sep" className="mx-1 h-6 w-px bg-line" aria-hidden />
+            ) : (
+              <button
+                key={t.id}
+                type="button"
+                aria-pressed={tool === t.id}
+                aria-label={t.label}
+                title={`${t.label}: ${t.hint}`}
+                onClick={() => {
+                  setTool(t.id);
+                  setPending([]);
+                  setNotice(null);
+                  if (t.id !== 'offset') setSel([]);
+                }}
+                className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium ${tool === t.id ? 'bg-brand-50 text-brand-ink' : 'text-ink-2 hover:bg-canvas'}`}
+              >
+                <t.Icon size={15} />
+                {/* Editing tools show their names on wide screens (the tooltip always does). */}
+                <span className={isEditTool(t.id) ? 'hidden 2xl:inline' : ''}>{t.label}</span>
+              </button>
+            ),
+          )}
+          {(tool === 'fillet' || tool === 'chamfer' || tool === 'offset') && (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="w-[110px]">
+                <NumberField
+                  value={editSize[tool]}
+                  onCommit={(v) => setEditSize((z) => ({ ...z, [tool]: v }))}
+                  min={tool === 'offset' ? -1000 : 0.01}
+                  max={1000}
+                  step={0.5}
+                  decimals={2}
+                  suffix="mm"
+                  ariaLabel={
+                    tool === 'fillet' ? 'Fillet radius (mm)' : tool === 'chamfer' ? 'Chamfer distance (mm)' : 'Offset distance (mm)'
+                  }
+                  label={tool === 'fillet' ? 'R' : 'D'}
+                />
+              </div>
+              {tool === 'offset' && (
+                <button
+                  type="button"
+                  disabled={!editPreview?.ok}
+                  onClick={() => applyEdit(editPreview)}
+                  className="h-8 rounded-lg bg-brand px-3 text-[13px] font-semibold text-white hover:bg-brand-600 disabled:opacity-40"
+                  data-testid="sketch-offset-apply"
+                >
+                  Apply offset
+                </button>
+              )}
+            </div>
+          )}
           {tool === 'polygon' && (
             <div className="w-[90px]">
               <NumberField value={sides} onCommit={setSides} min={3} max={64} step={1} integer ariaLabel="Polygon sides" suffix="sides" />
@@ -533,6 +668,7 @@ export function SketchEditor({
                 setEditingDim(id);
               }}
             />
+            {editPreview?.ok && <EditPreview before={sketch} after={editPreview.sketch} px={px} />}
             {/* Spline handles: a thin line from the anchor to a square you can drag. */}
             {[...handles].map(([h, a]) => {
               const [hp, ap] = [sketch.points.find((p) => p.id === h), sketch.points.find((p) => p.id === a)];
@@ -585,8 +721,16 @@ export function SketchEditor({
               onInvalid={(why) => setNotice(why)}
             />
           )}
+          {editPreview && !editPreview.ok && (
+            <p
+              className="pointer-events-none absolute left-1/2 top-3 max-w-[70%] -translate-x-1/2 rounded-lg bg-amber-50 px-3 py-1.5 text-center text-[12px] text-amber-900 shadow"
+              data-testid="sketch-edit-refusal"
+            >
+              {editPreview.reason}
+            </p>
+          )}
           <p className="pointer-events-none absolute bottom-2 left-3 font-mono text-[11px] text-ink-3">
-            {TOOLS.find((t) => t.id === tool)!.hint} · Scroll to zoom
+            {ALL_TOOLS.find((t) => t.id === tool)!.hint} · Scroll to zoom
             {hover ? ` · ${hover[0].toFixed(1)}, ${hover[1].toFixed(1)} mm` : ''}
           </p>
         </div>
@@ -595,6 +739,15 @@ export function SketchEditor({
             <p className={`rounded-lg px-3 py-2 text-[13px] font-medium ${statusTone(status)}`} data-testid="sketch-status">
               {statusText(status, sketch)}
             </p>
+            {info && !notice && (
+              <p
+                className="mt-2 rounded-lg bg-canvas px-3 py-2 text-[12px] leading-snug text-ink-2"
+                role="status"
+                data-testid="sketch-info"
+              >
+                {info}
+              </p>
+            )}
             {notice && (
               <p
                 className="mt-2 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-[12px] leading-snug text-red-800"
@@ -607,7 +760,7 @@ export function SketchEditor({
                 </button>
               </p>
             )}
-            <p className="mt-2 text-[12px] text-muted">
+            <p className="mt-2 text-[12px] text-muted" data-testid="sketch-outlines">
               {loops.loops.length} closed outline{loops.loops.length === 1 ? '' : 's'}
               {loops.open ? ` · ${loops.open} open chain${loops.open === 1 ? '' : 's'} (not part of the solid)` : ''}
             </p>
@@ -1149,6 +1302,7 @@ function EntityShape({
   px,
   selected,
   problem,
+  tone,
 }: {
   e: SketchEntity;
   sketch: Sketch;
@@ -1156,27 +1310,48 @@ function EntityShape({
   selected: boolean;
   /** Part of a conflict: drawn red. */
   problem?: boolean;
+  /** In an edit preview: what would be removed, or added. */
+  tone?: 'remove' | 'add';
 }) {
   const P = (id: string) => sketch.points.find((p) => p.id === id)!;
-  const stroke = selected ? '#2463EB' : problem ? '#DC2626' : e.construction ? '#98A2B3' : '#101828';
+  const stroke =
+    tone === 'remove'
+      ? '#DC2626'
+      : tone === 'add'
+        ? '#2463EB'
+        : selected
+          ? '#2463EB'
+          : problem
+            ? '#DC2626'
+            : e.construction
+              ? '#98A2B3'
+              : '#101828';
   const common = {
     stroke,
-    strokeWidth: (selected ? 2.2 : 1.5) * px,
+    strokeWidth: (tone ? 2.6 : selected ? 2.2 : 1.5) * px,
+    strokeOpacity: tone === 'remove' ? 0.55 : 1,
     fill: 'none',
-    strokeDasharray: e.construction ? `${4 * px} ${3 * px}` : undefined,
+    strokeDasharray: e.construction || tone === 'remove' ? `${4 * px} ${3 * px}` : undefined,
+    ...(tone ? { 'data-preview': tone } : {}),
   };
   if (e.kind === 'line') {
     const a = P(e.a);
     const b = P(e.b);
-    return <line x1={a.x} y1={-a.y} x2={b.x} y2={-b.y} {...common} data-testid="sketch-line" />;
+    return <line x1={a.x} y1={-a.y} x2={b.x} y2={-b.y} {...common} data-testid={tone ? undefined : 'sketch-line'} />;
   }
   if (e.kind === 'circle') {
     const c = P(e.c);
-    return <circle cx={c.x} cy={-c.y} r={e.r} {...common} data-testid="sketch-circle" />;
+    return <circle cx={c.x} cy={-c.y} r={e.r} {...common} data-testid={tone ? undefined : 'sketch-circle'} />;
   }
   if (e.kind === 'bezier') {
     const [a, h1, h2, b] = [P(e.a), P(e.c1), P(e.c2), P(e.b)];
-    return <path d={`M ${a.x} ${-a.y} C ${h1.x} ${-h1.y} ${h2.x} ${-h2.y} ${b.x} ${-b.y}`} {...common} data-testid="sketch-spline" />;
+    return (
+      <path
+        d={`M ${a.x} ${-a.y} C ${h1.x} ${-h1.y} ${h2.x} ${-h2.y} ${b.x} ${-b.y}`}
+        {...common}
+        data-testid={tone ? undefined : 'sketch-spline'}
+      />
+    );
   }
   const c = P(e.c);
   const a = P(e.a);
@@ -1185,7 +1360,13 @@ function EntityShape({
   let sweep = Math.atan2(b.y - c.y, b.x - c.x) - Math.atan2(a.y - c.y, a.x - c.x);
   while (sweep <= 0) sweep += 2 * Math.PI;
   // SVG y is flipped, so a counter-clockwise arc in sketch space is sweep-flag 0.
-  return <path d={`M ${a.x} ${-a.y} A ${r} ${r} 0 ${sweep > Math.PI ? 1 : 0} 0 ${b.x} ${-b.y}`} {...common} data-testid="sketch-arc" />;
+  return (
+    <path
+      d={`M ${a.x} ${-a.y} A ${r} ${r} 0 ${sweep > Math.PI ? 1 : 0} 0 ${b.x} ${-b.y}`}
+      {...common}
+      data-testid={tone ? undefined : 'sketch-arc'}
+    />
+  );
 }
 
 /** Constraint symbols, one label per line or circle (e.g. "H", "T · ∥"). Values are drawn as dimensions. */
@@ -1233,6 +1414,35 @@ function ConstraintMarks({ sketch, px }: { sketch: Sketch; px: number }) {
  * The sketch's dimensions, drawn like a drawing's: lines offset from the geometry with the value
  * as a label. Click a label to type a new value (the sketch is re-solved).
  */
+/** Geometry of an entity (its kind and point positions), to see what an edit changes. */
+function geomKey(s: Sketch, e: SketchEntity): string {
+  const P = (id: string) => {
+    const p = s.points.find((q) => q.id === id);
+    return p ? `${p.x.toFixed(6)},${p.y.toFixed(6)}` : '?';
+  };
+  return `${e.kind}:${entityPoints(e).map(P).join(';')}${e.kind === 'circle' ? `:${e.r.toFixed(6)}` : ''}`;
+}
+
+/** An editing tool's result before it is applied: what goes in red, what it becomes in blue. */
+function EditPreview({ before, after, px }: { before: Sketch; after: Sketch; px: number }) {
+  const was = new Set(before.entities.map((e) => geomKey(before, e)));
+  const now = new Set(after.entities.map((e) => geomKey(after, e)));
+  return (
+    <g pointerEvents="none" data-testid="sketch-edit-preview">
+      {before.entities
+        .filter((e) => !now.has(geomKey(before, e)))
+        .map((e) => (
+          <EntityShape key={`r${e.id}`} e={e} sketch={before} px={px} selected={false} tone="remove" />
+        ))}
+      {after.entities
+        .filter((e) => !was.has(geomKey(after, e)))
+        .map((e) => (
+          <EntityShape key={`a${e.id}`} e={e} sketch={after} px={px} selected={false} tone="add" />
+        ))}
+    </g>
+  );
+}
+
 function Dimensions({
   marks,
   px,
