@@ -894,7 +894,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         get().notify(
           op.kind === 'revolve'
             ? 'Nothing to revolve: draw a closed outline to the right of the Y axis.'
-            : 'Draw a closed outline first: lines and arcs that join up, or a circle.',
+            : 'Draw a closed outline first: lines, arcs and splines that join up, or a circle.',
         );
         return null;
       }

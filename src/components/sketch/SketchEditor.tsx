@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { Circle, Hexagon, MousePointer2, Redo2, Slash, Spline, Square, Trash2, Undo2, X } from 'lucide-react';
+import { Circle, Hexagon, MousePointer2, PenTool, Redo2, Slash, Spline, Square, Trash2, Undo2, X } from 'lucide-react';
 import { NumberField } from '@/components/ui/NumberField';
 import { useEditor } from '@/store/editorStore';
 import { sketchUsers } from '@/cad/sketchRecords';
 import { entityPoints, solveSketch, tryConstraint } from '@/cad/sketch/solver';
 import { constraintRefs, describeConstraint, nameConstraints } from '@/cad/sketch/describe';
-import { mergePoints } from '@/cad/sketch/edit';
+import { extendSpline, handleAt, mergePoints } from '@/cad/sketch/edit';
 import { sketchLoops, type ProfileOp } from '@/cad/sketch/profile';
 import { emptySketch, type Constraint, type Sketch, type SketchEntity, type SketchStatus } from '@/cad/sketch/types';
 
-type Tool = 'select' | 'line' | 'rect' | 'circle' | 'arc' | 'polygon';
+type Tool = 'select' | 'line' | 'spline' | 'rect' | 'circle' | 'arc' | 'polygon';
 const TOOLS: { id: Tool; label: string; Icon: typeof Slash; hint: string }[] = [
   { id: 'select', label: 'Select', Icon: MousePointer2, hint: 'Click to select, Shift-click for more; drag points to move them.' },
   { id: 'line', label: 'Line', Icon: Slash, hint: 'Click points to draw connected lines. Click the first point to close; Esc to stop.' },
+  {
+    id: 'spline',
+    label: 'Spline',
+    Icon: PenTool,
+    hint: 'Click points for a smooth curve through them. Click the first point to close; Esc to stop. Drag the square handles to shape it.',
+  },
   { id: 'rect', label: 'Rectangle', Icon: Square, hint: 'Click two opposite corners.' },
   { id: 'circle', label: 'Circle', Icon: Circle, hint: 'Click the centre, then a point on the circle.' },
   { id: 'arc', label: 'Arc', Icon: Spline, hint: 'Click the centre, the start, then the end (anticlockwise).' },
@@ -194,8 +200,19 @@ export function SketchEditor({
     return [p.x, -p.y];
   };
   /** A point under the cursor (within 8 px), for snapping onto and selecting. */
+  /** Spline handles, and the anchor each belongs to (drawn as squares, only picked when selecting). */
+  const handles = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of sketch.entities)
+      if (e.kind === 'bezier') {
+        m.set(e.c1, e.a);
+        m.set(e.c2, e.b);
+      }
+    return m;
+  }, [sketch.entities]);
   const pointAt = (x: number, y: number, except?: string) =>
-    sketch.points.find((p) => p.id !== except && Math.hypot(p.x - x, p.y - y) < 8 * px)?.id ?? null;
+    sketch.points.find((p) => p.id !== except && (tool === 'select' || !handles.has(p.id)) && Math.hypot(p.x - x, p.y - y) < 8 * px)?.id ??
+    null;
   const pos = (id: string) => sketch.points.find((p) => p.id === id)!;
 
   /** A point at (x, y): an existing one under the cursor, or a new one on the 0.5 mm grid. */
@@ -245,6 +262,14 @@ export function SketchEditor({
         const closed = id === pending[0] && pending.length > 1;
         setPending(closed ? [] : [id]);
       } else setPending([id]);
+      commit(s);
+      return;
+    }
+    if (tool === 'spline') {
+      const last = pending[pending.length - 1];
+      if (last && last !== id) s = extendSpline(s, pending, id, nid, construction);
+      const closed = pending.length > 1 && id === pending[0];
+      setPending(closed ? [] : last === id ? pending : [...pending, id]);
       commit(s);
       return;
     }
@@ -340,7 +365,7 @@ export function SketchEditor({
     d.moved = true;
     commit(
       { ...sketch, points: sketch.points.map((p) => (p.id === d.id ? { ...p, x: sx, y: sy } : p)) },
-      { pinned: [d.id], transient: true },
+      { pinned: handles.has(d.id) ? [d.id, handles.get(d.id)!] : [d.id], transient: true },
     );
   };
   const onUp = () => {
@@ -495,18 +520,41 @@ export function SketchEditor({
               <EntityShape key={e.id} e={e} sketch={sketch} px={px} selected={sel.includes(e.id)} problem={culpritRefs.has(e.id)} />
             ))}
             <ConstraintMarks sketch={sketch} px={px} />
-            {sketch.points.map((p) => (
-              <circle
-                key={p.id}
-                cx={p.x}
-                cy={-p.y}
-                r={(sel.includes(p.id) ? 4 : 3) * px}
-                fill={p.fixed ? '#101828' : sel.includes(p.id) ? '#2463EB' : '#fff'}
-                stroke="#2463EB"
-                strokeWidth={1.4 * px}
-                data-testid="sketch-point"
-              />
-            ))}
+            {/* Spline handles: a thin line from the anchor to a square you can drag. */}
+            {[...handles].map(([h, a]) => {
+              const [hp, ap] = [sketch.points.find((p) => p.id === h), sketch.points.find((p) => p.id === a)];
+              if (!hp || !ap) return null;
+              const on = sel.includes(h);
+              return (
+                <g key={h}>
+                  <line x1={ap.x} y1={-ap.y} x2={hp.x} y2={-hp.y} stroke="#7C3AED" strokeOpacity={0.6} strokeWidth={px} />
+                  <rect
+                    x={hp.x - 3 * px}
+                    y={-hp.y - 3 * px}
+                    width={6 * px}
+                    height={6 * px}
+                    fill={on ? '#7C3AED' : '#fff'}
+                    stroke="#7C3AED"
+                    strokeWidth={1.3 * px}
+                    data-testid="sketch-handle"
+                  />
+                </g>
+              );
+            })}
+            {sketch.points
+              .filter((p) => !handles.has(p.id))
+              .map((p) => (
+                <circle
+                  key={p.id}
+                  cx={p.x}
+                  cy={-p.y}
+                  r={(sel.includes(p.id) ? 4 : 3) * px}
+                  fill={p.fixed ? '#101828' : sel.includes(p.id) ? '#2463EB' : '#fff'}
+                  stroke="#2463EB"
+                  strokeWidth={1.4 * px}
+                  data-testid="sketch-point"
+                />
+              ))}
             {pending.length > 0 && hover && <Preview tool={tool} sketch={sketch} pending={pending} hover={hover} px={px} sides={sides} />}
           </svg>
           <p className="pointer-events-none absolute bottom-2 left-3 font-mono text-[11px] text-ink-3">
@@ -914,6 +962,7 @@ function SelectionPanel({
             >
               {points[0].fixed ? 'Unfix point' : 'Fix point'}
             </button>
+            <SplineJoint sketch={sketch} point={points[0].id} commit={commit} addConstraint={addConstraint} btn={btn} />
           </>
         )}
         {only(0, 0, 2) && (
@@ -950,6 +999,55 @@ function SelectionPanel({
         <Trash2 size={13} /> Delete
       </button>
     </section>
+  );
+}
+
+/**
+ * At a spline anchor where two curves meet: "Make corner" frees the join (removes its smooth or
+ * tangent constraint); "Make smooth" lines the curves up again (smooth handles between two
+ * splines, tangent between a spline and a line or arc).
+ */
+function SplineJoint({
+  sketch,
+  point,
+  commit,
+  addConstraint,
+  btn,
+}: {
+  sketch: Sketch;
+  point: string;
+  commit: (s: Sketch) => void;
+  addConstraint: (c: Constraint) => void;
+  btn: string;
+}) {
+  const curves = sketch.entities.filter((e) => e.kind !== 'circle' && (e.a === point || e.b === point));
+  const splines = curves.filter((e): e is Extract<SketchEntity, { kind: 'bezier' }> => e.kind === 'bezier');
+  if (!splines.length || curves.length !== 2) return null;
+  const joins = sketch.constraints.filter((c) => (c.kind === 'smooth' && c.point === point) || (c.kind === 'tangent' && c.at === point));
+  if (joins.length)
+    return (
+      <button
+        type="button"
+        className={btn}
+        onClick={() => commit({ ...sketch, constraints: sketch.constraints.filter((c) => !joins.includes(c)) })}
+      >
+        Make corner
+      </button>
+    );
+  return (
+    <button
+      type="button"
+      className={btn}
+      onClick={() =>
+        addConstraint(
+          splines.length === 2
+            ? { id: nid('c'), kind: 'smooth', point, h1: handleAt(splines[0], point), h2: handleAt(splines[1], point) }
+            : { id: nid('c'), kind: 'tangent', e1: splines[0].id, e2: curves.find((c) => c.kind !== 'bezier')!.id, at: point },
+        )
+      }
+    >
+      Make smooth
+    </button>
   );
 }
 
@@ -1136,7 +1234,7 @@ function Preview({
   const last = sketch.points.find((p) => p.id === pending[pending.length - 1])!;
   const s = { stroke: '#2463EB', strokeWidth: 1.2 * px, fill: 'none', strokeDasharray: `${3 * px} ${2 * px}` };
   const [hx, hy] = [snapGrid(hover[0]), snapGrid(hover[1])];
-  if (tool === 'line') return <line x1={last.x} y1={-last.y} x2={hx} y2={-hy} {...s} />;
+  if (tool === 'line' || tool === 'spline') return <line x1={last.x} y1={-last.y} x2={hx} y2={-hy} {...s} />;
   if (tool === 'rect')
     return <rect x={Math.min(p0.x, hx)} y={-Math.max(p0.y, hy)} width={Math.abs(hx - p0.x)} height={Math.abs(hy - p0.y)} {...s} />;
   if (tool === 'circle') return <circle cx={p0.x} cy={-p0.y} r={Math.hypot(hx - p0.x, hy - p0.y)} {...s} />;

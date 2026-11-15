@@ -238,6 +238,82 @@ await page.getByRole('button', { name: 'Remove Distance 30.00 mm' }).click();
 check('14. Removing one clears the conflict', !/Conflicting/.test(await status()), await status());
 await page.getByRole('button', { name: 'Close sketch without saving' }).click();
 
+// 5. Splines: draw a closed smooth curve through four points, shape it with handles, extrude it.
+await page.getByTestId('new-sketch').click();
+await editor().waitFor();
+await tool('Spline');
+for (const [x, y] of [
+  [0, 0],
+  [15, 12],
+  [30, 0],
+  [15, -12],
+  [0, 0],
+])
+  await click(x, y);
+check('15. The spline tool draws one Bézier per span', (await page.getByTestId('sketch-spline').count()) === 4);
+check('16. Each span has two handles', (await page.getByTestId('sketch-handle').count()) === 8);
+const outlines = async () => (await page.getByTestId('sketch-status').locator('xpath=following-sibling::p').first().textContent()) ?? '';
+check('17. Clicking the first point closes it into an outline', /^1 closed outline/.test(await outlines()), await outlines());
+const handlesNow = () =>
+  S(() =>
+    [...document.querySelectorAll('[data-testid="sketch-handle"]')].map((r) => [
+      +r.getAttribute('x') + +r.getAttribute('width') / 2,
+      -(+r.getAttribute('y') + +r.getAttribute('height') / 2),
+    ]),
+  );
+const nearest = (list, x, y) => list.reduce((b, p) => (Math.hypot(p[0] - x, p[1] - y) < Math.hypot(b[0] - x, b[1] - y) ? p : b));
+const drag = async ([x0, y0], [x1, y1]) => {
+  const [a, b] = await toScreen(x0, y0);
+  const [c, e] = await toScreen(x1, y1);
+  await page.mouse.move(a, b);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) await page.mouse.move(a + ((c - a) * i) / 6, b + ((e - b) * i) / 6);
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+};
+await tool('Select');
+let hs = await handlesNow();
+const right = nearest(hs, 20, 12);
+const left = nearest(hs, 10, 12);
+await drag(right, [right[0], right[1] + 4]);
+hs = await handlesNow();
+const [r2, l2] = [nearest(hs, right[0], right[1] + 4), nearest(hs, left[0], left[1])];
+const crossAt = (p, a, b) => (a[0] - p[0]) * (b[1] - p[1]) - (a[1] - p[1]) * (b[0] - p[0]);
+check(
+  '18. Dragging a handle turns its partner: the join stays smooth',
+  Math.abs(crossAt([15, 12], r2, l2)) < 0.05 && Math.hypot(l2[0] - left[0], l2[1] - left[1]) > 0.5,
+  `cross ${crossAt([15, 12], r2, l2).toFixed(4)}`,
+);
+await click(15, 12);
+await page.getByRole('button', { name: 'Make corner', exact: true }).click();
+hs = await handlesNow();
+const l3 = nearest(hs, l2[0], l2[1]);
+await drag(nearest(hs, r2[0], r2[1]), [r2[0] + 2, r2[1] - 8]);
+hs = await handlesNow();
+const l4 = nearest(hs, l3[0], l3[1]);
+check('19. After Make corner, a handle moves on its own', Math.hypot(l4[0] - l3[0], l4[1] - l3[1]) < 1e-6);
+await click(15, 12);
+check('20. A corner join offers Make smooth', (await page.getByRole('button', { name: 'Make smooth', exact: true }).count()) === 1);
+await page.screenshot({ path: `${OUT}/sketching-04-spline.png` });
+await page.getByTestId('sketch-finish').click();
+await editor().waitFor({ state: 'detached' });
+const splineBody = await S(() => {
+  const o = Object.values(window.modellio.store.getState().doc.objects).find(
+    (x) => x.kind === 'shape' && x.shape === 'profile' && x.sketch?.entities.some((e) => e.kind === 'bezier'),
+  );
+  return o && { id: o.id, size: o.size };
+});
+check(
+  '21. The spline outline becomes a solid',
+  !!splineBody && splineBody.size[0] > 25 && splineBody.size[1] > 15,
+  JSON.stringify(splineBody?.size),
+);
+const precise = await S((id) => window.modellio.store.getState().convertToSolid(id), splineBody.id);
+check(
+  '22. It converts to a precise solid (true Bézier edges in the exact engine)',
+  precise && (await S((id) => window.modellio.store.getState().doc.objects[id]?.shape === 'solid', splineBody.id)),
+);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

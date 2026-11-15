@@ -1,6 +1,6 @@
 import type * as Replicad from 'replicad';
 import type { Sketch, SketchEntity } from '@/cad/sketch/types';
-import { pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
+import { bezierPoints, pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
 import type { Vec3 } from '@/types/document';
 import { activeOps } from './types';
 import type {
@@ -103,9 +103,20 @@ function polygonOf(chain: Segment[]): [number, number][] {
   for (const s of chain) {
     out.push(s.from);
     if (s.kind === 'arc') out.push(s.mid);
+    if (s.kind === 'bezier') out.push(...bezierPoints(s, 12).slice(1));
   }
   return out;
 }
+/** Continue a pen along a segment: true arcs and Bézier curves, not samples. */
+function drawSegment<
+  P extends { lineTo(p: Pt2): P; threePointsArcTo(end: Pt2, mid: Pt2): P; cubicBezierCurveTo(end: Pt2, c1: Pt2, c2: Pt2): P },
+>(pen: P, seg: Segment): P {
+  if (seg.kind === 'line') return pen.lineTo(seg.to);
+  if (seg.kind === 'arc') return pen.threePointsArcTo(seg.to, seg.mid);
+  return pen.cubicBezierCurveTo(seg.to, seg.c1, seg.c2);
+}
+type Pt2 = [number, number];
+
 function inside(p: [number, number], poly: [number, number][]) {
   let c = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -124,7 +135,7 @@ export function sketchDrawing(r: R, s: Sketch): Drawing | null {
     items.push({
       drawing: () => {
         let pen = r.draw(chain[0].from);
-        for (const seg of chain) pen = seg.kind === 'line' ? pen.lineTo(seg.to) : pen.threePointsArcTo(seg.to, seg.mid);
+        for (const seg of chain) pen = drawSegment(pen, seg);
         return pen.close();
       },
       poly: polygonOf(chain),
@@ -168,7 +179,7 @@ export function singleOutline(r: R, s: Sketch, what: string): Drawing {
 }
 
 /**
- * A sweep path: one connected chain of lines and arcs (open or closed), or a single circle.
+ * A sweep path: one connected chain of lines, arcs and splines (open or closed), or a single circle.
  * Returns an error message when the sketch is not one chain.
  */
 export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } | { circle: { c: [number, number]; r: number } } | string {
@@ -176,8 +187,8 @@ export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } 
   const edges = solidEdges(s);
   const circles = s.entities.filter((e): e is Extract<SketchEntity, { kind: 'circle' }> => e.kind === 'circle' && !e.construction);
   if (!edges.length && circles.length === 1 && pts.has(circles[0].c)) return { circle: { c: pts.get(circles[0].c)!, r: circles[0].r } };
-  if (circles.length) return 'A path is one chain of lines and arcs (or a single circle).';
-  if (!edges.length) return 'Draw a path: connected lines and arcs.';
+  if (circles.length) return 'A path is one chain of lines, arcs and splines (or a single circle).';
+  if (!edges.length) return 'Draw a path: connected lines, arcs or splines.';
   const degree = new Map<string, number>();
   for (const e of edges) for (const id of [e.a, e.b]) degree.set(id, (degree.get(id) ?? 0) + 1);
   if ([...degree.values()].some((d) => d > 2)) return 'The path branches; it must be a single chain.';
@@ -222,7 +233,7 @@ function sweepBase(r: R, base: Extract<FeatureBase, { kind: 'sweep' }>): Shape3D
   if ('circle' in path) pathDrawing = r.drawCircle(path.circle.r).translate(path.circle.c[0], path.circle.c[1]);
   else {
     let pen = r.draw(path.segments[0].from);
-    for (const seg of path.segments) pen = seg.kind === 'line' ? pen.lineTo(seg.to) : pen.threePointsArcTo(seg.to, seg.mid);
+    for (const seg of path.segments) pen = drawSegment(pen, seg);
     pathDrawing = path.closed ? pen.close() : pen.done();
   }
   const pathSketch = asSketch(pathDrawing.sketchOnPlane(base.pathPlane));
