@@ -13,7 +13,7 @@ Read alongside [`ARCHITECTURE.md`](ARCHITECTURE.md) and
 | --- | --- |
 | Formatting, types, lint | prettier, `tsc -b` and eslint (zero warnings) clean |
 | Unit tests | 386 passed in 37 files |
-| Browser workflow suites | Full run in progress when this was first committed; the result is recorded in the next commit. |
+| Browser workflow suites | 17/17 suites, 630/630 checks passed (Playwright against the production build) |
 | Build | Succeeds. One warning: `SketchEditor` is lazy-loaded by `SketchHost` but imported directly by `LoftSweepDialog`, so the lazy split does nothing (see §3.6). |
 | Performance (200 mixed primitives, headless) | Add all: ~300 ms. Select (to next painted frame): ~37 ms median. Edit position: ~35 ms median. Same as 2.1-era `main` within noise. |
 
