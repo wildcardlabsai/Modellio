@@ -15,7 +15,7 @@ Read alongside [`ARCHITECTURE.md`](ARCHITECTURE.md) and
 | Unit tests | 386 passed in 37 files |
 | Browser workflow suites | 17/17 suites, 630/630 checks passed (Playwright against the production build) |
 | Build | Succeeds. One warning: `SketchEditor` is lazy-loaded by `SketchHost` but imported directly by `LoftSweepDialog`, so the lazy split does nothing (see §3.6). |
-| Performance (200 mixed primitives, headless) | Add all: ~300 ms. Select (to next painted frame): ~37 ms median. Edit position: ~35 ms median. Same as 2.1-era `main` within noise. |
+| Performance (200 mixed primitives, headless) | Measured at the end of 2.2 (fb46600, the same Studio code as this commit): add all ~300 ms; select (to the next painted frame) ~37 ms median; edit position ~35 ms median. On a par with the pre-2.2 `main`. |
 
 ## 2. What exists today
 
