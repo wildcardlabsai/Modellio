@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react';
+import { memo, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ChevronRight,
   Eye,
@@ -337,7 +337,8 @@ export function ObjectTree() {
 }
 
 /** What kind of body a row is: a plain shape, text, an imported mesh, a sketched solid or a precise solid. */
-function KindIcon({ object }: { object: ShapeObject }) {
+// Memoised: the tree re-renders every row on each selection change; an icon only changes with its object.
+const KindIcon = memo(function KindIcon({ object }: { object: ShapeObject }) {
   const [Icon, label] =
     object.shape === 'text'
       ? [Type, 'Text']
@@ -362,4 +363,4 @@ function KindIcon({ object }: { object: ShapeObject }) {
       <Icon size={13} aria-hidden />
     </span>
   );
-}
+});

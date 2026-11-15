@@ -342,22 +342,25 @@ check(
 // 15. Measure: a marker shows where the next click lands, snapped to the grid on the workplane.
 await S(() => window.modellio.store.getState().select([]));
 await page.keyboard.press('m');
+await until(() => S(() => window.modellio.store.getState().tool === 'measure'));
+await page.waitForTimeout(300); // the tool's pointer listeners attach on the next render
 const vp = await page.getByTestId('viewport').boundingBox();
-const spot = await S(() => window.modellio.worldToScreen(-80.3, -85.6, 0));
+const spot = await S(() => window.modellio.worldToScreen(-30.3, 85.6, 0));
+await page.mouse.move(spot.x + 3, spot.y + 3);
 await page.mouse.move(spot.x, spot.y);
 const marker = await until(() =>
   S(() => {
     const m = window.modellio.viewport.scene.getObjectByName('measure-cursor');
-    return m && { p: m.position.toArray(), snapped: m.userData.snapped };
+    return m && Math.abs(m.position.x + 30) <= 1 && { p: m.position.toArray(), snapped: m.userData.snapped };
   }),
 );
 check(
   '15. Measuring shows where the next click lands, on the 1 mm snap grid',
-  !!marker && marker.snapped && marker.p.every((v) => Math.abs(v - Math.round(v)) < 1e-6) && Math.abs(marker.p[0] + 80) <= 1,
+  !!marker && marker.snapped && marker.p.every((v) => Math.abs(v - Math.round(v)) < 1e-6) && Math.abs(marker.p[0] + 30) <= 1,
   JSON.stringify(marker),
 );
 await page.mouse.click(spot.x, spot.y);
-const far = await S(() => window.modellio.worldToScreen(-40.4, -85.6, 0));
+const far = await S(() => window.modellio.worldToScreen(9.6, 85.6, 0));
 await page.mouse.click(far.x, far.y);
 const mpts = await S(() => window.modellio.store.getState().measurePoints);
 check(

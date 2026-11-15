@@ -106,7 +106,7 @@ export function Toolbar() {
       >
         {(close) => <FileMenu onDone={close} onVersions={() => setVersionsOpen(true)} />}
       </Popover>
-      <label className="group flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-canvas">
+      <label className="group flex shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-canvas">
         <input
           aria-label="Project name"
           value={name}

@@ -477,7 +477,7 @@ function InspectorTabs({ tab, setTab, opsCount }: { tab: InspectorTab; setTab: (
   };
   return (
     <div className="px-4 pt-3">
-      <div role="tablist" aria-label="Inspector" className="flex gap-0.5 rounded-lg bg-canvas p-1" onKeyDown={onKey}>
+      <div role="tablist" aria-label="Inspector" className="flex rounded-lg bg-canvas p-1" onKeyDown={onKey}>
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -488,14 +488,14 @@ function InspectorTabs({ tab, setTab, opsCount }: { tab: InspectorTab; setTab: (
             aria-controls={`inspector-panel-${t.id}`}
             tabIndex={tab === t.id ? 0 : -1}
             onClick={() => setTab(t.id)}
-            className={`flex flex-auto items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1.5 text-[12px] font-medium transition-colors ${
+            className={`flex flex-auto items-center justify-center gap-1 whitespace-nowrap rounded-md px-1 py-1.5 text-[12px] font-medium transition-colors ${
               tab === t.id ? 'bg-panel text-brand-ink shadow-sm' : 'text-muted hover:text-ink'
             }`}
           >
             {t.label}
             {t.id === 'features' && opsCount > 0 && (
               <span
-                className="rounded-full bg-brand-50 px-1.5 text-[10px] font-semibold text-brand-ink"
+                className="rounded-full bg-brand-50 px-1 text-[10px] font-semibold leading-4 text-brand-ink"
                 aria-label={`${opsCount} operations`}
               >
                 {opsCount}

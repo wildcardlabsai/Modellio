@@ -17,8 +17,8 @@ export function SaveStatus() {
   const readOnly = useEditor((s) => s.readOnly);
   if (readOnly)
     return (
-      <span role="status" data-testid="save-status" className="flex items-center gap-1.5 text-[13px] font-medium text-brand-ink">
-        <Eye size={16} /> <span className="hidden lg:inline">View only</span>
+      <span role="status" data-testid="save-status" className="flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-brand-ink">
+        <Eye size={16} /> <span className="sr-only whitespace-nowrap xl:not-sr-only">View only</span>
       </span>
     );
   const { Icon } = map;
@@ -27,10 +27,10 @@ export function SaveStatus() {
       role="status"
       data-testid="save-status"
       title={error ?? (local ? 'Saved in this browser' : 'Temporary storage only')}
-      className={`flex items-center gap-1.5 text-[13px] font-medium ${map.cls}`}
+      className={`flex shrink-0 items-center gap-1.5 text-[13px] font-medium ${map.cls}`}
     >
       <Icon size={16} className={map.spin ? 'animate-spin' : ''} />
-      <span className="hidden lg:inline">{map.text}</span>
+      <span className="sr-only whitespace-nowrap xl:not-sr-only">{map.text}</span>
     </span>
   );
 }
