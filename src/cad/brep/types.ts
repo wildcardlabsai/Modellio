@@ -91,8 +91,7 @@ export interface HoleSpec {
  * `FaceRef.centre`).
  */
 export type HolePattern =
-  | { kind: 'linear'; count: number; spacing: number; dir: Vec3 }
-  | { kind: 'circular'; count: number; angle: number; centre: Vec3 };
+  { kind: 'linear'; count: number; spacing: number; dir: Vec3 } | { kind: 'circular'; count: number; angle: number; centre: Vec3 };
 
 export type FeatureOp =
   | { id: string; kind: 'fillet'; edges: EdgeRef[]; radius: number; suppressed?: boolean }
@@ -235,7 +234,8 @@ export function validateRecipe(raw: unknown): string | null {
         return 'A countersink must be wider than the hole, with an angle between 0° and 180°.';
       const pt = op.pattern;
       if (pt !== undefined) {
-        if (typeof pt !== 'object' || pt === null || !Number.isInteger(pt.count) || pt.count < 1 || pt.count > 100) return 'Invalid hole pattern.';
+        if (typeof pt !== 'object' || pt === null || !Number.isInteger(pt.count) || pt.count < 1 || pt.count > 100)
+          return 'Invalid hole pattern.';
         if (pt.kind === 'linear' ? !(finite(pt.spacing) && vec3(pt.dir)) : !(pt.kind === 'circular' && finite(pt.angle) && vec3(pt.centre)))
           return 'Invalid hole pattern.';
       }
