@@ -133,15 +133,24 @@ function shapeFeatures(o: ShapeObject): FeatureNode[] {
                   edit: { kind: 'loft', objectId: o.id },
                   children: [],
                 }
-              : {
-                  key,
-                  kind: 'base',
-                  label: 'Sweep',
-                  detail: `${b.corners} corners · ${b.pathPlane === 'XY' ? 'flat' : 'upright'} path`,
-                  objectId: o.id,
-                  edit: { kind: 'sweep', objectId: o.id },
-                  children: [],
-                };
+              : b.kind === 'boolean'
+                ? {
+                    key,
+                    kind: 'base',
+                    label: b.mode === 'intersect' ? 'Exact intersection' : 'Exact combination',
+                    detail: `${plural(b.parts.filter((p) => !p.hole).length, 'body')}${b.parts.some((p) => p.hole) ? ` − ${plural(b.parts.filter((p) => p.hole).length, 'cutter')}` : ''} · frozen into one solid`,
+                    objectId: o.id,
+                    children: [],
+                  }
+                : {
+                    key,
+                    kind: 'base',
+                    label: 'Sweep',
+                    detail: `${b.corners} corners · ${b.pathPlane === 'XY' ? 'flat' : 'upright'} path`,
+                    objectId: o.id,
+                    edit: { kind: 'sweep', objectId: o.id },
+                    children: [],
+                  };
     return [base, ...o.feature.ops.map((op) => opNode(o, op))];
   }
   if (o.shape === 'profile' && o.sketch) {

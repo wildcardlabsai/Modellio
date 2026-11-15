@@ -24,6 +24,8 @@ export type FeatureBase =
    * shape has no parametric history; it can be moved, filleted and chamfered.
    */
   | { kind: 'brep'; data: string; source: string }
+  /** An exact combination: union or intersection of the solid parts, minus the hole parts. */
+  | { kind: 'boolean'; mode: 'union' | 'intersect'; parts: BooleanPart[] }
   /**
    * A solid through cross-sections: each section is a sketch (one closed outline) lying flat at a
    * height (mm) above the first, optionally shifted in X/Y. Smooth or ruled (straight) between them.
@@ -35,6 +37,22 @@ export type FeatureBase =
    * square to the start of the path.
    */
   | { kind: 'sweep'; profile: Sketch; path: Sketch; pathPlane: 'XZ' | 'XY'; orientation: 'follow' | 'frenet'; corners: 'round' | 'sharp' };
+
+/**
+ * One part of an exact Boolean: its own recipe and build size, and how it is placed in the
+ * combination's frame exactly as it is displayed: centred on its bounding box and fitted to `fit`
+ * (only uniform scaling can be exact), mirrored, then moved by `matrix` (a rigid 4×4, column-major).
+ * Nested combinations have no `fit`: their result is already in their own frame.
+ */
+export interface BooleanPart {
+  name: string;
+  recipe: FeatureRecipe;
+  size: Vec3;
+  fit?: Vec3;
+  mirror?: Vec3;
+  matrix: number[];
+  hole: boolean;
+}
 
 export interface LoftSection {
   sketch: Sketch;
@@ -203,6 +221,18 @@ export function validateRecipe(raw: unknown): string | null {
     if (base.pathPlane !== 'XZ' && base.pathPlane !== 'XY') return 'Invalid sweep path plane.';
     if (base.orientation !== 'follow' && base.orientation !== 'frenet') return 'Invalid sweep orientation.';
     if (base.corners !== 'round' && base.corners !== 'sharp') return 'Invalid sweep corners.';
+  } else if (base.kind === 'boolean') {
+    if (base.mode !== 'union' && base.mode !== 'intersect') return 'Invalid combination mode.';
+    if (!Array.isArray(base.parts) || !base.parts.length) return 'A combination needs parts.';
+    for (const p of base.parts) {
+      if (typeof p !== 'object' || p === null || typeof p.name !== 'string' || typeof p.hole !== 'boolean')
+        return 'Invalid combination part.';
+      if (!vec3(p.size) || (p.fit !== undefined && !vec3(p.fit)) || (p.mirror !== undefined && !vec3(p.mirror)))
+        return 'Invalid combination part.';
+      if (!Array.isArray(p.matrix) || p.matrix.length !== 16 || !p.matrix.every(finite)) return 'Invalid combination part placement.';
+      const inner = validateRecipe(p.recipe);
+      if (inner) return `${p.name}: ${inner}`;
+    }
   } else if (base.kind === 'brep') {
     if (typeof base.data !== 'string' || !base.data.length) return 'Stored solid is missing.';
     if (typeof base.source !== 'string') return 'Stored solid has no source.';

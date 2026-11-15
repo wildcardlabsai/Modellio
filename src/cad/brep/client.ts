@@ -191,10 +191,17 @@ function cancelQueued(key: string) {
  * The build for a request, starting it if needed. While it is pending, `fallback` is the last
  * build of the same recipe at another size (or null).
  */
-export function getBrep(req: BrepRequest): { entry: Entry; fallback: BrepBuild | null } {
+export function getBrep(req: BrepRequest, opts: { lane?: string } = {}): { entry: Entry; fallback: BrepBuild | null } {
   const key = requestKey(req);
   let entry = cache.get(key);
   if (!entry) {
+    // A newer request in the same lane (e.g. a combination whose part is being dragged) replaces
+    // an older one that has not started, so only the latest is built.
+    if (opts.lane) {
+      const previous = lanes.get(opts.lane);
+      if (previous && previous !== key) cancelQueued(previous);
+      lanes.set(opts.lane, key);
+    }
     enqueue(key, req);
     entry = cache.get(key)!;
   }

@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import type * as Replicad from 'replicad';
 import { AMBIGUOUS, buildBrep, matchEdges, matchFaces, NO_MATCH, sketchOutlines } from './build';
-import { validateRecipe, type BrepBuild, type EdgeRef, type FaceRef, type FeatureRecipe } from './types';
+import { validateRecipe, type BooleanPart, type BrepBuild, type EdgeRef, type FaceRef, type FeatureRecipe } from './types';
 import type { Sketch } from '@/cad/sketch/types';
 import type { Vec3 } from '@/types/document';
 
@@ -452,5 +452,90 @@ describe('shell, draft and holes', () => {
         ],
       }),
     ).toMatch(/wider/);
+  });
+});
+
+describe('exact Booleans', () => {
+  const I = (x = 0, y = 0, z = 0) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
+  const part = (shape: string, size: Vec3, m = I(), hole = false, extra: Partial<BooleanPart> = {}): BooleanPart => ({
+    name: shape,
+    recipe: prim(shape),
+    size,
+    fit: size,
+    matrix: m,
+    hole,
+    ...extra,
+  });
+  const combine = (parts: BooleanPart[], mode: 'union' | 'intersect' = 'union', ops: FeatureRecipe['ops'] = []) =>
+    build({ base: { kind: 'boolean', mode, parts }, ops }, [0, 0, 0]);
+
+  it('unites overlapping boxes and cuts a cylinder hole exactly', () => {
+    near(combine([part('box', [20, 20, 10]), part('box', [20, 20, 10], I(10))]).volume, 30 * 20 * 10, 1e-6);
+    near(combine([part('box', [20, 20, 10]), part('cylinder', [6, 6, 20], I(), true)]).volume, 4000 - Math.PI * 9 * 10, 1e-6);
+  });
+
+  it('intersects, and places rotated parts', () => {
+    near(combine([part('box', [20, 20, 10]), part('box', [20, 20, 10], I(10))], 'intersect').volume, 10 * 20 * 10, 1e-6);
+    // A 40 × 4 × 4 bar turned 90° about Z crosses another: a plus sign.
+    const c = Math.cos(Math.PI / 2);
+    const s = Math.sin(Math.PI / 2);
+    const rot = [c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    near(combine([part('box', [40, 4, 4]), part('box', [40, 4, 4], rot)]).volume, 2 * 40 * 16 - 4 * 16, 1e-6);
+  });
+
+  it('refuses parts stretched unevenly (they cannot be exact) but accepts uniform scaling', () => {
+    const sq: FeatureRecipe = {
+      base: {
+        kind: 'sketch',
+        sketch: {
+          points: [
+            { id: 'a', x: 0, y: 0 },
+            { id: 'b', x: 10, y: 0 },
+            { id: 'c', x: 10, y: 10 },
+            { id: 'd', x: 0, y: 10 },
+          ],
+          entities: [
+            { id: 'l1', kind: 'line', a: 'a', b: 'b' },
+            { id: 'l2', kind: 'line', a: 'b', b: 'c' },
+            { id: 'l3', kind: 'line', a: 'c', b: 'd' },
+            { id: 'l4', kind: 'line', a: 'd', b: 'a' },
+          ],
+          constraints: [],
+        },
+        op: 'extrude',
+        depth: 10,
+        angle: 360,
+      },
+      ops: [],
+    };
+    const stretched: BooleanPart = { name: 'Sketch', recipe: sq, size: [0, 0, 0], fit: [20, 10, 10], matrix: I(), hole: false };
+    expect(() => combine([stretched])).toThrow(/stretched unevenly/);
+    near(combine([{ ...stretched, fit: [20, 20, 20] }]).volume, 8000, 1e-6);
+  });
+
+  it('nests combinations, and fillets the exact result', () => {
+    const inner: BooleanPart = {
+      name: 'inner',
+      recipe: {
+        base: { kind: 'boolean', mode: 'union', parts: [part('box', [20, 20, 10]), part('cylinder', [6, 6, 20], I(), true)] },
+        ops: [],
+      },
+      size: [0, 0, 0],
+      matrix: I(),
+      hole: false,
+    };
+    near(combine([inner, part('box', [20, 20, 10], I(0, 0, 10))]).volume, 8000 - Math.PI * 9 * 10, 1e-6);
+    // Fillet the top front edge of the exact result: (1 − π/4)·r²·L comes off.
+    const plain = combine([part('box', [20, 20, 10]), part('box', [20, 20, 10], I(10))]);
+    const edge = plain.edges.find((e) => e.ref.kind === 'line' && e.ref.mid[2] > 0.99 && e.ref.mid[1] < -0.99)!.ref;
+    const f = combine([part('box', [20, 20, 10]), part('box', [20, 20, 10], I(10))], 'union', [
+      { id: 'f', kind: 'fillet', edges: [edge], radius: 2 },
+    ]);
+    near(f.volume, 6000 - (1 - Math.PI / 4) * 4 * 30, 1e-5);
+    expect(f.problems).toEqual([]);
+  });
+
+  it('mirrors a part like the display does', () => {
+    near(combine([part('wedge', [20, 20, 10], I(), false, { mirror: [-1, 1, 1] })]).volume, 2000, 1e-6);
   });
 });

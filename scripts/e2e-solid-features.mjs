@@ -169,6 +169,71 @@ const after = await until(async () => (await obj(box))?.feature?.ops?.length ===
 check('5. The hole and draft survive saving and reopening', after && after[0].kind === 'hole' && after[1].kind === 'draft');
 await page.screenshot({ path: `${OUT}/solid-features.png` });
 
+// 6. Exact Booleans: a plate with a hole is combined exactly, becomes one precise solid, and can be filleted.
+const [plate, cyl] = await S(() => {
+  const s = window.modellio.store.getState();
+  const a = s.addShape('box');
+  s.setSize(a, [40, 30, 10]);
+  s.setPosition(a, [-60, 40, 5]);
+  const b = s.addShape('cylinder');
+  s.setSize(b, [6, 6, 20]);
+  s.setPosition(b, [-60, 40, 5]);
+  s.select([a, b]);
+  window.modellio.store.getState().combineSelected('subtract');
+  return [a, b];
+});
+const gid = (await obj(plate)).parentId;
+await S((g) => window.modellio.store.getState().select([g]), gid);
+await page.getByRole('tab', { name: /^Features/ }).click();
+const exactNote = page.getByTestId('combine-exact');
+check(
+  '6. A combination of primitives is computed exactly once the engine is loaded',
+  await until(async () => /^Exact:/.test(((await exactNote.textContent()) ?? '').trim())),
+  await exactNote.textContent(),
+);
+await page.getByTestId('combine-make-precise').click();
+const solidId = await until(() =>
+  S(() => {
+    const s = window.modellio.store.getState();
+    const o = s.doc.objects[s.selection[0]];
+    return o?.shape === 'solid' && o.feature.base.kind === 'boolean' && o.id;
+  }),
+);
+check('6b. "Make one precise solid" replaces the group with one solid built on the exact combination', !!solidId && !(await obj(gid)));
+const exactVol = await until(() =>
+  S((id) => {
+    const o = window.modellio.store.getState().doc.objects[id];
+    return o && window.modellio.viewport.scene.getObjectByName(id) && o.size.join();
+  }, solidId),
+);
+check('6c. It keeps the size of the combination', exactVol === '40,30,10', exactVol);
+await S((id) => window.modellio.features.getState().start(id, 'fillet'), solidId);
+const edge = await until(() =>
+  S(
+    () =>
+      window.modellio.features
+        .getState()
+        .session?.before?.edges.find((e) => e.ref.kind === 'line' && e.ref.mid[2] > 0.99 && e.ref.mid[1] < -0.99)?.ref,
+  ),
+);
+await S((ref) => {
+  const t = window.modellio.features.getState();
+  t.toggleEdge(ref);
+  t.setValue(2);
+}, edge);
+const fv = await previewVolume();
+const expectFillet = 12000 - Math.PI * 9 * 10 - (1 - Math.PI / 4) * 4 * 40;
+check(
+  '6d. Filleting the exact result works (exact volume)',
+  close(fv, expectFillet, 0.05),
+  `${fv?.toFixed?.(3)} vs ${expectFillet.toFixed(3)}`,
+);
+await page.getByTestId('feature-apply').click();
+check('6e. The fillet follows the combination in its recipe', (await obj(solidId)).feature.ops[0]?.kind === 'fillet');
+await page.keyboard.press('Control+z');
+await page.keyboard.press('Control+z');
+check('6f. Undo brings the editable group back', !!(await obj(gid)) && (await obj(cyl)).isHole === true);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

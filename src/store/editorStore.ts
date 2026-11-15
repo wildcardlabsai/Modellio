@@ -43,7 +43,8 @@ import {
   worldMatrix,
 } from '@/cad/hierarchy';
 import { getShapeDefinition, getTextMesh, solidRequest } from '@/cad/shapeRegistry';
-import { bakeGroupDraft, computeCombined, separateDraft } from '@/cad/operations/combine';
+import { bakeGroupDraft, computeCombined, exactCombineRequest, separateDraft, solidFromGroupDraft } from '@/cad/operations/combine';
+import { requestKey, type BrepBuild, type FeatureBase } from '@/cad/brep/types';
 import { initKernel } from '@/cad/kernel/kernel';
 import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
 import { centerMeshData, meshDataBounds, type MeshData } from '@/cad/kernel/meshData';
@@ -224,6 +225,8 @@ export interface EditorState {
    * false (with a message) when the shape cannot be converted or the engine fails.
    */
   convertToSolid: (id: ObjectId) => Promise<boolean>;
+  /** Turn a combined group whose parts can all be exact into one precise solid (one undo step). */
+  makeGroupPrecise: (groupId: ObjectId) => Promise<ObjectId | null>;
   /**
    * Add exact solids (e.g. from a STEP file), keeping their relative placement, resting on the
    * plate at a free spot. Several solids are grouped. Returns the new selection.
@@ -938,6 +941,34 @@ export const useEditor = create<EditorState>()((set, get) => {
         forkSketchLinksDraft(d, created);
       });
       set({ selection: created });
+    },
+
+    makeGroupPrecise: async (groupId) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      const x = exactCombineRequest(get().doc, groupId);
+      if ('why' in x) {
+        get().notify(`This combination cannot be made precise: ${x.why}`);
+        return null;
+      }
+      let build: BrepBuild;
+      try {
+        build = await buildBrepAsync(x.req);
+      } catch (e) {
+        get().notify(e instanceof Error ? e.message : String(e));
+        return null;
+      }
+      // The group may have changed while the engine worked: only replace what was built.
+      const now = exactCombineRequest(get().doc, groupId);
+      if ('why' in now || requestKey(now.req) !== requestKey(x.req)) return null;
+      let id: ObjectId | null = null;
+      get().apply('Make precise solid', (d) => {
+        id = solidFromGroupDraft(d, groupId, x.req.recipe.base as Extract<FeatureBase, { kind: 'boolean' }>, build);
+      });
+      if (id) set({ selection: [id] });
+      return id;
     },
 
     convertToSolid: async (id) => {

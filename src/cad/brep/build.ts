@@ -2,7 +2,19 @@ import type * as Replicad from 'replicad';
 import type { Sketch, SketchEntity } from '@/cad/sketch/types';
 import { pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
 import type { Vec3 } from '@/types/document';
-import type { BrepBuild, BrepEdge, BrepFace, BrepRequest, EdgeRef, FaceRef, FeatureBase, FeatureOp, HolePattern, HoleSpec } from './types';
+import type {
+  BooleanPart,
+  BrepBuild,
+  BrepEdge,
+  BrepFace,
+  BrepRequest,
+  EdgeRef,
+  FaceRef,
+  FeatureBase,
+  FeatureOp,
+  HolePattern,
+  HoleSpec,
+} from './types';
 
 /**
  * Recipe → exact OpenCascade solid → mesh, edges and volume. Runs wherever OpenCascade is
@@ -422,6 +434,72 @@ const friendly = (e: unknown, what: string) => {
     : `${what} could not be made on these edges. Try a smaller size.`;
 };
 
+// --- exact Booleans ------------------------------------------------------------------------------
+/** A rigid 4×4 (column-major) as a rotation (degrees about a unit axis) and a translation. */
+export function rigid(m: number[]): { axis: Vec3; angle: number; t: Vec3 } {
+  const [m00, m10, m20, , m01, m11, m21, , m02, m12, m22] = m;
+  const t: Vec3 = [m[12], m[13], m[14]];
+  const trace = m00 + m11 + m22;
+  const angle = Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
+  if (angle < 1e-9) return { axis: [0, 0, 1], angle: 0, t };
+  let axis: Vec3;
+  if (Math.PI - angle > 1e-6) axis = [m21 - m12, m02 - m20, m10 - m01];
+  else {
+    // 180°: the axis is the column of (R + I) with the largest diagonal.
+    const d = [m00, m11, m22];
+    const i = d.indexOf(Math.max(...d));
+    const cols: Vec3[] = [
+      [m00 + 1, m10, m20],
+      [m01, m11 + 1, m21],
+      [m02, m12, m22 + 1],
+    ];
+    axis = cols[i];
+  }
+  const l = Math.hypot(...axis) || 1;
+  return { axis: [axis[0] / l, axis[1] / l, axis[2] / l], angle: (angle * 180) / Math.PI, t };
+}
+
+/** One part, placed in the combination's frame exactly as it is displayed. */
+function placedPart(r: R, p: BooleanPart): Shape3D {
+  let s = buildShape(r, { recipe: p.recipe, size: p.size }).shape;
+  if (p.fit) {
+    const bb = s.boundingBox;
+    const ext = [bb.width, bb.height, bb.depth];
+    const k = ext.map((e, i) => (e > EPS ? p.fit![i] / e : 1));
+    if (Math.max(...k) - Math.min(...k) > 1e-4 * Math.max(...k))
+      throw new BrepError(`${p.name} is stretched unevenly, so it can only be combined as a mesh.`);
+    const c: V = [
+      (bb.bounds[0][0] + bb.bounds[1][0]) / 2,
+      (bb.bounds[0][1] + bb.bounds[1][1]) / 2,
+      (bb.bounds[0][2] + bb.bounds[1][2]) / 2,
+    ];
+    s = s.translate([-c[0], -c[1], -c[2]]);
+    if (Math.abs(k[0] - 1) > 1e-9) s = s.scale(k[0]);
+  }
+  const planes = ['YZ', 'XZ', 'XY'] as const;
+  p.mirror?.forEach((m, i) => {
+    if (m < 0) s = s.mirror(planes[i]);
+  });
+  const { angle, axis, t } = rigid(p.matrix);
+  if (angle > 1e-9) s = s.rotate(angle, [0, 0, 0], axis);
+  return s.translate(t);
+}
+
+/** Union or intersection of the solid parts, minus the hole parts, all exact. */
+function booleanBase(r: R, base: Extract<FeatureBase, { kind: 'boolean' }>): Shape3D {
+  let body: Shape3D | null = null;
+  let holes: Shape3D | null = null;
+  for (const p of base.parts) {
+    const s = placedPart(r, p);
+    if (p.hole) holes = holes ? (holes.fuse(s) as Shape3D) : s;
+    else body = !body ? s : base.mode === 'intersect' ? (body.intersect(s) as Shape3D) : (body.fuse(s) as Shape3D);
+  }
+  if (!body) throw new BrepError('A combination with only holes has no solid of its own.');
+  const out = holes ? (body.cut(holes) as Shape3D) : body;
+  if (!out.solids?.length) throw new BrepError('These parts do not overlap: the combination is empty.');
+  return out;
+}
+
 // --- operations ---------------------------------------------------------------------------------
 const OP_LABEL: Record<FeatureOp['kind'], string> = {
   fillet: 'This fillet',
@@ -551,7 +629,9 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
             ? loftBase(r, recipe.base)
             : recipe.base.kind === 'sweep'
               ? sweepBase(r, recipe.base)
-              : sketchBase(r, recipe.base);
+              : recipe.base.kind === 'boolean'
+                ? booleanBase(r, recipe.base)
+                : sketchBase(r, recipe.base);
   } catch (e) {
     if (e instanceof BrepError) throw e;
     throw new BrepError(friendly(e, 'The base shape'));

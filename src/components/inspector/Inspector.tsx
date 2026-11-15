@@ -36,7 +36,7 @@ import { useBrepEngine } from '@/cad/brep/client';
 import { solidConversion } from '@/cad/brep/convert';
 import { featureTitle, useFeatureTool } from '@/components/features/featureTool';
 import { useSolidBuilder } from '@/components/features/solidBuilder';
-import { computeCombined } from '@/cad/operations/combine';
+import { computeCombined, exactStatus } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
 import { meshMeasures, meshReport } from '@/cad/operations/meshTools';
@@ -1152,7 +1152,9 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
             ? `Loft (${base.sections.length} sections)`
             : base?.kind === 'sweep'
               ? 'Sweep'
-              : 'Unknown';
+              : base?.kind === 'boolean'
+                ? `Exact ${base.mode === 'intersect' ? 'intersection' : 'combination'} of ${base.parts.length} parts`
+                : 'Unknown';
   return (
     <Section title="Precise solid">
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]" data-testid="solid-info">
@@ -1327,6 +1329,7 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
       ) : (
         <p className="mt-2 text-[12px] text-muted">Parts are kept separate. Choose Union to merge them and cut holes.</p>
       )}
+      {group.combine && <ExactCombine group={group} locked={locked} />}
       {group.combine && (
         <button
           type="button"
@@ -1341,6 +1344,52 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
         </button>
       )}
     </Section>
+  );
+}
+
+/** Whether a combination is exact (precise solids), and the step to a single precise solid. */
+function ExactCombine({ group, locked }: { group: GroupObject; locked: boolean }) {
+  const doc = useEditor((st) => st.doc);
+  const version = useCadReady((st) => st.version);
+  const engine = useBrepEngine((st) => st.status);
+  const [busy, setBusy] = useState(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const st = useMemo(() => exactStatus(doc, group.id), [doc, group, version, engine]);
+  const make = async () => {
+    setBusy(true);
+    try {
+      await useEditor.getState().makeGroupPrecise(group.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const text =
+    st.state === 'exact'
+      ? 'Exact: computed from the precise shapes, and written exactly to STEP.'
+      : st.state === 'building'
+        ? 'Computing the exact result…'
+        : st.state === 'available'
+          ? 'Every part can be exact. Make it exact to fillet the result or export exact STEP.'
+          : `Mesh result. ${st.reason ?? ''}`;
+  return (
+    <div className="mt-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="combine-exact">
+      <p className="flex items-start gap-1.5">
+        <Gem size={13} className={`mt-px shrink-0 ${st.state === 'exact' ? 'text-emerald-600' : 'text-muted'}`} />
+        {text}
+      </p>
+      {st.state !== 'mesh' && (
+        <button
+          type="button"
+          disabled={locked || busy || st.state === 'building'}
+          onClick={() => void make()}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-1.5 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50"
+          data-testid="combine-make-precise"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Gem size={14} />}
+          {busy ? (engine === 'loading' ? 'Loading the precise-solid engine…' : 'Building…') : 'Make one precise solid'}
+        </button>
+      )}
+    </div>
   );
 }
 

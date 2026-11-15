@@ -1,6 +1,6 @@
 import type * as Replicad from 'replicad';
 import type { Vec3 } from '@/types/document';
-import { buildBrep, buildShape, BrepError } from './build';
+import { buildBrep, buildShape, BrepError, rigid } from './build';
 import type { BrepBuild, BrepRequest } from './types';
 
 /**
@@ -34,30 +34,6 @@ export interface StepExportResult {
   bytes: Uint8Array;
   exact: string[];
   faceted: string[];
-}
-
-/** Rotation axis/angle and translation of a rigid column-major 4×4 matrix. */
-function rigid(m: number[]): { axis: Vec3; angle: number; t: Vec3 } {
-  const [m00, m10, m20, , m01, m11, m21, , m02, m12, m22] = m;
-  const t: Vec3 = [m[12], m[13], m[14]];
-  const trace = m00 + m11 + m22;
-  const angle = Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
-  if (angle < 1e-9) return { axis: [0, 0, 1], angle: 0, t };
-  let axis: Vec3;
-  if (Math.PI - angle > 1e-6) axis = [m21 - m12, m02 - m20, m10 - m01];
-  else {
-    // 180°: the axis is the column of (R + I) with the largest diagonal.
-    const d = [m00, m11, m22];
-    const i = d.indexOf(Math.max(...d));
-    const cols: Vec3[] = [
-      [m00 + 1, m10, m20],
-      [m01, m11 + 1, m21],
-      [m02, m12, m22 + 1],
-    ];
-    axis = cols[i];
-  }
-  const l = Math.hypot(...axis) || 1;
-  return { axis: [axis[0] / l, axis[1] / l, axis[2] / l], angle: (angle * 180) / Math.PI, t };
 }
 
 function facetedSolid(r: R, positions: Float32Array | number[], indices: Uint32Array | number[]): Shape3D {
