@@ -25,6 +25,7 @@ import { constraintRefs, describeConstraint, nameConstraints } from '@/cad/sketc
 import { cornerAt, extendAt, extendSpline, handleAt, mergePoints, offsetChain, trimAt, type EditResult } from '@/cad/sketch/edit';
 import { dimensionMarks, type DimensionMark } from '@/cad/sketch/dimensions';
 import { sketchLoops, type ProfileOp } from '@/cad/sketch/profile';
+import type { SketchPlace } from './sketchSession';
 import { emptySketch, type Constraint, type Sketch, type SketchEntity, type SketchStatus } from '@/cad/sketch/types';
 
 type Tool = 'select' | 'line' | 'spline' | 'rect' | 'circle' | 'arc' | 'polygon' | EditTool;
@@ -110,12 +111,15 @@ export function SketchEditor({
   onClose,
   use,
   initialOp,
+  place,
 }: {
   objectId: string | null;
   onClose: () => void;
   use?: SketchUse;
   /** For a new sketch: extrude or revolve to start with. */
   initialOp?: 'extrude' | 'revolve';
+  /** For a new sketch: the plane or face it sits on. */
+  place?: SketchPlace;
 }) {
   const existing = useEditor((s) => (objectId ? s.doc.objects[objectId] : undefined));
   const start = use ? use.initial : existing?.kind === 'shape' && existing.sketch ? existing.sketch : emptySketch();
@@ -501,7 +505,7 @@ export function SketchEditor({
   });
 
   const finish = async () => {
-    const id = await useEditor.getState().saveSketch(objectId, sketch, op);
+    const id = await useEditor.getState().saveSketch(objectId, sketch, op, undefined, place);
     if (id) {
       useEditor.getState().requestFrame();
       onClose();
@@ -527,7 +531,14 @@ export function SketchEditor({
       data-testid="sketch-editor"
     >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
-        <h2 className="mr-2 text-[14px] font-semibold text-ink">{use?.title ?? 'Sketch'}</h2>
+        <h2 className="mr-2 shrink-0 text-[14px] font-semibold text-ink">
+          {use?.title ?? 'Sketch'}
+          {place && (
+            <span className="ml-1.5 font-normal text-muted" data-testid="sketch-place">
+              on {place.label}
+            </span>
+          )}
+        </h2>
         <div role="toolbar" aria-label="Sketch tools" className="flex min-w-0 items-center gap-1 overflow-x-auto">
           {[...TOOLS, null, ...EDIT_TOOLS].map((t) =>
             !t ? (

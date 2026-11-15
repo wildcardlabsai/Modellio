@@ -1,5 +1,5 @@
 import type { Sketch } from '@/cad/sketch/types';
-import type { FeatureRecipe } from '@/cad/brep/types';
+import type { FaceRef, FeatureRecipe } from '@/cad/brep/types';
 /**
  * MODELLIO document model.
  *
@@ -140,18 +140,60 @@ export interface DocumentSettings {
 
 export type SketchId = string;
 
+/**
+ * A sketch's plane in the world (schema 3+): `origin` is the sketch's (0, 0), `x` and `y` its
+ * axes (unit, at right angles). The sketch's normal, x × y, is the way extrusions grow.
+ */
+export interface Frame {
+  origin: Vec3;
+  x: Vec3;
+  y: Vec3;
+}
+
+export type PlaneId = string;
+
+/**
+ * A reference plane (schema 3+): one of the three main planes, moved along its normal by
+ * `offset` mm and optionally tilted by `tilt` degrees about its own x axis.
+ */
+export interface RefPlane {
+  id: PlaneId;
+  name: string;
+  base: 'XY' | 'XZ' | 'YZ';
+  offset: number;
+  tilt: number;
+  visible: boolean;
+}
+
+/**
+ * Where a standalone sketch sits (schema 3+): on a reference plane, or attached to a flat face
+ * of a body (found again by its reference after the body changes).
+ */
+export type SketchPlacement = { kind: 'plane'; planeId: PlaneId } | { kind: 'face'; objectId: ObjectId; face: FaceRef };
+
 /** A standalone sketch (schema 2+): exists on its own and can drive several bodies. */
 export interface SketchRecord {
   id: SketchId;
   name: string;
   sketch: Sketch;
+  /** Schema 3+: where the sketch sits. Without one, its bodies are placed freely (as in schema 2). */
+  placement?: SketchPlacement;
+  /** The placement's last resolved frame: bodies built from the sketch sit on it. */
+  frame?: Frame;
+  /** Why the placement can no longer be resolved (its face is gone, …). Nothing is moved while broken. */
+  broken?: string;
 }
 
 export interface ModelDocument {
-  /** 2 adds standalone sketches and components. Version 1 documents are migrated on load. */
-  schemaVersion: 1 | 2;
+  /**
+   * 2 adds standalone sketches and components; 3 adds reference planes and sketch placements.
+   * Older documents are migrated on load.
+   */
+  schemaVersion: 1 | 2 | 3;
   /** Standalone sketches by id (schema 2+; absent in version 1 documents). */
   sketches?: Record<SketchId, SketchRecord>;
+  /** Reference planes by id (schema 3+). */
+  planes?: Record<PlaneId, RefPlane>;
   objects: Record<ObjectId, SceneObject>;
   /** Top-level draw / hierarchy order. */
   rootIds: ObjectId[];

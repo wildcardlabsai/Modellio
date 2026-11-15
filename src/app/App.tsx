@@ -34,6 +34,8 @@ import { SharedBanner } from '@/components/layout/SharedBanner';
 import { TEMPLATES } from '@/templates/templates';
 import { Tour, useFirstRunTour } from '@/components/onboarding/Tour';
 import { useGuides } from '@/viewport/guides';
+import { FacePickBanner } from '@/components/sketch/FacePickBanner';
+import { watchAttachments } from '@/cad/sketch/attachments';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
@@ -83,6 +85,21 @@ export function App() {
   useEffect(() => {
     if (useLayout.getState().compact) useLayout.getState().setLeftOpen(false);
   }, [objectCount]);
+
+  // Keep sketches placed on planes and faces where they belong as the design changes.
+  useEffect(
+    () =>
+      watchAttachments({
+        subscribe: (fn) =>
+          useEditor.subscribe((st, prev) => {
+            if (st.doc !== prev.doc || st.transaction !== prev.transaction) fn();
+          }),
+        get: () => useEditor.getState().doc,
+        set: (doc) => useEditor.setState({ doc }),
+        busy: () => !!useEditor.getState().transaction,
+      }),
+    [],
+  );
 
   // Expose the store for debugging and automated workflow tests.
   useEffect(() => {
@@ -249,6 +266,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
           </div>
           {!compact && <HistoryTimeline />}
           <SketchHost />
+          <FacePickBanner />
         </main>
         {(!compact || inspectorOpen) && (
           <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">

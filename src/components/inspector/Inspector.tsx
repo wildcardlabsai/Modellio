@@ -29,7 +29,11 @@ import {
   EyeOff,
   Printer,
   FlipHorizontal2,
+  Crosshair,
+  PencilLine,
 } from 'lucide-react';
+import { placementLabel, placingRecord } from '@/cad/sketchPlacement';
+import { useFacePick } from '@/components/sketch/facePick';
 import { useInspectorTab, type InspectorTab } from './inspectorTab';
 import { collectExportBodies } from '@/cad/export/collect';
 import type { LeftPanel } from '@/components/layout/LeftRail';
@@ -266,6 +270,9 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
   const setTab = useInspectorTab((st) => st.setTab);
   const locked = isEffectivelyLocked(doc, object.id);
   const inheritedLock = locked && !object.locked;
+  // A body built from a placed sketch sits on its plane or face: it can't be moved on its own.
+  const placedBy = placingRecord(doc, object.id);
+  const fixedPlace = locked || !!placedBy;
   const parent = object.parentId ? doc.objects[object.parentId] : null;
   const isGroup = object.kind === 'group';
 
@@ -338,6 +345,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                 </span>
               </div>
             )}
+            {object.kind === 'shape' && <PlacementNote object={object} locked={locked} />}
             {object.kind === 'shape' && <SolidHoleSwitch object={object} locked={locked} />}
             <Section
               title={isGroup ? `Group size (${units})` : `Size (${units})`}
@@ -371,7 +379,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                     shortcut="L"
                     tooltipSide="left"
                     className="h-7 min-w-7"
-                    disabled={locked}
+                    disabled={fixedPlace}
                     onClick={() => s.setTool('layflat')}
                   >
                     <BetweenHorizontalEnd size={15} />
@@ -381,7 +389,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                     shortcut="D"
                     tooltipSide="left"
                     className="h-7 min-w-7"
-                    disabled={locked}
+                    disabled={fixedPlace}
                     onClick={() => s.dropToWorkplane([object.id])}
                   >
                     <ArrowDownToLine size={15} />
@@ -394,7 +402,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                 length
                 value={object.transform.position}
                 step={1}
-                disabled={locked}
+                disabled={fixedPlace}
                 onCommit={(axis, v) => s.setPosition(object.id, object.transform.position.map((c, i) => (i === axis ? v : c)) as Vec3)}
               />
             </Section>
@@ -405,7 +413,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                 value={object.transform.rotation}
                 step={15}
                 decimals={1}
-                disabled={locked}
+                disabled={fixedPlace}
                 onCommit={(axis, v) => s.setRotation(object.id, object.transform.rotation.map((c, i) => (i === axis ? v : c)) as Vec3)}
               />
             </Section>
@@ -441,6 +449,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
             {object.kind === 'shape' && object.shape === 'text' && <TextSection object={object} locked={locked} />}
             {object.kind === 'shape' && object.shape === 'profile' && <ProfileSection object={object} locked={locked} />}
             {object.kind === 'shape' && <PreciseSolidSection object={object} locked={locked} />}
+            {object.kind === 'shape' && <SketchOnFaceSection object={object} locked={locked} />}
             {object.kind === 'shape' &&
               object.shape !== 'text' &&
               object.shape !== 'mesh' &&
@@ -992,6 +1001,95 @@ function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean 
 }
 
 /** A sketched solid: reopen its sketch, or switch between extrude and revolve. */
+/**
+ * Where a body built from a placed sketch sits, or why its sketch's attachment is broken, with
+ * Detach (free it) and Re-attach (pick a face again).
+ */
+function PlacementNote({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const rec = useEditor((st) => (object.sketchId ? st.doc.sketches?.[object.sketchId] : undefined));
+  const doc = useEditor((st) => st.doc);
+  if (!rec?.placement) return null;
+  const where = placementLabel(doc, rec)!;
+  const btn = 'flex items-center gap-1 rounded-md border px-2 py-1 text-[12px] font-medium disabled:opacity-50';
+  return (
+    <div
+      className={`mx-5 mt-4 rounded-lg px-3 py-2 text-[12px] leading-snug ${rec.broken ? 'bg-amber-50 text-amber-900' : 'bg-brand-50 text-brand-ink'}`}
+      data-testid="placement-note"
+    >
+      <p>
+        {rec.broken ? (
+          <>
+            <strong className="font-semibold">Attachment broken.</strong> {rec.broken} It stays where it was until you re-attach or detach
+            its sketch.
+          </>
+        ) : (
+          <>
+            {where} (sketch <strong className="font-semibold">{rec.name}</strong>): it moves with it, so its position and rotation are set
+            there. Detach the sketch to move it on its own.
+          </>
+        )}
+      </p>
+      <span className="mt-1.5 flex gap-1.5">
+        {rec.placement.kind === 'face' && rec.broken && (
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => {
+              const p = rec.placement;
+              const target = p?.kind === 'face' && doc.objects[p.objectId] ? p.objectId : null;
+              if (target) void useFacePick.getState().start(target, { kind: 'reattach', sketchId: rec.id });
+              else useEditor.getState().notify('The body it was attached to is gone. Detach the sketch, or undo the deletion.');
+            }}
+            className={`${btn} border-amber-300 hover:bg-amber-100`}
+            data-testid="reattach-sketch"
+          >
+            <Crosshair size={12} /> Re-attach
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => useEditor.getState().detachSketch(rec.id)}
+          className={`${btn} ${rec.broken ? 'border-amber-300 hover:bg-amber-100' : 'border-brand/30 hover:bg-white/60'}`}
+          data-testid="detach-sketch"
+        >
+          <Link2Off size={12} /> Detach
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Start a new sketch on a flat face of this body (a precise solid, or a shape that can be made one). */
+function SketchOnFaceSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const [busy, setBusy] = useState(false);
+  if (!solidConversion(object).ok) return null;
+  return (
+    <Section title="Sketch on a face">
+      <p className="text-[12px] leading-relaxed text-muted">
+        Draw a sketch on one of this body's flat faces. Bodies made from it stay on the face as this body changes.
+      </p>
+      <button
+        type="button"
+        disabled={locked || busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await useFacePick.getState().start(object.id, { kind: 'new' });
+          } finally {
+            setBusy(false);
+          }
+        }}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
+        data-testid="sketch-on-face"
+      >
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <PencilLine size={15} />}
+        {busy ? 'Finding its faces…' : 'Pick a face to sketch on'}
+      </button>
+    </Section>
+  );
+}
+
 function ProfileSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
   const revolve = (object.params.op ?? 0) >= 1;
   const depth = object.params.depth ?? 5;

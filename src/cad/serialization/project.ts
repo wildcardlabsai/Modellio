@@ -1,4 +1,4 @@
-import { migrateSketchesDraft } from '@/cad/sketchRecords';
+import { migratePlanes, migrateSketchesDraft } from '@/cad/sketchRecords';
 import { validateRecipe } from '@/cad/brep/types';
 import type { ModelDocument, SceneObject } from '@/types/document';
 import type { MeshData } from '../kernel/meshData';
@@ -56,9 +56,10 @@ export const PROJECT_FILE_FORMAT = 'modellio-project';
 /** v2 (MODELLIO 2.0): adds `meta.workspace` and `maker`. v1 files open as Design Studio projects. */
 /** 3: precise solids (`solid` shapes with a feature recipe). */
 /** 4: carries schema-2 documents (standalone sketches, components). */
-export const PROJECT_FILE_VERSION = 4;
-/** 2: standalone sketches and components (version 1 documents are upgraded on load). */
-export const CURRENT_SCHEMA = 2;
+/** 5: carries schema-3 documents (reference planes, sketch placements). */
+export const PROJECT_FILE_VERSION = 5;
+/** 2: standalone sketches and components; 3: reference planes and sketch placements (older documents are upgraded on load). */
+export const CURRENT_SCHEMA = 3;
 
 export class ProjectFormatError extends Error {}
 
@@ -123,7 +124,8 @@ export function migrateDocument(raw: unknown): ModelDocument {
     }
     doc.objects[id] = o;
   }
-  // Standalone sketches (schema 2): keep valid records and link every sketched body to one.
+  // Reference planes (schema 3), then standalone sketches (schema 2) and their placements.
+  doc.planes = migratePlanes(raw.planes);
   migrateSketchesDraft(doc, raw.sketches);
   // Repair references.
   for (const o of Object.values(doc.objects)) {

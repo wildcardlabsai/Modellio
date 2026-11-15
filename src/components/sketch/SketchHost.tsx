@@ -48,7 +48,13 @@ export function SketchHost() {
   }
   return (
     <Suspense fallback={null}>
-      <SketchEditor key={editing.id ?? `new-${editing.op ?? ''}`} objectId={editing.id} initialOp={editing.op} onClose={close} />
+      <SketchEditor
+        key={editing.id ?? `new-${editing.op ?? ''}-${editing.place ? JSON.stringify(editing.place.frame) : ''}`}
+        objectId={editing.id}
+        initialOp={editing.op}
+        place={editing.place}
+        onClose={close}
+      />
     </Suspense>
   );
 }

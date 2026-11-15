@@ -7,7 +7,18 @@
 import { current, isDraft } from 'immer';
 import { createId } from '@/utils/id';
 import { collectSubtree } from './document';
-import type { ModelDocument, ObjectId, ShapeObject, SketchId, SketchRecord } from '@/types/document';
+import type {
+  Frame,
+  ModelDocument,
+  ObjectId,
+  PlaneId,
+  RefPlane,
+  ShapeObject,
+  SketchId,
+  SketchPlacement,
+  SketchRecord,
+} from '@/types/document';
+import { validFaceRef } from './brep/types';
 import type { Sketch } from './sketch/types';
 
 export const sketchRecords = (doc: ModelDocument): Record<SketchId, SketchRecord> => doc.sketches ?? {};
@@ -53,6 +64,38 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isSketch = (v: unknown): v is Sketch =>
   isObj(v) && Array.isArray(v.points) && Array.isArray(v.entities) && Array.isArray(v.constraints);
 
+const isVec3 = (v: unknown): v is [number, number, number] =>
+  Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+const isFrame = (v: unknown): v is Frame => isObj(v) && isVec3(v.origin) && isVec3(v.x) && isVec3(v.y);
+
+function migratePlacement(v: unknown, planes: Record<PlaneId, RefPlane>): SketchPlacement | null {
+  if (!isObj(v)) return null;
+  if (v.kind === 'plane' && typeof v.planeId === 'string' && planes[v.planeId]) return { kind: 'plane', planeId: v.planeId };
+  // A face placement whose body is gone is kept: it shows as a broken attachment, not silently dropped.
+  if (v.kind === 'face' && typeof v.objectId === 'string' && validFaceRef(v.face))
+    return { kind: 'face', objectId: v.objectId, face: v.face };
+  return null;
+}
+
+/** Reference planes (schema 3): keep the well-formed ones. */
+export function migratePlanes(raw: unknown): Record<PlaneId, RefPlane> {
+  const out: Record<PlaneId, RefPlane> = {};
+  if (!isObj(raw)) return out;
+  for (const [id, p] of Object.entries(raw)) {
+    if (!isObj(p) || p.id !== id || !['XY', 'XZ', 'YZ'].includes(p.base as string)) continue;
+    const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
+    out[id] = {
+      id,
+      name: typeof p.name === 'string' && p.name ? p.name : 'Plane',
+      base: p.base as RefPlane['base'],
+      offset: num(p.offset),
+      tilt: Math.max(-89, Math.min(89, num(p.tilt))),
+      visible: p.visible !== false,
+    };
+  }
+  return out;
+}
+
 /**
  * Bring a document's sketches to schema 2 (in place, on a freshly migrated document):
  * keep valid records, link every profile to one (creating records for version 1 profiles), and
@@ -62,8 +105,17 @@ export function migrateSketchesDraft(doc: ModelDocument, raw: unknown) {
   const records: Record<SketchId, SketchRecord> = {};
   if (isObj(raw))
     for (const [id, r] of Object.entries(raw))
-      if (isObj(r) && r.id === id && typeof r.name === 'string' && isSketch(r.sketch))
-        records[id] = { id, name: r.name || 'Sketch', sketch: r.sketch };
+      if (isObj(r) && r.id === id && typeof r.name === 'string' && isSketch(r.sketch)) {
+        const rec: SketchRecord = { id, name: r.name || 'Sketch', sketch: r.sketch };
+        // Schema 3: a placement is kept only if it is well formed and what it names is valid.
+        const placement = migratePlacement(r.placement, doc.planes ?? {});
+        if (placement) {
+          rec.placement = placement;
+          if (isFrame(r.frame)) rec.frame = r.frame;
+          if (typeof r.broken === 'string' && r.broken) rec.broken = r.broken;
+        }
+        records[id] = rec;
+      }
   doc.sketches = records;
   for (const o of Object.values(doc.objects)) {
     if (o.kind !== 'shape') continue;

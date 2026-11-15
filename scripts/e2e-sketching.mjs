@@ -458,6 +458,171 @@ await page.keyboard.press('Control+z');
 check('41. One undo removes the offset', (await counts()).arcs === 1);
 await page.getByRole('button', { name: 'Close sketch without saving' }).click();
 
+// 8. Placement: reference planes and sketches attached to faces (schema 3).
+const until = async (fn, ms = 30000) => {
+  const t = Date.now();
+  while (Date.now() - t < ms) {
+    const v = await fn();
+    if (v) return v;
+    await page.waitForTimeout(100);
+  }
+  return fn();
+};
+const docNow = () => S(() => window.modellio.store.getState().doc);
+const bodyOf = async (recId) => S((r) => Object.values(window.modellio.store.getState().doc.objects).find((o) => o.sketchId === r), recId);
+const closeTo = (a, b, tol = 0.01) => a.every((v, i) => Math.abs(v - b[i]) < tol);
+await S(() => window.modellio.store.getState().select([]));
+const browserView = (name) => page.getByRole('radiogroup', { name: 'Browser view' }).getByRole('radio', { name }).click();
+await browserView('Sketches');
+await page.getByRole('button', { name: 'New plane parallel to XZ' }).click();
+const planeRow = page.getByTestId('plane-row').first();
+await planeRow.waitFor();
+const planeId = await S(() => Object.keys(window.modellio.store.getState().doc.planes)[0]);
+const offsetField = page.getByLabel('Plane 1 offset (mm)', { exact: true });
+await offsetField.fill('10');
+await offsetField.press('Enter');
+check('42. A reference plane is added and offset', (await docNow()).planes[planeId].offset === 10);
+await page.getByRole('button', { name: 'Sketch on Plane 1' }).click();
+await editor().waitFor();
+check('43. Sketching on a plane says so', /on Plane 1/.test((await page.getByTestId('sketch-place').textContent()) ?? ''));
+await tool('Rectangle');
+await click(0, 0);
+await click(20, 10);
+await page.getByTestId('sketch-finish').click();
+await editor().waitFor({ state: 'detached' });
+const planeRec = await until(() =>
+  S(() => Object.values(window.modellio.store.getState().doc.sketches).find((r) => r.placement?.kind === 'plane')?.id),
+);
+let pb = await bodyOf(planeRec);
+// XZ plane: sketch x → world X, sketch y → world Z, extrusion along −Y from y = −10.
+check(
+  '44. The body sits on the plane, extruded along its normal',
+  pb && closeTo(pb.transform.position, [10, -12.5, 5]),
+  JSON.stringify(pb?.transform),
+);
+await offsetField.fill('20');
+await offsetField.press('Enter');
+pb = await bodyOf(planeRec);
+check('45. Moving the plane moves the body with it', closeTo(pb.transform.position, [10, -22.5, 5]), JSON.stringify(pb.transform.position));
+await offsetField.blur();
+await page.keyboard.press('Control+z');
+pb = await bodyOf(planeRec);
+check(
+  '46. One undo puts both back',
+  closeTo(pb.transform.position, [10, -12.5, 5]) && (await docNow()).planes[planeId].offset === 10,
+  JSON.stringify(pb.transform.position),
+);
+await S((id) => window.modellio.store.getState().setPosition(id, [50, 50, 50]), pb.id);
+pb = await bodyOf(planeRec);
+check('47. A placed body cannot be moved on its own', closeTo(pb.transform.position, [10, -12.5, 5]));
+await S((id) => window.modellio.store.getState().select([id]), pb.id);
+await page.getByRole('tab', { name: /^Properties/ }).click();
+check(
+  '48. The Inspector says where it sits and locks its position',
+  /On Plane 1/.test((await page.getByTestId('placement-note').textContent()) ?? '') &&
+    (await page.getByLabel('Position X', { exact: false }).first().isDisabled()),
+);
+
+// A sketch on the top face of a box.
+const boxId = await S(() => window.modellio.store.getState().addShape('box', [60, 0]));
+await S((id) => window.modellio.store.getState().setSize(id, [30, 30, 10]), boxId);
+const boxObj = await S((id) => window.modellio.store.getState().doc.objects[id], boxId);
+await S((id) => window.modellio.store.getState().select([id]), boxId);
+await page.getByRole('tab', { name: /^Features/ }).click();
+// Frame the whole design so the box is on screen.
+await page.getByRole('button', { name: 'Fit all' }).click();
+await page.waitForTimeout(600);
+await page.getByTestId('sketch-on-face').click();
+await page.getByTestId('face-pick-banner').waitFor();
+const topCentre = [boxObj.transform.position[0], boxObj.transform.position[1], boxObj.transform.position[2] + 5];
+const clickWorld = async (p) => {
+  const q = await S(([x, y, z]) => window.modellio.worldToScreen(x, y, z), p);
+  await page.mouse.move(q.x, q.y);
+  await page.waitForTimeout(80);
+  await page.mouse.click(q.x, q.y);
+};
+await clickWorld([topCentre[0] + 3, topCentre[1] + 3, topCentre[2]]);
+await editor().waitFor();
+check(
+  '49. Clicking a flat face opens the sketch editor on it',
+  /on a face of/.test((await page.getByTestId('sketch-place').textContent()) ?? ''),
+);
+await tool('Circle');
+await click(0, 0);
+await click(4, 0);
+await page.getByTestId('sketch-finish').click();
+await editor().waitFor({ state: 'detached' });
+const faceRec = await until(() =>
+  S(() => Object.values(window.modellio.store.getState().doc.sketches).find((r) => r.placement?.kind === 'face')?.id),
+);
+const fb0 = await bodyOf(faceRec);
+check(
+  '50. The body stands on the face (extruded up from its centre)',
+  fb0 && closeTo(fb0.transform.position, [topCentre[0], topCentre[1], topCentre[2] + 2.5]),
+  JSON.stringify(fb0?.transform.position),
+);
+// Make the box taller: the face moves up and the body follows (found again by its reference).
+await S((id) => window.modellio.store.getState().setSize(id, [30, 30, 16]), boxId);
+const boxTop = async () => {
+  const b = await S((id) => window.modellio.store.getState().doc.objects[id], boxId);
+  return b.transform.position[2] + b.size[2] / 2;
+};
+const fb1 = await until(async () => {
+  const b = await bodyOf(faceRec);
+  return Math.abs(b.transform.position[2] - ((await boxTop()) + 2.5)) < 0.01 && b;
+});
+check('51. When the box changes, the attached body follows its face', !!fb1, JSON.stringify((await bodyOf(faceRec)).transform.position));
+// Remove the face: shell the box with its top open. The attachment breaks; nothing moves.
+await S((id) => window.modellio.store.getState().convertToSolid(id), boxId);
+await until(() => S((id) => window.modellio.store.getState().doc.objects[id].shape === 'solid', boxId));
+const beforeBreak = (await bodyOf(faceRec)).transform;
+const face = (await docNow()).sketches[faceRec].placement.face;
+await S(
+  ([id, face]) =>
+    window.modellio.store.getState().setFeatureOps(id, [{ id: 'op_shell', kind: 'shell', thickness: 2, faces: [face] }], 'Shell'),
+  [boxId, face],
+);
+const broken = await until(() => S((r) => window.modellio.store.getState().doc.sketches[r].broken, faceRec));
+check('52. Removing the face marks the attachment broken, with the reason', /no longer exists/.test(broken ?? ''), broken);
+check('53. …and nothing moved', JSON.stringify((await bodyOf(faceRec)).transform) === JSON.stringify(beforeBreak));
+await S(() => window.modellio.store.getState().select([]));
+await browserView('Sketches');
+check(
+  '54. The Sketches view explains it, with Re-attach and Detach',
+  /no longer exists/.test((await page.getByTestId('sketch-broken').textContent()) ?? ''),
+);
+await page.screenshot({ path: `${OUT}/sketching-07-broken.png` });
+await page.keyboard.press('Control+z');
+const healed = await until(() => S((r) => !window.modellio.store.getState().doc.sketches[r].broken, faceRec));
+check('55. Undoing the shell restores the attachment', healed);
+// Detach: the body stays put and can then be moved on its own.
+const fb = await bodyOf(faceRec);
+await S((id) => window.modellio.store.getState().select([id]), fb.id);
+await page.getByRole('tab', { name: /^Properties/ }).click();
+await page.getByTestId('detach-sketch').click();
+check(
+  '56. Detach frees the sketch and leaves the body where it was',
+  !(await docNow()).sketches[faceRec].placement && closeTo((await bodyOf(faceRec)).transform.position, fb.transform.position),
+);
+await S((id) => window.modellio.store.getState().setPosition(id, [100, 100, 5]), fb.id);
+check('57. A detached body moves freely', closeTo((await bodyOf(faceRec)).transform.position, [100, 100, 5]));
+
+// Saved and reopened: planes, placements and bodies come back.
+await S(() => window.modellio.projects.getState().saveNow());
+await page.reload({ waitUntil: 'networkidle' });
+await page.getByTestId('viewport').waitFor();
+await until(() => S(() => Object.keys(window.modellio.store.getState().doc.planes ?? {}).length === 1));
+const reopened = await docNow();
+const pb2 = Object.values(reopened.objects).find((o) => o.sketchId === planeRec);
+check(
+  '58. Planes, placed sketches and their bodies survive saving and reopening',
+  reopened.planes[planeId]?.offset === 10 &&
+    reopened.sketches[planeRec]?.placement?.planeId === planeId &&
+    pb2 &&
+    closeTo(pb2.transform.position, [10, -12.5, 5]) &&
+    reopened.schemaVersion === 3,
+);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

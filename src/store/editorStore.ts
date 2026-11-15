@@ -58,7 +58,9 @@ import type { FeatureOp, FeatureRecipe } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
-import type { CombineMode, SketchId, SurfaceFinish, TextContent } from '@/types/document';
+import type { CombineMode, Frame, PlaneId, RefPlane, SketchId, SketchPlacement, SurfaceFinish, TextContent } from '@/types/document';
+import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
+import { planeFrame } from '@/cad/placement';
 import { addSketchRecordDraft, forkSketchLinksDraft, sketchRecords, sketchUsers } from '@/cad/sketchRecords';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
@@ -211,7 +213,26 @@ export interface EditorState {
    * message) when the sketch has no closed outline.
    */
   /** Save a sketch into a body: edit body `id`, or make a new one (linked to `sketchId` when given, else to a new sketch). */
-  saveSketch: (id: ObjectId | null, sketch: Sketch, op: ProfileOp, sketchId?: SketchId) => Promise<ObjectId | null>;
+  saveSketch: (
+    id: ObjectId | null,
+    sketch: Sketch,
+    op: ProfileOp,
+    sketchId?: SketchId,
+    /** For a new sketch: where it sits (a reference plane or a flat face) and that place's frame. */
+    place?: { placement: SketchPlacement; frame: Frame },
+  ) => Promise<ObjectId | null>;
+
+  // --- reference planes and sketch placements (schema 3) ---
+  /** Add a reference plane: one of the main planes, offset along its normal and tilted about its x axis. */
+  addPlane: (base: RefPlane['base'], offset?: number, tilt?: number) => PlaneId | null;
+  /** Change a plane; sketches on it (and their bodies) move with it in the same undo step. */
+  updatePlane: (id: PlaneId, patch: Partial<Pick<RefPlane, 'name' | 'base' | 'offset' | 'tilt' | 'visible'>>) => void;
+  /** Delete a plane no sketch uses. */
+  deletePlane: (id: PlaneId) => void;
+  /** Free a placed sketch: its bodies stay where they are and can be moved on their own. */
+  detachSketch: (sketchId: SketchId) => void;
+  /** Place a sketch again (e.g. on another face after its face went away); its bodies move there. */
+  reattachSketch: (sketchId: SketchId, placement: SketchPlacement, frame: Frame) => void;
 
   // --- standalone sketches and components (schema 2) ---
   /** Keep a sketch on its own, without making a body from it. */
@@ -298,6 +319,33 @@ export const useEditor = create<EditorState>()((set, get) => {
     });
 
   /**
+   * Bodies placed by a sketch keep their place: undo any move of one (telling the user why),
+   * except while the placement itself is putting them there (`placing`).
+   */
+  let placing = false;
+  let lastBlockedNote = 0;
+  const guardPlaced = (prev: ModelDocument, next: ModelDocument): ModelDocument => {
+    if (placing || next === prev) return next;
+    const g = guardPlacedBodies(prev, next);
+    if (g.blocked.length && Date.now() - lastBlockedNote > 1500) {
+      lastBlockedNote = Date.now();
+      get().notify(
+        `${g.blocked.join(', ')} ${g.blocked.length === 1 ? 'sits' : 'sit'} on ${g.blocked.length === 1 ? 'its' : 'their'} sketch's plane or face. Detach the sketch to move ${g.blocked.length === 1 ? 'it' : 'them'} on ${g.blocked.length === 1 ? 'its' : 'their'} own.`,
+      );
+    }
+    return g.doc === next ? next : g.doc;
+  };
+  /** An undo step that is allowed to move placed bodies (it is what places them). */
+  const applyPlacing = (label: string, recipe: Recipe) => {
+    placing = true;
+    try {
+      get().apply(label, recipe);
+    } finally {
+      placing = false;
+    }
+  };
+
+  /**
    * Rebuild the bodies made from a sketch record with a new sketch (each keeps its own extrude or
    * revolve). Bodies the new sketch cannot build are reported and keep their old shape.
    */
@@ -343,6 +391,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       t.sketch = sketch;
       t.size = u.size;
     }
+    // A placed sketch's bodies stay on its frame (their centres move with the new outline).
+    placeBodiesDraft(d, rec.id);
   };
   const reportFailed = (failed: ShapeObject[]) => {
     if (failed.length)
@@ -401,7 +451,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         return;
       }
       const { doc, history, transaction } = get();
-      const next = produce(doc, recipe);
+      const next = guardPlaced(doc, produce(doc, recipe));
       if (next === doc) return;
       if (transaction) {
         set({ doc: next });
@@ -422,7 +472,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     applyTransient: (recipe) => {
       if (get().readOnly) return;
       const { doc } = get();
-      const next = produce(doc, recipe);
+      const next = guardPlaced(doc, produce(doc, recipe));
       if (next !== doc) set({ doc: next });
     },
 
@@ -883,7 +933,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selection: created });
     },
 
-    saveSketch: async (id, sketch, op, linkTo) => {
+    saveSketch: async (id, sketch, op, linkTo, place) => {
       if (get().readOnly) {
         refuseReadOnly();
         return null;
@@ -904,7 +954,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       const existing = id ? get().doc.objects[id] : undefined;
       if (existing?.kind === 'shape' && existing.shape === 'profile') {
         const others = existing.sketchId ? await rebuildUsers(existing.sketchId, sketch, existing.id) : { ok: [], failed: [] };
-        get().apply('Edit sketch', (d) => {
+        applyPlacing('Edit sketch', (d) => {
           const t = d.objects[existing.id];
           if (t?.kind !== 'shape') return;
           t.sketch = sketch;
@@ -919,9 +969,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       const pos = findFreePosition(doc, size, [0, 0]);
       const name = uniqueName(doc, 'Sketch');
       const obj = { ...createShape(doc, 'profile', [pos[0], pos[1], size[2] / 2]), sketch, params, size, name };
-      get().apply('Sketch', (d) => {
+      applyPlacing('Sketch', (d) => {
         addObjectDraft(d, obj);
-        (d.objects[obj.id] as ShapeObject).sketchId = linkTo && d.sketches?.[linkTo] ? linkTo : addSketchRecordDraft(d, sketch, name);
+        const recId = linkTo && d.sketches?.[linkTo] ? linkTo : addSketchRecordDraft(d, sketch, name);
+        (d.objects[obj.id] as ShapeObject).sketchId = recId;
+        const rec = d.sketches![recId];
+        if (place && !rec.placement) {
+          rec.placement = structuredClone(place.placement);
+          rec.frame = structuredClone(place.frame);
+        }
+        placeBodiesDraft(d, recId);
       });
       set({ selection: [obj.id] });
       return obj.id;
@@ -946,7 +1003,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       }
       if (!sketchRecords(get().doc)[sketchId]) return false;
       const users = await rebuildUsers(sketchId, sketch);
-      get().apply('Edit sketch', (d) => writeSketch(d, sketchId, sketch, users));
+      applyPlacing('Edit sketch', (d) => writeSketch(d, sketchId, sketch, users));
       reportFailed(users.failed);
       return true;
     },
@@ -978,6 +1035,71 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (d.sketches) delete d.sketches[sketchId];
       });
     },
+
+    addPlane: (base, offset = 0, tilt = 0) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      const id = createId('pl');
+      get().apply('Add plane', (d) => {
+        d.planes ??= {};
+        const n = Object.keys(d.planes).length + 1;
+        d.planes[id] = { id, name: `Plane ${n}`, base, offset, tilt, visible: true };
+      });
+      return id;
+    },
+
+    updatePlane: (id, patch) =>
+      applyPlacing(patch.name !== undefined && Object.keys(patch).length === 1 ? 'Rename plane' : 'Edit plane', (d) => {
+        const p = d.planes?.[id];
+        if (!p) return;
+        if (patch.name !== undefined) p.name = patch.name.trim() || p.name;
+        if (patch.base) p.base = patch.base;
+        if (patch.offset !== undefined && Number.isFinite(patch.offset)) p.offset = patch.offset;
+        if (patch.tilt !== undefined && Number.isFinite(patch.tilt)) p.tilt = Math.max(-89, Math.min(89, patch.tilt));
+        if (patch.visible !== undefined) p.visible = patch.visible;
+        // Sketches on the plane, and their bodies, move with it.
+        const frame = planeFrame(p);
+        for (const r of planeUsers(d as ModelDocument, id)) {
+          const rec = d.sketches![r.id];
+          rec.frame = frame;
+          placeBodiesDraft(d, r.id);
+        }
+      }),
+
+    deletePlane: (id) => {
+      const doc = get().doc;
+      const users = planeUsers(doc, id);
+      if (users.length) {
+        get().notify(
+          `${users.map((u) => u.name).join(', ')} ${users.length === 1 ? 'is' : 'are'} on this plane. Detach ${users.length === 1 ? 'it' : 'them'} first.`,
+        );
+        return;
+      }
+      get().apply('Delete plane', (d) => {
+        if (d.planes) delete d.planes[id];
+      });
+    },
+
+    detachSketch: (sketchId) =>
+      get().apply('Detach sketch', (d) => {
+        const r = d.sketches?.[sketchId];
+        if (!r) return;
+        delete r.placement;
+        delete r.frame;
+        delete r.broken;
+      }),
+
+    reattachSketch: (sketchId, placement, frame) =>
+      applyPlacing('Re-attach sketch', (d) => {
+        const r = d.sketches?.[sketchId];
+        if (!r) return;
+        r.placement = structuredClone(placement);
+        r.frame = structuredClone(frame);
+        delete r.broken;
+        placeBodiesDraft(d, sketchId);
+      }),
 
     unlinkSketch: (objectId) => {
       const o = get().doc.objects[objectId];

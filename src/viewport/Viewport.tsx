@@ -24,6 +24,8 @@ import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
 import { LayFlatTool } from './LayFlatTool';
 import { EdgePickTool } from './EdgePickTool';
+import { SketchFacePicker } from './SketchFacePicker';
+import { RefPlanes } from './RefPlanes';
 import { FacePickTool } from './FacePickTool';
 import { SolidPreview } from './SolidPreview';
 import { PrintOverlay } from './PrintOverlay';
@@ -238,6 +240,8 @@ export function Viewport() {
           <LayFlatTool />
           <EdgePickTool />
           <FacePickTool />
+          <SketchFacePicker />
+          <RefPlanes />
           <SolidPreview />
           <PrintOverlay />
           <SnapGuides />

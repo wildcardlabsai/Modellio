@@ -426,6 +426,39 @@ Stages 4 and 5 could swap if assemblies matter less than printing for current us
 - Body copies are not linked yet (Stage 4).
 - A primitive-only combination is exact only once the engine has been loaded, by design (it is a 23 MB download).
 
+### Stage 3: advanced sketching (done)
+
+Built in five increments (3a–3e), each tested, committed and pushed.
+
+| Item | Result |
+| --- | --- |
+| Solver | Rewritten. Unknowns are split into independent groups (points and circle radii linked by equations); each is solved by Levenberg–Marquardt with a sparse numeric Jacobian. Points not in any equation a change touches cannot move. A 200-line sketch solves in about 8 ms. |
+| New constraints | Tangent (line–circle/arc; circle–circle, outside or inside; at a shared end point for splines), concentric, symmetric about a line, midpoint, point on line, point on curve, angle, point–point and point–line distance, smooth (spline handles). Each is offered in the selection panel when the selection fits it. |
+| Conflicts | A constraint or dimension that would conflict, or that only repeats what the sketch already implies, is refused: the message names the constraints it clashes with, and nothing changes. A sketch that already conflicts (an older file) names the culprits in its status and draws them red, in the list and on the canvas. |
+| Splines | A Spline tool draws cubic Béziers through clicked points, with Catmull-Rom handles, closing on the first point. Handles are ordinary sketch points, so they take constraints. They are drawn as squares and can be dragged (the anchor stays put). A `smooth` constraint keeps each join smooth; "Make corner" frees a join and "Make smooth" restores it. Both engines build true splines: the mesh engine samples them, the exact engine draws Bézier edges. Splines work in extrudes, revolves, lofts and as sweep paths. |
+| Parametric dimensions | Every constraint with a value is drawn on the canvas as a dimension: offset lines outside the outline for lengths, a leader for diameters, an arc for angles, and lines from the axes for X/Y. Click a label to type a value; it re-solves through the solver, with the same refusal for conflicts and invalid sizes. |
+| Editing tools | **Trim** (to the crossings either side of the click; a circle becomes an arc; Béziers are split exactly). **Extend** (a free line end to the next curve). **Offset** (a chain of lines and arcs, or a circle, joined at the corners, outward for positive distances). **Fillet** and **chamfer** at a two-line corner. Intersections of any two curve kinds are found from sampled polylines and refined by Newton's method. Each tool previews its result before the click, or shows why it would be refused: a radius too big, a fold-over offset, a Bézier offset (it has no exact form), a joined or fixed end, or constraints that could not be met. Constraints that no longer hold are removed and named; direction constraints carry over to split pieces. |
+| Placement (schema 3) | **Reference planes:** XY, XZ or YZ, offset and tilted, drawn in the 3D view, edited in the Sketches view; "Sketch on this plane". **Sketch on a face:** pick a flat face of a precise solid, or of a box or cylinder (built exactly for the pick; the body itself is not changed). The sketch record keeps the face's reference and the last resolved frame. Bodies made from a placed sketch sit on its frame and extrude along its normal. |
+| Attachments | After every change a watcher finds each attached face again on its body's exact build, using the same reference matching as fillets and holes. When the face moved, the sketch and its bodies follow without a new undo step, so one undo restores both. When the face is gone (removed by a shell, say), cannot be told apart from another face, or its body was deleted, **nothing moves**. The sketch is marked broken, with the reason, in the Sketches view and the Inspector, with Re-attach (pick a face again) and Detach (free it where it is). |
+| Placed bodies | Their position and rotation are set by the sketch. The Inspector fields and the gizmo are disabled, with the reason and a Detach button. Every other way of moving them (nudge, align, typed values, group moves) is refused centrally in the store, with a message. Grouping still works, since it keeps world positions. |
+| Files | Schema 3 (project file version 5) adds `doc.planes` and, on sketch records, `placement`, `frame` and `broken`. Version 1 and 2 documents open unchanged (no planes, unplaced sketches); malformed placements are dropped; a face placement whose body is missing is kept and reported broken. Everything survives saving, closing and reopening. |
+| Fixed along the way | Solver speed: an entity lookup table was being rebuilt for every Jacobian column. |
+
+**Tests added:**
+- **Unit (+55):** every constraint solved exactly; conflict naming and refusal; unrelated points unmoved; solver timing; Bézier outline walk, mesh area against the analytic area, exact extrude volume and a Bézier sweep path; spline drawing and smooth joins; dimension placement; intersections against analytic answers; de Casteljau pieces; trim, extend, offset, fillet and chamfer and each refusal; plane and face frames; frames that turn with the body; following a resized face; a broken attachment that moves nothing; migration and save/reopen.
+- **Browser:** new `e2e-sketching` suite (62 checks): constraints and refusals, a conflicting file, splines and handles, on-canvas dimensions, the five editing tools with previews, reference planes, sketch on a face, following, breaking and undoing, Detach, and save and reload.
+- **Changed existing tests:**
+  - `e2e-studio2` checks 22–23 now assert that a contradictory constraint is refused and named, rather than added and then removed.
+  - Two schema tests assert the current schema (`CURRENT_SCHEMA`, now 3) instead of the literal 2.
+
+**Limitations:**
+- Extend works on lines; fillet and chamfer on corners where two lines meet (not line–arc).
+- Offset refuses splines, since a Bézier's offset is not a Bézier.
+- Tangent and smooth constraints keep curves in line but don't stop them turning back into a cusp if dragged that far.
+- Sketches attach to flat faces only. A face's frame takes its x axis from the body's own X (or Y), and its origin is the face's centre, so a sketch stays centred on its face as the face grows.
+- A body built from a placed sketch can still be resized; its size then no longer matches the sketch.
+- The editing tools' icons show their names only on wide screens; tooltips always do.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.
