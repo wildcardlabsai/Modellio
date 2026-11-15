@@ -374,6 +374,40 @@ check(
 );
 await page.screenshot({ path: `${OUT}/studio2-03-profile.png` });
 
+/** The rendered colour of one screen pixel. */
+const pixelAt = async (x, y) => {
+  const png = await page.screenshot({ clip: { x: Math.round(x) - 1, y: Math.round(y) - 1, width: 3, height: 3 } });
+  return S(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(1, 1, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, png.toString('base64'));
+};
+const brightness = ([r, g, b]) => (r + g + b) / 3;
+
+// 7b. Workspace theme (Stage 2.2c): dark by default in the Studio, light on request, remembered.
+const vp = await page.getByTestId('viewport').boundingBox();
+const sky = () => pixelAt(vp.x + vp.width / 2, vp.y + 12);
+const darkSky = await sky();
+check('35. The 3D workspace is dark by default', brightness(darkSky) < 60, String(darkSky));
+await page.getByRole('button', { name: 'Light workspace' }).click();
+await page.waitForTimeout(400);
+const lightSky = await sky();
+check(
+  '35b. "Light workspace" switches it to light, and the button now offers dark',
+  brightness(lightSky) > 150 &&
+    brightness(lightSky) - brightness(darkSky) > 90 &&
+    (await page.getByRole('button', { name: 'Dark workspace' }).count()) === 1,
+  String(lightSky),
+);
+
 // 8. Right panel: Design Browser and the tabbed Inspector (Stage 2.2b).
 await clear();
 const pbox = await S(() => window.modellio.store.getState().addShape('box'));
@@ -422,20 +456,9 @@ const topPixel = async () => {
     },
     [pbox],
   );
-  const png = await page.screenshot({ clip: { x: Math.round(p.x) - 1, y: Math.round(p.y) - 1, width: 3, height: 3 } });
+  const px = await pixelAt(p.x, p.y);
   await S((ids) => window.modellio.store.getState().select(ids), sel);
-  return S(async (b64) => {
-    const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
-    await img.decode();
-    const c = document.createElement('canvas');
-    c.width = img.width;
-    c.height = img.height;
-    const g = c.getContext('2d');
-    g.drawImage(img, 0, 0);
-    const d = g.getImageData(1, 1, 1, 1).data;
-    return [d[0], d[1], d[2]];
-  }, png.toString('base64'));
+  return px;
 };
 const solidPx = await topPixel();
 const pct = page.getByLabel('Transparency (%)', { exact: true });
@@ -507,6 +530,27 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.getByTestId('viewport').waitFor();
 const reopened = await until(() => S((id) => window.modellio.store.getState().doc.objects[id]?.opacity, pbox));
 check('34. Transparency survives saving and reopening', reopened === 0.5, String(reopened));
+check('35c. The workspace theme is remembered after reloading', (await page.getByRole('button', { name: 'Dark workspace' }).count()) === 1);
+await page.getByRole('button', { name: 'Dark workspace' }).click();
+
+// 9. Docked feature panel (Stage 2.2c): folds away while Apply / Cancel stay.
+await S((id) => window.modellio.store.getState().select([id]), pbox);
+await S((id) => window.modellio.features.getState().start(id, 'fillet'), pbox);
+const panel = page.getByRole('dialog', { name: 'Fillet edges' });
+await panel.waitFor();
+const radius = panel.getByLabel('Radius (mm)');
+check('36. The fillet panel is docked at the left of the 3D view', (await panel.boundingBox()).x - vp.x < 80);
+await panel.getByRole('button', { name: 'Fold panel' }).click();
+check(
+  '36b. Folding hides the settings but keeps Cancel and Apply',
+  (await radius.count()) === 0 &&
+    (await panel.getByRole('button', { name: 'Cancel' }).isVisible()) &&
+    (await panel.getByTestId('feature-apply').isVisible()),
+);
+await panel.getByRole('button', { name: 'Unfold panel' }).click();
+check('36c. Unfolding shows them again', await radius.isVisible());
+await panel.getByRole('button', { name: 'Cancel' }).click();
+check('36d. Cancel closes the panel', (await panel.count()) === 0);
 
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

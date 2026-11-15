@@ -4,6 +4,7 @@ import { SketchEditor, type SketchUse } from '@/components/sketch/SketchEditor';
 import { sketchOutlines, sketchPath } from '@/cad/brep/build';
 import type { Sketch } from '@/cad/sketch/types';
 import { SketchThumb } from './SketchThumb';
+import { DockedPanel } from './DockedPanel';
 import { useSolidBuilder, type BuilderSession, type LoftBase, type SweepBase } from './solidBuilder';
 
 /** One closed outline, as loft sections and sweep profiles need. */
@@ -63,28 +64,19 @@ export function LoftSweepDialog() {
   const isLoft = session.base.kind === 'loft';
   return (
     <>
-      <div
-        className="pointer-events-auto absolute left-16 top-3 z-20 flex max-h-[calc(100%-24px)] w-[360px] flex-col rounded-xl border border-line bg-panel shadow-float"
-        role="dialog"
-        aria-label={isLoft ? 'Loft' : 'Sweep'}
-        data-testid="loft-sweep-dialog"
+      <DockedPanel
+        label={isLoft ? 'Loft' : 'Sweep'}
+        testId="loft-sweep-dialog"
+        title={`${session.editingId ? 'Edit ' : ''}${isLoft ? 'Loft' : 'Sweep'}`}
+        description={
+          isLoft
+            ? 'A solid that blends from one cross-section to the next, bottom to top. Each section is a sketch with one closed outline.'
+            : 'A profile (one closed outline) moved along a path (lines and arcs, open or closed). The profile’s origin sits on the path.'
+        }
+        footer={<Footer session={session} onCancel={b.cancel} onApply={b.apply} />}
       >
-        <div className="border-b border-line p-3">
-          <h2 className="text-[14px] font-semibold text-ink">
-            {session.editingId ? 'Edit ' : ''}
-            {isLoft ? 'Loft' : 'Sweep'}
-          </h2>
-          <p className="mt-0.5 text-[12px] leading-snug text-muted">
-            {isLoft
-              ? 'A solid that blends from one cross-section to the next, bottom to top. Each section is a sketch with one closed outline.'
-              : 'A profile (one closed outline) moved along a path (lines and arcs, open or closed). The profile’s origin sits on the path.'}
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          {session.base.kind === 'loft' ? <LoftFields base={session.base} /> : <SweepFields base={session.base} />}
-        </div>
-        <Footer session={session} onCancel={b.cancel} onApply={b.apply} />
-      </div>
+        {session.base.kind === 'loft' ? <LoftFields base={session.base} /> : <SweepFields base={session.base} />}
+      </DockedPanel>
       {session.sketching && <SketchFor session={session} />}
     </>
   );
@@ -251,7 +243,7 @@ function SweepFields({ base }: { base: SweepBase }) {
 function Footer({ session, onCancel, onApply }: { session: BuilderSession; onCancel: () => void; onApply: () => void }) {
   const p = session.preview;
   return (
-    <div className="border-t border-line p-3">
+    <div>
       <p
         className={`flex min-h-[20px] items-start gap-1.5 text-[12px] ${p.state === 'error' ? 'text-red-700' : p.state === 'ok' ? 'text-emerald-700' : 'text-muted'}`}
         role="status"

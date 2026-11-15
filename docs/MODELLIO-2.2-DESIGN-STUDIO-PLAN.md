@@ -133,3 +133,11 @@ single history. The timeline can then highlight and select what a step affected,
 | 5 | Polish, tablet layouts, full regression, performance check, docs | Everything |
 
 Every stage is committed on this branch with a report. Nothing goes to `main` without approval.
+
+## 8. Progress
+
+| Stage | Status | Notes |
+| --- | --- | --- |
+| 2a | Done | Grouped toolbar (fits without scrolling from 1100 px), rail with Sketch, library in six collapsible categories with one search. |
+| 2b | Done | Design Browser with body-type icons above a four-tab Inspector. Finish and transparency are view-only optional shape fields (no schema change, sanitised on load, never exported). Print tab: size, volume (exact for precise solids), surface area, closed-solid check. |
+| 2c | Done | Dark or light 3D workspace (a per-browser preference, dark by default). The left tool strip's "Fit to view" duplicated "Focus selected" / "Fit all" and was removed (F still frames). Fillet, Chamfer, Loft and Sweep share one docked, foldable panel. The history timeline is a slim track of step nodes. |

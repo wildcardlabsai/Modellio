@@ -1,7 +1,8 @@
 import { FeatureDialog } from '@/components/features/FeatureDialog';
 import { LoftSweepDialog } from '@/components/features/LoftSweepDialog';
 import { useSolidBuilder } from '@/components/features/solidBuilder';
-import { Move, Rotate3d, Scaling, Focus, Home, Magnet, ChevronDown, Box, ScanSearch } from 'lucide-react';
+import { Move, Rotate3d, Scaling, Focus, Home, Magnet, ChevronDown, Box, ScanSearch, Sun, Moon } from 'lucide-react';
+import { useWorkspaceTheme } from './workspaceTheme';
 import { useEditor } from '@/store/editorStore';
 import { IconButton } from '@/components/ui/IconButton';
 import { VIEW_DIRECTIONS, viewport, type ViewName } from './viewportBridge';
@@ -28,6 +29,8 @@ const VIEWS: { view: ViewName; label: string }[] = [
 
 /** DOM controls floating over the 3D canvas. */
 export function ViewportOverlay() {
+  const theme = useWorkspaceTheme((s) => s.theme);
+  const setTheme = useWorkspaceTheme((s) => s.setTheme);
   const mode = useEditor((s) => s.mode);
   const setMode = useEditor((s) => s.setMode);
   const snap = useEditor((s) => s.snap);
@@ -76,10 +79,6 @@ export function ViewportOverlay() {
             <Icon size={18} strokeWidth={2} />
           </IconButton>
         ))}
-        <div className="mx-1.5 my-0.5 h-px bg-line" />
-        <IconButton label="Fit to view" shortcut="F" variant="floating" tooltipSide="right" onClick={requestFrame}>
-          <Focus size={18} />
-        </IconButton>
       </div>
 
       <FeatureDialog />
@@ -214,6 +213,15 @@ export function ViewportOverlay() {
         )}
         <IconButton label="Fit all" tooltipSide="top" onClick={() => viewport.frame(sceneBounds(useEditor.getState().doc))}>
           <Focus size={17} />
+        </IconButton>
+        <div className="mx-0.5 h-6 w-px bg-line" aria-hidden />
+        <IconButton
+          label={theme === 'dark' ? 'Light workspace' : 'Dark workspace'}
+          tooltipSide="left"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          data-testid="workspace-theme"
+        >
+          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </IconButton>
       </div>
 
