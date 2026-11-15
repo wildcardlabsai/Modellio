@@ -290,12 +290,16 @@ await len.press('Enter');
 await page.waitForTimeout(200);
 const status2 = await page.getByTestId('sketch-status').textContent();
 check('21. Fixing a corner and typing the height makes it fully constrained', /Fully constrained/.test(status2), status2);
-// A conflicting dimension is reported.
+// A contradictory constraint is refused, with what it conflicts with named, and nothing changes.
+const nConstraints = await page.getByTestId('sketch-constraints').locator('li').count();
 await page.getByRole('button', { name: 'Horizontal', exact: true }).click();
-const status3 = await page.getByTestId('sketch-status').textContent();
-check('22. A contradictory constraint is reported', /Conflicting|Over-constrained/.test(status3), status3);
-await page.getByTestId('sketch-constraints').getByRole('button').last().click();
-check('23. Removing it clears the problem', /Fully constrained/.test(await page.getByTestId('sketch-status').textContent()));
+const refused = (await page.getByTestId('sketch-notice').textContent()) ?? '';
+check('22. A contradictory constraint is refused and the conflict named', /conflicts with .*Vertical/.test(refused), refused);
+check(
+  '23. The sketch is unchanged and still fully constrained',
+  (await page.getByTestId('sketch-constraints').locator('li').count()) === nConstraints &&
+    /Fully constrained/.test(await page.getByTestId('sketch-status').textContent()),
+);
 await page.screenshot({ path: `${OUT}/studio2-02-sketch.png` });
 await page.getByLabel('Extrude depth (mm)', { exact: true }).fill('8');
 await page.getByLabel('Extrude depth (mm)', { exact: true }).press('Enter');
