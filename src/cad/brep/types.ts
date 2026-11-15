@@ -72,9 +72,39 @@ export interface FaceRef {
   area: number;
 }
 
+/** What a hole looks like, in mm. A depth of 0 goes right through the part. */
+export interface HoleSpec {
+  style: 'simple' | 'counterbore' | 'countersink';
+  diameter: number;
+  depth: number;
+  /** Counterbore: the wider recess at the top. */
+  cbDiameter?: number;
+  cbDepth?: number;
+  /** Countersink: the cone at the top (its diameter at the surface and its included angle in degrees). */
+  csDiameter?: number;
+  csAngle?: number;
+}
+
+/**
+ * Copies of a hole: in a row (count, spacing in mm, direction in the part's own axes), or round
+ * a centre (count over a total angle, about the face normal through `centre`, normalised like
+ * `FaceRef.centre`).
+ */
+export type HolePattern =
+  | { kind: 'linear'; count: number; spacing: number; dir: Vec3 }
+  | { kind: 'circular'; count: number; angle: number; centre: Vec3 };
+
 export type FeatureOp =
   | { id: string; kind: 'fillet'; edges: EdgeRef[]; radius: number; suppressed?: boolean }
-  | { id: string; kind: 'chamfer'; edges: EdgeRef[]; distance: number; suppressed?: boolean };
+  | { id: string; kind: 'chamfer'; edges: EdgeRef[]; distance: number; suppressed?: boolean }
+  /** Hollow the solid inwards, leaving walls of `thickness` mm, with the chosen faces removed (left open). */
+  | { id: string; kind: 'shell'; thickness: number; faces: FaceRef[]; suppressed?: boolean }
+  /** Taper the chosen faces by `angle` degrees, inwards going up, from the bottom of the part (+Z is the pull). */
+  | { id: string; kind: 'draft'; angle: number; faces: FaceRef[]; suppressed?: boolean }
+  /** A hole into `face` at `at` (normalised like `FaceRef.centre`), along the face's inward normal. */
+  | { id: string; kind: 'hole'; face: FaceRef; at: Vec3; hole: HoleSpec; pattern?: HolePattern; suppressed?: boolean };
+
+export type FeatureOpKind = FeatureOp['kind'];
 
 export interface FeatureRecipe {
   base: FeatureBase;
@@ -109,6 +139,8 @@ export interface BrepBuild {
   size: Vec3;
   /** Centre of the base's bounding box in its own coordinates (mesh and edges are relative to it). */
   centre: Vec3;
+  /** Half-extents of the base's bounding box: references and hole positions are normalised by these. */
+  half: Vec3;
   /**
    * Operations that were skipped: their edges could not be found after an edit, or more than one
    * edge fitted equally well (never guessed), or OpenCascade could not make them (e.g. a radius
@@ -179,12 +211,35 @@ export function validateRecipe(raw: unknown): string | null {
   if (!Array.isArray(ops)) return 'Feature operations missing.';
   for (const op of ops) {
     if (typeof op !== 'object' || op === null || typeof op.id !== 'string') return 'Invalid operation.';
-    if (op.kind === 'fillet') {
-      if (!finite(op.radius) || op.radius <= 0) return 'Fillet radius must be positive.';
-    } else if (op.kind === 'chamfer') {
-      if (!finite(op.distance) || op.distance <= 0) return 'Chamfer distance must be positive.';
+    if (op.kind === 'fillet' || op.kind === 'chamfer') {
+      if (op.kind === 'fillet' ? !finite(op.radius) || op.radius <= 0 : !finite(op.distance) || op.distance <= 0)
+        return op.kind === 'fillet' ? 'Fillet radius must be positive.' : 'Chamfer distance must be positive.';
+      if (!Array.isArray(op.edges) || !op.edges.length || !op.edges.every(validEdgeRef)) return 'Operation has no valid edges.';
+    } else if (op.kind === 'shell') {
+      if (!finite(op.thickness) || op.thickness <= 0) return 'Shell thickness must be positive.';
+      if (!Array.isArray(op.faces) || !op.faces.length || !op.faces.every(validFaceRef)) return 'A shell needs at least one open face.';
+    } else if (op.kind === 'draft') {
+      if (!finite(op.angle) || op.angle <= 0 || op.angle >= 45) return 'Draft angle must be between 0° and 45°.';
+      if (!Array.isArray(op.faces) || !op.faces.length || !op.faces.every(validFaceRef)) return 'A draft needs at least one face.';
+    } else if (op.kind === 'hole') {
+      if (!validFaceRef(op.face) || !vec3(op.at)) return 'A hole needs a face and a position.';
+      const h = op.hole as HoleSpec | undefined;
+      if (typeof h !== 'object' || h === null || !['simple', 'counterbore', 'countersink'].includes(h.style)) return 'Invalid hole.';
+      if (!finite(h.diameter) || h.diameter <= 0 || !finite(h.depth) || h.depth < 0) return 'Invalid hole size.';
+      if (h.style === 'counterbore' && !(finite(h.cbDiameter) && h.cbDiameter > h.diameter && finite(h.cbDepth) && h.cbDepth > 0))
+        return 'A counterbore must be wider than the hole and have a depth.';
+      if (
+        h.style === 'countersink' &&
+        !(finite(h.csDiameter) && h.csDiameter > h.diameter && finite(h.csAngle) && h.csAngle > 0 && h.csAngle < 180)
+      )
+        return 'A countersink must be wider than the hole, with an angle between 0° and 180°.';
+      const pt = op.pattern;
+      if (pt !== undefined) {
+        if (typeof pt !== 'object' || pt === null || !Number.isInteger(pt.count) || pt.count < 1 || pt.count > 100) return 'Invalid hole pattern.';
+        if (pt.kind === 'linear' ? !(finite(pt.spacing) && vec3(pt.dir)) : !(pt.kind === 'circular' && finite(pt.angle) && vec3(pt.centre)))
+          return 'Invalid hole pattern.';
+      }
     } else return 'Unknown operation.';
-    if (!Array.isArray(op.edges) || !op.edges.length || !op.edges.every(validEdgeRef)) return 'Operation has no valid edges.';
   }
   return null;
 }

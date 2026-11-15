@@ -327,3 +327,130 @@ describe('edge matching and validation', () => {
     ).toMatch(/positive/);
   });
 });
+
+describe('shell, draft and holes', () => {
+  const faceWhere = (b: BrepBuild, pred: (f: FaceRef) => boolean) => b.faces.find((f) => pred(f.ref))!.ref;
+  const top = (b: BrepBuild) => faceWhere(b, (f) => f.normal[2] > 0.99);
+  const sides = (b: BrepBuild) => b.faces.filter((f) => Math.abs(f.ref.normal[2]) < 1e-6).map((f) => f.ref);
+
+  it('shells a box inwards with the top left open', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const b = build({ ...prim('box'), ops: [{ id: 's', kind: 'shell', thickness: 2, faces: [top(base)] }] }, [20, 20, 10]);
+    near(b.volume, 4000 - 16 * 16 * 8, 1e-6);
+    expect(b.size).toEqual([20, 20, 10]);
+    expect(b.problems).toEqual([]);
+  });
+
+  it('tapers the side faces inwards going up from the bottom', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const b = build({ ...prim('box'), ops: [{ id: 'd', kind: 'draft', angle: 5, faces: sides(base) }] }, [20, 20, 10]);
+    // A frustum: 20 × 20 at the bottom, each side moved in by 10·tan 5° at the top.
+    const t = 20 - 2 * 10 * Math.tan((5 * Math.PI) / 180);
+    near(b.volume, (10 / 3) * (400 + t * t + 20 * t), 1e-5);
+    expect(b.size[2]).toBeCloseTo(10, 6);
+    expect(b.size[0]).toBeCloseTo(20, 6);
+  });
+
+  it('drills simple, counterbored and countersunk holes, blind or through', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const at: Vec3 = [0, 0, 1];
+    const hole = (spec: object) =>
+      build({ ...prim('box'), ops: [{ id: 'h', kind: 'hole', face: top(base), at, hole: spec as never }] }, [20, 20, 10]);
+    near(hole({ style: 'simple', diameter: 4, depth: 0 }).volume, 4000 - Math.PI * 4 * 10, 1e-6);
+    near(hole({ style: 'simple', diameter: 4, depth: 6 }).volume, 4000 - Math.PI * 4 * 6, 1e-6);
+    near(
+      hole({ style: 'counterbore', diameter: 4, depth: 0, cbDiameter: 8, cbDepth: 3 }).volume,
+      4000 - Math.PI * 16 * 3 - Math.PI * 4 * 7,
+      1e-6,
+    );
+    // Countersink 90°: a cone from Ø8 at the surface down to Ø4, 2 mm deep, then the hole.
+    const h = 2;
+    const cone = (Math.PI * h * (16 + 4 + 8)) / 3;
+    near(hole({ style: 'countersink', diameter: 4, depth: 0, csDiameter: 8, csAngle: 90 }).volume, 4000 - cone - Math.PI * 4 * 8, 1e-6);
+  });
+
+  it('repeats a hole in a row and round a circle', () => {
+    const base = build(prim('box'), [40, 40, 10]);
+    const ring = build(
+      {
+        ...prim('box'),
+        ops: [
+          {
+            id: 'h',
+            kind: 'hole',
+            face: top(base),
+            at: [0.5, 0, 1],
+            hole: { style: 'simple', diameter: 2, depth: 0 },
+            pattern: { kind: 'circular', count: 6, angle: 360, centre: [0, 0, 1] },
+          },
+        ],
+      },
+      [40, 40, 10],
+    );
+    near(ring.volume, 16000 - 6 * Math.PI * 10, 1e-6);
+    const row = build(
+      {
+        ...prim('box'),
+        ops: [
+          {
+            id: 'h',
+            kind: 'hole',
+            face: top(base),
+            at: [-0.5, 0, 1],
+            hole: { style: 'simple', diameter: 2, depth: 0 },
+            pattern: { kind: 'linear', count: 3, spacing: 10, dir: [1, 0, 0] },
+          },
+        ],
+      },
+      [40, 40, 10],
+    );
+    near(row.volume, 16000 - 3 * Math.PI * 10, 1e-6);
+  });
+
+  it('keeps a hole on its face, in proportion, when the part is resized', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const op = {
+      id: 'h',
+      kind: 'hole' as const,
+      face: top(base),
+      at: [0, 0, 1] as Vec3,
+      hole: { style: 'simple' as const, diameter: 4, depth: 0 },
+    };
+    near(build({ ...prim('box'), ops: [op] }, [30, 25, 16]).volume, 30 * 25 * 16 - Math.PI * 4 * 16, 1e-6);
+  });
+
+  it('flags a shell that leaves nothing, and a hole whose face has gone, without changing the solid', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const tooThick = build({ ...prim('box'), ops: [{ id: 's', kind: 'shell', thickness: 30, faces: [top(base)] }] }, [20, 20, 10]);
+    expect(tooThick.problems.map((p) => p.reason)).toEqual(['failed']);
+    near(tooThick.volume, 4000, 1e-6);
+    const gone: FaceRef = { kind: 'plane', centre: [0, 0, 3], normal: [0, 0, 1], area: 1 };
+    const b = build(
+      { ...prim('box'), ops: [{ id: 'h', kind: 'hole', face: gone, at: [0, 0, 3], hole: { style: 'simple', diameter: 2, depth: 0 } }] },
+      [20, 20, 10],
+    );
+    expect(b.problems.map((p) => p.reason)).toEqual(['missing-faces']);
+    near(b.volume, 4000, 1e-6);
+  });
+
+  it('validates the new operations', () => {
+    const f: FaceRef = { kind: 'plane', centre: [0, 0, 1], normal: [0, 0, 1], area: 1 };
+    expect(validateRecipe({ ...prim('box'), ops: [{ id: 's', kind: 'shell', thickness: 1, faces: [f] }] })).toBeNull();
+    expect(validateRecipe({ ...prim('box'), ops: [{ id: 's', kind: 'shell', thickness: 1, faces: [] }] })).toMatch(/open face/);
+    expect(validateRecipe({ ...prim('box'), ops: [{ id: 'd', kind: 'draft', angle: 60, faces: [f] }] })).toMatch(/45/);
+    expect(
+      validateRecipe({
+        ...prim('box'),
+        ops: [
+          {
+            id: 'h',
+            kind: 'hole',
+            face: f,
+            at: [0, 0, 1],
+            hole: { style: 'counterbore', diameter: 4, depth: 0, cbDiameter: 3, cbDepth: 1 },
+          },
+        ],
+      }),
+    ).toMatch(/wider/);
+  });
+});

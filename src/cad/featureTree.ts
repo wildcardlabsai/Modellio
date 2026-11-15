@@ -12,7 +12,7 @@ import type { Sketch } from '@/cad/sketch/types';
 export type FeatureEdit =
   | { kind: 'sketch'; objectId: ObjectId } // a sketched solid: the sketch editor
   | { kind: 'loft' | 'sweep'; objectId: ObjectId } // the loft / sweep panel
-  | { kind: 'op'; objectId: ObjectId; opId: string; op: 'fillet' | 'chamfer' } // the fillet / chamfer panel
+  | { kind: 'op'; objectId: ObjectId; opId: string; op: FeatureOp['kind'] } // the feature panel for that operation
   | { kind: 'settings'; objectId: ObjectId }; // the Inspector's settings for the shape
 
 export type FeatureNodeKind = 'component' | 'boolean' | 'body' | 'cutter' | 'base' | 'op';
@@ -67,13 +67,35 @@ const PRIMITIVE_LABEL: Record<string, string> = {
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
+const HOLE_STYLE = { simple: 'Hole', counterbore: 'Counterbore hole', countersink: 'Countersink hole' } as const;
+
+/** A short name and description of an operation (shared by the Features view and the Inspector). */
+export function describeOp(op: FeatureOp): { label: string; detail: string } {
+  switch (op.kind) {
+    case 'fillet':
+      return { label: 'Fillet', detail: `R ${op.radius} mm · ${plural(op.edges.length, 'edge')}` };
+    case 'chamfer':
+      return { label: 'Chamfer', detail: `${op.distance} mm · ${plural(op.edges.length, 'edge')}` };
+    case 'shell':
+      return { label: 'Shell', detail: `${op.thickness} mm walls · ${plural(op.faces.length, 'open face')}` };
+    case 'draft':
+      return { label: 'Draft', detail: `${op.angle}° · ${plural(op.faces.length, 'face')}` };
+    case 'hole': {
+      const n = op.pattern?.count ?? 1;
+      const depth = op.hole.depth > 0 ? `${op.hole.depth} mm deep` : 'through';
+      const copies = n > 1 ? ` · ${n} in a ${op.pattern!.kind === 'linear' ? 'row' : 'circle'}` : '';
+      return { label: HOLE_STYLE[op.hole.style], detail: `Ø${op.hole.diameter} mm ${depth}${copies}` };
+    }
+  }
+}
+
 function opNode(o: ShapeObject, op: FeatureOp): FeatureNode {
-  const size = op.kind === 'fillet' ? `R ${op.radius} mm` : `${op.distance} mm`;
+  const d = describeOp(op);
   return {
     key: `${o.id}:op:${op.id}`,
     kind: 'op',
-    label: op.kind === 'fillet' ? 'Fillet' : 'Chamfer',
-    detail: `${size} · ${plural(op.edges.length, 'edge')}${op.suppressed ? ' · off' : ''}`,
+    label: d.label,
+    detail: `${d.detail}${op.suppressed ? ' · off' : ''}`,
     objectId: o.id,
     opId: op.id,
     edit: { kind: 'op', objectId: o.id, opId: op.id, op: op.kind },

@@ -24,6 +24,7 @@ const build = (): BrepBuild =>
     indices: new Uint32Array(),
     edges: [],
     faces: [],
+    half: [0.5, 0.5, 0.5],
     volume: 1,
     size: [1, 1, 1],
     centre: [0, 0, 0],

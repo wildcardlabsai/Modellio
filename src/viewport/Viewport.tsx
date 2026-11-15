@@ -24,6 +24,7 @@ import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
 import { LayFlatTool } from './LayFlatTool';
 import { EdgePickTool } from './EdgePickTool';
+import { FacePickTool } from './FacePickTool';
 import { SolidPreview } from './SolidPreview';
 import { PrintOverlay } from './PrintOverlay';
 import { CrashProbe, useDebug } from '@/utils/debug';
@@ -236,6 +237,7 @@ export function Viewport() {
           <MeasureTool />
           <LayFlatTool />
           <EdgePickTool />
+          <FacePickTool />
           <SolidPreview />
           <PrintOverlay />
           <SnapGuides />

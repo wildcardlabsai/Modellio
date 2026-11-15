@@ -2,7 +2,7 @@ import type * as Replicad from 'replicad';
 import type { Sketch, SketchEntity } from '@/cad/sketch/types';
 import { pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
 import type { Vec3 } from '@/types/document';
-import type { BrepBuild, BrepEdge, BrepFace, BrepRequest, EdgeRef, FaceRef, FeatureBase } from './types';
+import type { BrepBuild, BrepEdge, BrepFace, BrepRequest, EdgeRef, FaceRef, FeatureBase, FeatureOp, HolePattern, HoleSpec } from './types';
 
 /**
  * Recipe → exact OpenCascade solid → mesh, edges and volume. Runs wherever OpenCascade is
@@ -415,11 +415,118 @@ export const matchEdges = (refs: EdgeRef[], edges: EdgeRef[]) => match(refs, edg
 export const matchFaces = (refs: FaceRef[], faces: FaceRef[]) => match(refs, faces, faceDistance, FACE_TOLERANCE);
 
 const friendly = (e: unknown, what: string) => {
+  if (e instanceof BrepError) return e.message;
   const msg = e instanceof Error ? e.message : '';
   return msg && !/WebAssembly|object Object/.test(msg)
     ? `${what}: ${msg}`
     : `${what} could not be made on these edges. Try a smaller size.`;
 };
+
+// --- operations ---------------------------------------------------------------------------------
+const OP_LABEL: Record<FeatureOp['kind'], string> = {
+  fillet: 'This fillet',
+  chamfer: 'This chamfer',
+  shell: 'This shell',
+  draft: 'This draft',
+  hole: 'This hole',
+};
+
+/** Record why references could not be used (and say so); false when they were all found. */
+function refusal(hit: number[], what: 'edges' | 'faces', id: string, problems: BrepBuild['problems']): boolean {
+  if (hit.some((i) => i === NO_MATCH)) {
+    problems.push({
+      id,
+      reason: what === 'edges' ? 'missing-edges' : 'missing-faces',
+      message: `Some of its ${what} no longer exist after an earlier change.`,
+    });
+    return true;
+  }
+  if (hit.some((i) => i === AMBIGUOUS)) {
+    problems.push({
+      id,
+      reason: what === 'edges' ? 'ambiguous-edges' : 'ambiguous-faces',
+      message: `After an earlier change, more than one of the part's ${what} fits equally well, so none was chosen.`,
+    });
+    return true;
+  }
+  return false;
+}
+
+/** The profile of a hole (radius against depth, the surface at 0), revolved about +Z. */
+function holeTool(r: R, h: HoleSpec, through: number): Shape3D {
+  const rad = h.diameter / 2;
+  const depth = h.depth > 0 ? h.depth : through;
+  const lift = 0.01; // start just above the surface so the cut never leaves a skin
+  const pts: [number, number][] = [[0, lift]];
+  if (h.style === 'counterbore' && h.cbDiameter && h.cbDepth) {
+    const cb = h.cbDiameter / 2;
+    pts.push([cb, lift], [cb, -h.cbDepth], [rad, -h.cbDepth]);
+  } else if (h.style === 'countersink' && h.csDiameter && h.csAngle) {
+    const cs = h.csDiameter / 2;
+    const sink = (cs - rad) / Math.tan(((h.csAngle / 2) * Math.PI) / 180);
+    pts.push([cs, lift], [cs, 0], [rad, -sink]);
+  } else pts.push([rad, lift]);
+  pts.push([rad, -depth], [0, -depth]);
+  let pen = r.draw(pts[0]);
+  for (const p of pts.slice(1)) pen = pen.lineTo(p);
+  return as3d(pen.close().sketchOnPlane('XZ').revolve([0, 0, 1]));
+}
+
+/** Turn a tool built along +Z so +Z points along `n`, then move it to `p`. */
+function orient(tool: Shape3D, n: V, p: V): Shape3D {
+  const c = n[2];
+  let t = tool;
+  if (c < -0.999999) t = t.rotate(180, [0, 0, 0], [1, 0, 0]);
+  else if (c < 0.999999) t = t.rotate((Math.acos(c) * 180) / Math.PI, [0, 0, 0], norm(cross([0, 0, 1], n)));
+  return t.translate(p);
+}
+
+/** Rotate point p about the axis through `o` along unit `k` by `deg` degrees (Rodrigues). */
+function rotateAbout(p: V, o: V, k: V, deg: number): V {
+  const a = (deg * Math.PI) / 180;
+  const v0 = sub(p, o);
+  const kv = cross(k, v0);
+  const kd = dot(k, v0);
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [0, 1, 2].map((i) => o[i] + v0[i] * c + kv[i] * s + k[i] * kd * (1 - c)) as V;
+}
+
+/** Where each copy of a hole goes (base coordinates). */
+export function holePositions(p: V, n: V, pattern: HolePattern | undefined, centre: V, half: V): V[] {
+  if (!pattern || pattern.count <= 1) return [p];
+  const out: V[] = [];
+  if (pattern.kind === 'linear') {
+    const d = norm(pattern.dir as V);
+    for (let i = 0; i < pattern.count; i++)
+      out.push([p[0] + d[0] * pattern.spacing * i, p[1] + d[1] * pattern.spacing * i, p[2] + d[2] * pattern.spacing * i]);
+  } else {
+    const o: V = [
+      centre[0] + pattern.centre[0] * half[0],
+      centre[1] + pattern.centre[1] * half[1],
+      centre[2] + pattern.centre[2] * half[2],
+    ];
+    // A full turn spaces copies evenly without doubling the first; a part turn includes both ends.
+    const full = Math.abs(Math.abs(pattern.angle) - 360) < 1e-6;
+    const step = pattern.angle / (full ? pattern.count : Math.max(1, pattern.count - 1));
+    for (let i = 0; i < pattern.count; i++) out.push(rotateAbout(p, o, n, step * i));
+  }
+  return out;
+}
+
+/** Cut a hole (and its pattern copies) into the shape at a point of the chosen face. */
+function cutHole(r: R, shape: Shape3D, op: Extract<FeatureOp, { kind: 'hole' }>, face: FaceRef, centre: V, half: V, diag: number): Shape3D {
+  if (face.kind !== 'plane') throw new BrepError('Holes go into flat faces.');
+  const p: V = [centre[0] + op.at[0] * half[0], centre[1] + op.at[1] * half[1], centre[2] + op.at[2] * half[2]];
+  // The face's real outward normal (the reference's is in normalised space).
+  const n = norm([face.normal[0] / half[0], face.normal[1] / half[1], face.normal[2] / half[2]]);
+  let tools: Shape3D | null = null;
+  for (const at of holePositions(p, n, op.pattern, centre, half)) {
+    const one = orient(holeTool(r, op.hole, diag * 2 + 1), n, at);
+    tools = tools ? (tools.fuse(one) as Shape3D) : one;
+  }
+  return shape.clone().cut(tools!) as Shape3D;
+}
 
 // --- build -----------------------------------------------------------------------------------
 export interface BuildOptions {
@@ -459,37 +566,67 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
   const half: V = [Math.max(EPS, bb0.width / 2), Math.max(EPS, bb0.height / 2), Math.max(EPS, bb0.depth / 2)];
   const problems: BrepBuild['problems'] = [];
 
+  const zMin = bb0.bounds[0][2];
+  const diag = Math.hypot(bb0.width, bb0.height, bb0.depth);
+
   for (const op of recipe.ops) {
     if (op.suppressed) continue;
-    const infos = topology(r, shape, centre, half).edges;
-    const hit = matchEdges(
-      op.edges,
-      infos.map((i) => i.ref),
-    );
-    if (hit.some((i) => i === NO_MATCH)) {
-      problems.push({ id: op.id, reason: 'missing-edges', message: 'Some of its edges no longer exist after an earlier change.' });
-      continue;
-    }
-    if (hit.some((i) => i === AMBIGUOUS)) {
-      problems.push({
-        id: op.id,
-        reason: 'ambiguous-edges',
-        message: 'After an earlier change, more than one edge fits equally well, so none was chosen.',
-      });
-      continue;
-    }
-    const chosen = hit.map((i) => infos[i].ref);
-    const pick = (f: Replicad.EdgeFinder) =>
-      f.when(({ element }) => {
-        const ref = describeEdge(element, centre, half).ref;
-        return chosen.some((c) => distance(c, ref) < 1e-6);
-      });
+    const label = OP_LABEL[op.kind];
     try {
-      const next = op.kind === 'fillet' ? shape.clone().fillet(op.radius, pick) : shape.clone().chamfer(op.distance, pick);
-      shape.delete();
-      shape = next;
+      let next: Shape3D | null = null;
+      if (op.kind === 'fillet' || op.kind === 'chamfer') {
+        const infos = topology(r, shape, centre, half).edges;
+        const hit = matchEdges(
+          op.edges,
+          infos.map((i) => i.ref),
+        );
+        if (refusal(hit, 'edges', op.id, problems)) continue;
+        const chosen = hit.map((i) => infos[i].ref);
+        const pick = (f: Replicad.EdgeFinder) =>
+          f.when(({ element }) => {
+            const ref = describeEdge(element, centre, half).ref;
+            return chosen.some((c) => distance(c, ref) < 1e-6);
+          });
+        next = op.kind === 'fillet' ? shape.clone().fillet(op.radius, pick) : shape.clone().chamfer(op.distance, pick);
+      } else {
+        const faces = topology(r, shape, centre, half).faces;
+        const refs = op.kind === 'hole' ? [op.face] : op.faces;
+        const hit = matchFaces(refs, faces);
+        if (refusal(hit, 'faces', op.id, problems)) continue;
+        const chosen = hit.map((i) => faces[i]);
+        const pick = (f: Replicad.FaceFinder) =>
+          f.when(({ element }) => {
+            const ref = describeFace(r, element, centre, half);
+            return chosen.some((c) => faceDistance(c, ref) < 1e-6);
+          });
+        if (op.kind === 'shell') {
+          if (op.thickness >= Math.min(...half)) throw new BrepError('These walls are too thick for this part.');
+          next = shape.clone().shell(op.thickness, pick); // positive: walls grow inwards
+          // OpenCascade can return a malformed result instead of failing: an inward shell must stay
+          // inside the part and take material away.
+          const nb = next.boundingBox;
+          const grew = [0, 1, 2].some(
+            (k) => nb.bounds[0][k] < shape.boundingBox.bounds[0][k] - 1e-4 || nb.bounds[1][k] > shape.boundingBox.bounds[1][k] + 1e-4,
+          );
+          if (grew || r.measureVolume(next) >= r.measureVolume(shape) - EPS) {
+            next.delete();
+            throw new BrepError('These walls are too thick for this part.');
+          }
+        } else if (op.kind === 'draft') next = shape.clone().draft(op.angle, pick, r.makePlane('XY', zMin));
+        else next = cutHole(r, shape, op, chosen[0], centre, half, diag);
+      }
+      if (next) {
+        // A failed boolean or offset can quietly give an empty result: never accept one.
+        if (!next.solids?.length || r.measureVolume(next) <= EPS) {
+          next.delete();
+          problems.push({ id: op.id, reason: 'failed', message: `${label} would leave no solid. Try a smaller size.` });
+          continue;
+        }
+        shape.delete();
+        shape = next;
+      }
     } catch (e) {
-      problems.push({ id: op.id, reason: 'failed', message: friendly(e, op.kind === 'fillet' ? 'This fillet' : 'This chamfer') });
+      problems.push({ id: op.id, reason: 'failed', message: friendly(e, label) });
     }
   }
 
@@ -525,6 +662,7 @@ export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): Brep
       volume: r.measureVolume(shape),
       size,
       centre: [...centre] as Vec3,
+      half: [...half] as Vec3,
       problems,
     };
   } finally {

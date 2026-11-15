@@ -34,13 +34,14 @@ import { collectExportBodies } from '@/cad/export/collect';
 import type { LeftPanel } from '@/components/layout/LeftRail';
 import { useBrepEngine } from '@/cad/brep/client';
 import { solidConversion } from '@/cad/brep/convert';
-import { useFeatureTool } from '@/components/features/featureTool';
+import { featureTitle, useFeatureTool } from '@/components/features/featureTool';
 import { useSolidBuilder } from '@/components/features/solidBuilder';
 import { computeCombined } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
 import { meshMeasures, meshReport } from '@/cad/operations/meshTools';
 import { sketchUsers } from '@/cad/sketchRecords';
+import { describeOp } from '@/cad/featureTree';
 import { useCadReady } from '@/viewport/cadReady';
 import type { CombineMode, FontId, SurfaceFinish } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
@@ -1193,11 +1194,25 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
           </button>
         ))}
       </div>
+      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+        {(['shell', 'draft', 'hole'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            disabled={locked}
+            onClick={() => void useFeatureTool.getState().start(object.id, k)}
+            className="flex h-8 items-center justify-center rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
+            data-testid={`solid-${k}`}
+          >
+            {featureTitle(k)}
+          </button>
+        ))}
+      </div>
       {!!ops.length && (
         <ol className="mt-3 space-y-1" aria-label="Operations" data-testid="solid-ops">
           {ops.map((op) => {
             const problem = build?.problems.find((p) => p.id === op.id);
-            const size = op.kind === 'fillet' ? `R ${op.radius} mm` : `${op.distance} mm`;
+            const d = describeOp(op);
             return (
               <li
                 key={op.id}
@@ -1206,7 +1221,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
               >
                 <div className="flex items-center gap-1.5">
                   <span className={`flex-1 font-medium ${op.suppressed ? 'text-muted line-through' : 'text-ink'}`}>
-                    {op.kind === 'fillet' ? 'Fillet' : 'Chamfer'} {size} · {op.edges.length} edge{op.edges.length === 1 ? '' : 's'}
+                    {d.label} {d.detail}
                   </span>
                   <button
                     type="button"

@@ -177,7 +177,12 @@ export function Toolbar() {
         </IconButton>
         <Popover
           trigger={({ open, toggle }) => (
-            <IconButton label="Features: fillet, chamfer, loft and sweep" active={open} onClick={toggle} data-testid="features-menu">
+            <IconButton
+              label="Features: fillet, chamfer, shell, draft, hole, loft and sweep"
+              active={open}
+              onClick={toggle}
+              data-testid="features-menu"
+            >
               <Sparkles size={17} />
               <span className="hidden 2xl:inline">Features</span>
               <ChevronDown size={13} />

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useEditor } from '@/store/editorStore';
 import { worldMatrix } from '@/cad/hierarchy';
-import { sameRef, useFeatureTool } from '@/components/features/featureTool';
+import { pickMode, sameRef, useFeatureTool } from '@/components/features/featureTool';
 import type { BrepBuild, EdgeRef } from '@/cad/brep/types';
 import type { Vec3 } from '@/types/document';
 import { FastLine } from './FastLine';
@@ -12,7 +12,7 @@ import { pickableMeshes, viewport } from './viewportBridge';
 type P3 = [number, number, number];
 
 /** Map a build's local points to world space exactly as the displayed mesh is placed (fit to size, mirror, transform). */
-function toWorld(build: BrepBuild, size: Vec3, mirror: Vec3 | undefined, matrix: THREE.Matrix4) {
+export function toWorld(build: BrepBuild, size: Vec3, mirror: Vec3 | undefined, matrix: THREE.Matrix4) {
   const box = new THREE.Box3();
   const p = build.positions;
   for (let i = 0; i < p.length; i += 3) box.expandByPoint(new THREE.Vector3(p[i], p[i + 1], p[i + 2]));
@@ -24,6 +24,22 @@ function toWorld(build: BrepBuild, size: Vec3, mirror: Vec3 | undefined, matrix:
   return (x: number, y: number, z: number): P3 => {
     v.set((x - c.x) * s[0] * m[0], (y - c.y) * s[1] * m[1], (z - c.z) * s[2] * m[2]).applyMatrix4(matrix);
     return [v.x, v.y, v.z];
+  };
+}
+
+/** The inverse of `toWorld`: a world point back to the build's local coordinates. */
+export function fromWorld(build: BrepBuild, size: Vec3, mirror: Vec3 | undefined, matrix: THREE.Matrix4) {
+  const box = new THREE.Box3();
+  const p = build.positions;
+  for (let i = 0; i < p.length; i += 3) box.expandByPoint(new THREE.Vector3(p[i], p[i + 1], p[i + 2]));
+  const c = box.getCenter(new THREE.Vector3());
+  const e = box.getSize(new THREE.Vector3());
+  const s = [e.x > 1e-9 ? size[0] / e.x : 1, e.y > 1e-9 ? size[1] / e.y : 1, e.z > 1e-9 ? size[2] / e.z : 1];
+  const m = mirror ?? [1, 1, 1];
+  const inv = matrix.clone().invert();
+  return (w: THREE.Vector3): P3 => {
+    const v = w.clone().applyMatrix4(inv);
+    return [v.x / (s[0] * m[0]) + c.x, v.y / (s[1] * m[1]) + c.y, v.z / (s[2] * m[2]) + c.z];
   };
 }
 
@@ -47,15 +63,16 @@ export function EdgePickTool() {
     if (session && (tool !== 'edges' || !object)) useFeatureTool.getState().cancel();
   }, [session, tool, object]);
 
+  const edgeMode = !!session && pickMode(session.kind) === 'edges';
   const edges = useMemo(() => {
-    if (!session?.before || object?.kind !== 'shape') return [];
+    if (!edgeMode || !session?.before || object?.kind !== 'shape') return [];
     const map = toWorld(session.before, object.size, object.mirror, worldMatrix(doc, object.id));
     return session.before.edges.map((e) => {
       const pts: P3[] = [];
       for (let i = 0; i < e.points.length; i += 3) pts.push(map(e.points[i], e.points[i + 1], e.points[i + 2]));
       return { ref: e.ref, pts };
     });
-  }, [session?.before, object, doc]);
+  }, [edgeMode, session?.before, object, doc]);
 
   useEffect(() => {
     if (!session || !edges.length) return;
