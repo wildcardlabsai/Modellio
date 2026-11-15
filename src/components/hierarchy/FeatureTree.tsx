@@ -16,6 +16,9 @@ import {
   Settings2,
   Spline,
   Trash2,
+  Undo2,
+  Redo2,
+  CircleAlert,
 } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { isEffectivelyLocked } from '@/cad/hierarchy';
@@ -33,6 +36,8 @@ import { useFeatureTool } from '@/components/features/featureTool';
 import { SketchThumb } from '@/components/features/SketchThumb';
 import { useInspectorTab } from '@/components/inspector/inspectorTab';
 import { useHover } from '@/viewport/hover';
+import { useCadReady } from '@/viewport/cadReady';
+import { getSolidBuild } from '@/cad/shapeRegistry';
 import type { ObjectId } from '@/types/document';
 
 /** Open the real editor for a feature. */
@@ -70,6 +75,7 @@ const ICON = {
   body: Box,
   cutter: Scissors,
   op: Spline,
+  rollback: Undo2,
 } as const;
 
 function baseIcon(n: FeatureNode) {
@@ -97,6 +103,8 @@ export function FeatureTree() {
   const tree = useMemo(() => deriveFeatureTree(doc), [doc]);
   const [closed, setClosed] = useState<Set<string>>(() => new Set());
   const lastChanged = useLastChanged();
+  // Re-render when a build finishes, so problems on operations show up.
+  useCadReady((st) => st.version);
   const setHover = useHover((s) => s.set);
 
   if (!tree.length) return <p className="px-5 py-3 text-[12px] text-muted">Nothing here yet. Add a shape or make a sketch.</p>;
@@ -125,6 +133,11 @@ export function FeatureTree() {
         const object = doc.objects[n.objectId];
         const ops = object?.kind === 'shape' ? (object.feature?.ops ?? []) : [];
         const setOps = (next: typeof ops, label: string) => useEditor.getState().setFeatureOps(n.objectId, next, label);
+        // Why the latest build skipped this operation (an earlier change broke it), if it did.
+        const problem =
+          n.kind === 'op' && object?.kind === 'shape' && object.shape === 'solid'
+            ? getSolidBuild(object)?.problems.find((p) => p.id === n.opId)
+            : undefined;
         return (
           <li
             key={n.key}
@@ -162,8 +175,19 @@ export function FeatureTree() {
               )}
               <Icon size={14} className={`shrink-0 ${n.kind === 'cutter' ? 'text-muted' : 'text-brand-ink'}`} aria-hidden />
               <span className="min-w-0 flex-1 leading-tight">
-                <span className={`block truncate font-medium ${n.suppressed ? 'text-muted line-through' : ''}`}>{n.label}</span>
+                <span
+                  className={`block truncate font-medium ${n.suppressed ? 'text-muted line-through' : n.rolledBack ? 'text-muted' : n.kind === 'rollback' ? 'text-brand-ink' : ''}`}
+                >
+                  {n.label}
+                </span>
                 {n.detail && <span className="block truncate text-[11px] text-muted">{n.detail}</span>}
+                {problem && (
+                  <span className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-amber-800" data-testid="op-problem">
+                    <CircleAlert size={12} className="mt-px shrink-0" />
+                    {problem.message}
+                    {problem.reason !== 'failed' ? ' Edit it to pick again.' : ''}
+                  </span>
+                )}
               </span>
               {lastChanged.has(n.objectId) && n.kind !== 'op' && n.kind !== 'base' && (
                 <span
@@ -176,6 +200,33 @@ export function FeatureTree() {
                 {n.edit && (
                   <RowButton label={`Edit ${n.label.toLowerCase()}`} disabled={locked} onClick={() => runEdit(n.edit!)}>
                     <PencilLine size={13} />
+                  </RowButton>
+                )}
+                {n.kind === 'base' && ops.length > 0 && object?.kind === 'shape' && object.feature?.rollback !== 0 && (
+                  <RowButton
+                    label="Roll back to the start"
+                    disabled={locked}
+                    onClick={() => useEditor.getState().setRollback(n.objectId, 0)}
+                  >
+                    <Undo2 size={13} />
+                  </RowButton>
+                )}
+                {n.kind === 'rollback' && (
+                  <RowButton
+                    label="Roll forward to the end"
+                    disabled={locked}
+                    onClick={() => useEditor.getState().setRollback(n.objectId, null)}
+                  >
+                    <Redo2 size={13} />
+                  </RowButton>
+                )}
+                {n.kind === 'op' && !n.rolledBack && (
+                  <RowButton
+                    label={`Roll back to after this ${n.label.toLowerCase()}`}
+                    disabled={locked}
+                    onClick={() => useEditor.getState().setRollback(n.objectId, n.index! + 1)}
+                  >
+                    <Undo2 size={13} />
                   </RowButton>
                 )}
                 {n.kind === 'op' && (

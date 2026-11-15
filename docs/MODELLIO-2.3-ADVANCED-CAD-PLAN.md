@@ -403,6 +403,29 @@ Stages 4 and 5 could swap if assemblies matter less than printing for current us
   arc direction, revolve parity in both engines, queue priorities and lanes.
 - **Browser:** new `e2e-cad-foundations` suite (8 checks).
 
+### Stage 2: solid features (done)
+
+| Item | Result |
+| --- | --- |
+| Face picking | Hover and click faces of a precise solid in the 3D view. Clicks map to faces through OpenCascade's per-face triangle ranges; a click on a flat face also gives an exact point for holes. |
+| Shell | Even inward walls with chosen faces left open. Results that would not fit inside the part, or would add material, are refused with a clear message rather than accepted. |
+| Draft | Tapers chosen faces inwards going up from the bottom of the part (+Z is the pull direction). |
+| Holes | Simple, counterbore or countersink; blind or through; at a clicked point of a flat face (with "Centre on the face"). One revolved tool profile serves every style. Position is kept in proportion when the part is resized; diameters stay in mm. |
+| Patterns and mirror | Split by what keeps the history meaningful. **Inside a solid's history:** hole patterns (row or circle). These keep the part's bounding box, which matters because solids are rebuilt at their displayed size. **For whole bodies:** "Mirror a copy" and "Pattern" (row, or circle about the vertical axis) make real copies grouped with the original. They become linked copies in Stage 4. |
+| Exact Booleans | A new base, the exact combination. Groups whose parts can all be exact (precise solids, and primitives converted as "Make precise solid" would) are combined in OpenCascade once the engine is loaded or a part is already precise. Until then the mesh result shows, and it stays the fallback, with the reason shown. "Make one precise solid" turns the group into one solid so fillets, shells and holes can follow; undo restores the editable group. STEP export writes exact combinations exactly. Parts stretched unevenly cannot be exact and say so. |
+| Rollback and dependencies | A rollback marker per solid ("Roll back to after this…", "Roll back to the start", "Roll forward"). Later operations are kept but not built, and new ones go in at the marker. The Features view shows, on each operation, why the latest build skipped it (an earlier change removed or confused its edges or faces), never moving it to other geometry. |
+| Fixed along the way | A combined group's cached result did not change when a precise part's recipe or a sketched part's sketch changed. |
+
+**Tests added:**
+- **Unit:** exact volumes for every operation, hole style and pattern; shell and missing-face failures; exact unions, holes, intersections, rotations, mirroring, nesting and fillets on combinations; analytic volume of a tilted hole through a document group, and its placement; rollback in builds and in the document; marker insertion; patterns and mirror copies.
+- **Browser:** new `e2e-solid-features` suite (31 checks) driving shell, holes, draft, exact combination, copies, rollback and a broken dependency through the real interface.
+
+**Limitations:**
+- Holes go into flat faces only.
+- Draft pulls along +Z from the bottom of the part.
+- Body copies are not linked yet (Stage 4).
+- A primitive-only combination is exact only once the engine has been loaded, by design (it is a 23 MB download).
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.

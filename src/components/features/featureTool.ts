@@ -3,7 +3,16 @@ import { useEditor } from '@/store/editorStore';
 import { buildBrepAsync } from '@/cad/brep/client';
 import { solidRequest } from '@/cad/shapeRegistry';
 import { createId } from '@/utils/id';
-import type { BrepBuild, EdgeRef, FaceRef, FeatureOp, FeatureRecipe, HolePattern, HoleSpec } from '@/cad/brep/types';
+import {
+  activeOps,
+  type BrepBuild,
+  type EdgeRef,
+  type FaceRef,
+  type FeatureOp,
+  type FeatureRecipe,
+  type HolePattern,
+  type HoleSpec,
+} from '@/cad/brep/types';
 import type { ShapeObject, Vec3 } from '@/types/document';
 
 /**
@@ -72,7 +81,7 @@ export const DEFAULT_HOLE: HoleSpec = { style: 'simple', diameter: 3, depth: 0, 
 
 /** The object's ops before the one being edited (or all of them, for a new op). */
 function opsBefore(feature: FeatureRecipe, editingOpId: string | null): FeatureOp[] {
-  if (!editingOpId) return feature.ops;
+  if (!editingOpId) return activeOps(feature);
   const i = feature.ops.findIndex((o) => o.id === editingOpId);
   return i < 0 ? feature.ops : feature.ops.slice(0, i);
 }
@@ -101,8 +110,18 @@ export function recipeWithSession(feature: FeatureRecipe, s: FeatureSession): { 
   const opId = s.editingOpId ?? '__preview__';
   const op = opFromSession(s, opId);
   if (!op) return { recipe: feature, opId };
-  const ops = s.editingOpId ? feature.ops.map((o) => (o.id === s.editingOpId ? op : o)) : [...feature.ops, op];
-  return { recipe: { ...feature, ops }, opId };
+  return { recipe: withOp(feature, op, s.editingOpId), opId };
+}
+
+/**
+ * The recipe with `op` replacing the operation being edited, or added: at the end, or at the
+ * rollback marker when the recipe is rolled back (the marker then moves past it).
+ */
+export function withOp(feature: FeatureRecipe, op: FeatureOp, editingOpId: string | null): FeatureRecipe {
+  if (editingOpId) return { ...feature, ops: feature.ops.map((o) => (o.id === editingOpId ? op : o)) };
+  if (feature.rollback === undefined) return { ...feature, ops: [...feature.ops, op] };
+  const at = feature.rollback;
+  return { ...feature, ops: [...feature.ops.slice(0, at), op, ...feature.ops.slice(at)], rollback: at + 1 };
 }
 
 const solidOf = (id: string): (ShapeObject & { feature: FeatureRecipe }) | null => {
@@ -247,8 +266,8 @@ export const useFeatureTool = create<FeatureToolState>((set, get) => {
       if (!s || !o || s.preview.state !== 'ok') return;
       const op = opFromSession(s, s.editingOpId ?? newOpId());
       if (!op) return;
-      const ops = s.editingOpId ? o.feature.ops.map((x) => (x.id === s.editingOpId ? op : x)) : [...o.feature.ops, op];
-      useEditor.getState().setFeatureOps(s.objectId, ops, `${s.editingOpId ? 'Edit ' : ''}${TITLE[s.kind]}`);
+      const next = withOp(o.feature, op, s.editingOpId);
+      useEditor.getState().setFeatureOps(s.objectId, next.ops, `${s.editingOpId ? 'Edit ' : ''}${TITLE[s.kind]}`, next.rollback);
       get().cancel();
     },
 

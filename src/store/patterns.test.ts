@@ -53,3 +53,48 @@ describe('mirror copies and patterns of bodies', () => {
     expect((S().doc.objects[copy] as ShapeObject).mirror?.[0]).toBe(-1);
   });
 });
+
+describe('rollback marker in the document', () => {
+  it('rolls back and forward, and keeps the marker after the same operations when one is deleted', () => {
+    const a = S().addShape('box');
+    const edge = {
+      kind: 'line' as const,
+      mid: [0, -1, 1] as [number, number, number],
+      dir: [1, 0, 0] as [number, number, number],
+      radius: 0,
+    };
+    S().loadDocument({
+      ...S().doc,
+      objects: {
+        ...S().doc.objects,
+        [a]: {
+          ...(S().doc.objects[a] as ShapeObject),
+          shape: 'solid',
+          feature: {
+            base: { kind: 'primitive', shape: 'box', params: {} },
+            ops: [
+              { id: 'x', kind: 'fillet', edges: [edge], radius: 1 },
+              { id: 'y', kind: 'chamfer', edges: [edge], distance: 1 },
+              { id: 'z', kind: 'fillet', edges: [edge], radius: 2 },
+            ],
+          },
+        } as ShapeObject,
+      },
+    });
+    S().setRollback(a, 2);
+    const f = () => (S().doc.objects[a] as ShapeObject).feature!;
+    expect(f().rollback).toBe(2);
+    // Deleting the first operation keeps the marker after "y".
+    S().setFeatureOps(
+      a,
+      f().ops.filter((o) => o.id !== 'x'),
+      'Delete',
+    );
+    expect(f().ops.map((o) => o.id)).toEqual(['y', 'z']);
+    expect(f().rollback).toBe(1);
+    S().setRollback(a, null);
+    expect(f().rollback).toBeUndefined();
+    S().undo();
+    expect(f().rollback).toBe(1);
+  });
+});

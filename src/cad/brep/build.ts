@@ -2,6 +2,7 @@ import type * as Replicad from 'replicad';
 import type { Sketch, SketchEntity } from '@/cad/sketch/types';
 import { pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
 import type { Vec3 } from '@/types/document';
+import { activeOps } from './types';
 import type {
   BooleanPart,
   BrepBuild,
@@ -649,7 +650,7 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
   const zMin = bb0.bounds[0][2];
   const diag = Math.hypot(bb0.width, bb0.height, bb0.depth);
 
-  for (const op of recipe.ops) {
+  for (const op of activeOps(recipe)) {
     if (op.suppressed) continue;
     const label = OP_LABEL[op.kind];
     try {

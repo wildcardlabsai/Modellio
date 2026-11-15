@@ -126,7 +126,15 @@ export type FeatureOpKind = FeatureOp['kind'];
 export interface FeatureRecipe {
   base: FeatureBase;
   ops: FeatureOp[];
+  /**
+   * Rolled back: only the first `rollback` operations are built (the rest are kept, greyed out,
+   * and new operations go in at this point). Absent: everything is built.
+   */
+  rollback?: number;
 }
+
+/** The operations a recipe actually builds (all of them, or those before its rollback marker). */
+export const activeOps = (r: FeatureRecipe): FeatureOp[] => (r.rollback === undefined ? r.ops : r.ops.slice(0, r.rollback));
 
 /** One face of a built solid: its reference and its triangles in the display mesh (for picking). */
 export interface BrepFace {
@@ -238,6 +246,8 @@ export function validateRecipe(raw: unknown): string | null {
     if (typeof base.source !== 'string') return 'Stored solid has no source.';
   } else return 'Unknown feature base.';
   if (!Array.isArray(ops)) return 'Feature operations missing.';
+  const rb = (raw as FeatureRecipe).rollback;
+  if (rb !== undefined && !(Number.isInteger(rb) && rb >= 0 && rb <= ops.length)) return 'Invalid rollback position.';
   for (const op of ops) {
     if (typeof op !== 'object' || op === null || typeof op.id !== 'string') return 'Invalid operation.';
     if (op.kind === 'fillet' || op.kind === 'chamfer') {

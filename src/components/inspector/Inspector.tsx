@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import {
   Copy,
@@ -1141,6 +1141,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
     );
   }
   const ops = object.feature?.ops ?? [];
+  const rollback = object.feature?.rollback;
   const setOps = (next: typeof ops, label: string) => useEditor.getState().setFeatureOps(object.id, next, label);
   const base = object.feature?.base;
   const what =
@@ -1214,66 +1215,87 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
       </div>
       {!!ops.length && (
         <ol className="mt-3 space-y-1" aria-label="Operations" data-testid="solid-ops">
-          {ops.map((op) => {
+          {ops.map((op, i) => {
             const problem = build?.problems.find((p) => p.id === op.id);
             const d = describeOp(op);
+            const rolledBack = rollback !== undefined && i >= rollback;
             return (
-              <li
-                key={op.id}
-                className={`rounded-lg border px-2 py-1.5 text-[12px] ${problem ? 'border-amber-300 bg-amber-50' : 'border-line'}`}
-                data-testid="solid-op"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={`flex-1 font-medium ${op.suppressed ? 'text-muted line-through' : 'text-ink'}`}>
-                    {d.label} {d.detail}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={locked}
-                    onClick={() => void useFeatureTool.getState().start(object.id, op.kind, op.id)}
-                    className="rounded px-1.5 py-0.5 text-brand-ink hover:bg-brand-50 disabled:opacity-40"
+              <Fragment key={op.id}>
+                {rollback === i && (
+                  <li
+                    className="flex items-center gap-2 rounded-lg border border-dashed border-brand/50 px-2 py-1.5 text-[12px] text-brand-ink"
+                    data-testid="rollback-marker"
                   >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={locked}
-                    aria-label={op.suppressed ? 'Turn this operation back on' : 'Turn this operation off (suppress)'}
-                    title={op.suppressed ? 'Turn on' : 'Turn off (suppress)'}
-                    onClick={() =>
-                      setOps(
-                        ops.map((o) => (o.id === op.id ? { ...o, suppressed: !o.suppressed } : o)),
-                        op.suppressed ? 'Unsuppress' : 'Suppress',
-                      )
-                    }
-                    className="rounded p-1 text-ink-3 hover:bg-canvas disabled:opacity-40"
-                  >
-                    {op.suppressed ? <EyeOff size={13} /> : <Eye size={13} />}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={locked}
-                    aria-label={`Delete this ${op.kind}`}
-                    onClick={() =>
-                      setOps(
-                        ops.filter((o) => o.id !== op.id),
-                        `Delete ${op.kind}`,
-                      )
-                    }
-                    className="rounded p-1 text-ink-3 hover:text-red-600 disabled:opacity-40"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                {problem && (
-                  <p className="mt-1 flex items-start gap-1 text-amber-800" data-testid="solid-problem">
-                    <CircleAlert size={13} className="mt-px shrink-0" />
-                    {problem.reason === 'missing-edges' || problem.reason === 'ambiguous-edges'
-                      ? `Needs attention: ${problem.message} Edit it to pick the edges again.`
-                      : problem.message}
-                  </p>
+                    <span className="flex-1">Rolled back here: the operations below are not built.</span>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => useEditor.getState().setRollback(object.id, null)}
+                      className="rounded px-1.5 py-0.5 font-medium hover:bg-brand-50 disabled:opacity-40"
+                    >
+                      Roll forward
+                    </button>
+                  </li>
                 )}
-              </li>
+                <li
+                  className={`rounded-lg border px-2 py-1.5 text-[12px] ${problem ? 'border-amber-300 bg-amber-50' : 'border-line'} ${rolledBack ? 'opacity-60' : ''}`}
+                  data-testid="solid-op"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`flex-1 font-medium ${op.suppressed ? 'text-muted line-through' : rolledBack ? 'text-muted' : 'text-ink'}`}
+                    >
+                      {d.label} {d.detail}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={locked || rolledBack}
+                      title={rolledBack ? 'Roll forward to edit this operation' : undefined}
+                      onClick={() => void useFeatureTool.getState().start(object.id, op.kind, op.id)}
+                      className="rounded px-1.5 py-0.5 text-brand-ink hover:bg-brand-50 disabled:opacity-40"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      aria-label={op.suppressed ? 'Turn this operation back on' : 'Turn this operation off (suppress)'}
+                      title={op.suppressed ? 'Turn on' : 'Turn off (suppress)'}
+                      onClick={() =>
+                        setOps(
+                          ops.map((o) => (o.id === op.id ? { ...o, suppressed: !o.suppressed } : o)),
+                          op.suppressed ? 'Unsuppress' : 'Suppress',
+                        )
+                      }
+                      className="rounded p-1 text-ink-3 hover:bg-canvas disabled:opacity-40"
+                    >
+                      {op.suppressed ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      aria-label={`Delete this ${op.kind}`}
+                      onClick={() =>
+                        setOps(
+                          ops.filter((o) => o.id !== op.id),
+                          `Delete ${op.kind}`,
+                        )
+                      }
+                      className="rounded p-1 text-ink-3 hover:text-red-600 disabled:opacity-40"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  {problem && (
+                    <p className="mt-1 flex items-start gap-1 text-amber-800" data-testid="solid-problem">
+                      <CircleAlert size={13} className="mt-px shrink-0" />
+                      {problem.reason === 'failed'
+                        ? problem.message
+                        : `Needs attention: ${problem.message} Edit it to pick the ${problem.reason.endsWith('faces') ? 'faces' : 'edges'} again.`}
+                    </p>
+                  )}
+                </li>
+              </Fragment>
             );
           })}
         </ol>

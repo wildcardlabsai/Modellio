@@ -539,3 +539,21 @@ describe('exact Booleans', () => {
     near(combine([part('wedge', [20, 20, 10], I(), false, { mirror: [-1, 1, 1] })]).volume, 2000, 1e-6);
   });
 });
+
+describe('rollback', () => {
+  it('builds only the operations before the marker', () => {
+    const base = build(prim('box'), [20, 20, 10]);
+    const top = base.faces.find((f) => f.ref.normal[2] > 0.99)!.ref;
+    const hole = {
+      id: 'h',
+      kind: 'hole' as const,
+      face: top,
+      at: [0, 0, 1] as Vec3,
+      hole: { style: 'simple' as const, diameter: 4, depth: 0 },
+    };
+    const shell = { id: 's', kind: 'shell' as const, thickness: 1, faces: [top] };
+    near(build({ ...prim('box'), ops: [hole, shell], rollback: 1 }, [20, 20, 10]).volume, 4000 - Math.PI * 4 * 10, 1e-6);
+    near(build({ ...prim('box'), ops: [hole, shell], rollback: 0 }, [20, 20, 10]).volume, 4000, 1e-6);
+    expect(validateRecipe({ ...prim('box'), ops: [hole], rollback: 2 })).toMatch(/rollback/);
+  });
+});

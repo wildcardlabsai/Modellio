@@ -252,7 +252,13 @@ export interface EditorState {
   /** Replace a precise solid's base (e.g. edit a loft's sections); its fillets and chamfers stay. */
   setSolidBase: (id: ObjectId, base: FeatureRecipe['base'], size: Vec3, label: string) => void;
   /** Replace a precise solid's operation list (fillets, chamfers): add, edit, reorder, suppress, delete. */
-  setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string) => void;
+  /**
+   * Replace a precise solid's operations (one undo step). `rollback` sets the rollback marker
+   * (null clears it); left out, the marker stays after the same operations as before.
+   */
+  setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string, rollback?: number | null) => void;
+  /** Roll a precise solid back to just after its first `n` operations (null: roll forward to the end). */
+  setRollback: (id: ObjectId, n: number | null) => void;
   /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
   applyMeshTool: (id: ObjectId, tool: MeshTool, amount: number) => void;
   addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
@@ -1173,7 +1179,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       });
     },
 
-    setFeatureOps: (id, ops, label) => {
+    setFeatureOps: (id, ops, label, rollback) => {
       if (isEffectivelyLocked(get().doc, id)) {
         get().notify('This object is locked.');
         return;
@@ -1181,8 +1187,25 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply(label, (d) => {
         const t = d.objects[id];
         if (t?.kind !== 'shape' || t.shape !== 'solid' || !t.feature) return;
+        const old = t.feature;
+        let marker: number | undefined;
+        if (rollback === null) marker = undefined;
+        else if (rollback !== undefined) marker = rollback;
+        else if (old.rollback !== undefined) {
+          // Keep the marker after the same operations (some may have been deleted).
+          const active = new Set(old.ops.slice(0, old.rollback).map((o) => o.id));
+          marker = ops.filter((o) => active.has(o.id)).length;
+        }
         t.feature.ops = ops;
+        if (marker === undefined || marker >= ops.length) delete t.feature.rollback;
+        else t.feature.rollback = Math.max(0, marker);
       });
+    },
+
+    setRollback: (id, n) => {
+      const o = get().doc.objects[id];
+      if (o?.kind !== 'shape' || o.shape !== 'solid' || !o.feature) return;
+      get().setFeatureOps(id, o.feature.ops, n === null ? 'Roll forward' : 'Roll back', n);
     },
 
     applyMeshTool: (id, tool, amount) => {

@@ -1,4 +1,4 @@
-import { recipeWithSession, sameRef, type FeatureSession } from './featureTool';
+import { recipeWithSession, sameRef, withOp, type FeatureSession } from './featureTool';
 import type { EdgeRef, FeatureRecipe } from '@/cad/brep/types';
 
 const edge: EdgeRef = { kind: 'line', mid: [0, -1, 1], dir: [1, 0, 0], radius: 0 };
@@ -60,6 +60,14 @@ describe('feature tool recipes', () => {
     ).recipe.ops[2];
     expect(hole).toMatchObject({ kind: 'hole', at: [0, 0, 1], hole: { diameter: 5 } });
     expect(hole).not.toHaveProperty('pattern');
+  });
+  it('adds a new operation at the rollback marker and moves the marker past it', () => {
+    const rolled: FeatureRecipe = { ...feature, rollback: 1 };
+    const next = withOp(rolled, { id: 'n', kind: 'fillet', edges: [edge], radius: 1 }, null);
+    expect(next.ops.map((o) => o.id)).toEqual(['a', 'n', 'b']);
+    expect(next.rollback).toBe(2);
+    // Not rolled back: at the end.
+    expect(withOp(feature, { id: 'n', kind: 'fillet', edges: [edge], radius: 1 }, null).ops.map((o) => o.id)).toEqual(['a', 'b', 'n']);
   });
   it('compares edge references by value', () => {
     expect(sameRef(edge, { ...edge, mid: [0, -1, 1] })).toBe(true);

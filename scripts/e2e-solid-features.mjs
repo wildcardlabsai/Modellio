@@ -269,6 +269,60 @@ const mirrored = await S((peg) => {
 }, peg);
 check('7b. "Mirror a copy" adds a mirrored copy grouped with it', mirrored);
 
+// 8. Rollback and dependencies: a chamfer inserted before a fillet on the same edge breaks the fillet, and the Features view says so.
+const cube = await S(() => {
+  const s = window.modellio.store.getState();
+  const id = s.addShape('box');
+  s.setPosition(id, [0, -70, 10]);
+  return id;
+});
+await S((id) => window.modellio.store.getState().convertToSolid(id), cube);
+await until(async () => (await obj(cube))?.shape === 'solid');
+const startOn = async (kind) => {
+  await S(([id, kind]) => window.modellio.features.getState().start(id, kind), [cube, kind]);
+  return until(() =>
+    S(
+      () =>
+        window.modellio.features
+          .getState()
+          .session?.before?.edges.find((e) => e.ref.kind === 'line' && e.ref.mid[2] > 0.99 && e.ref.mid[1] < -0.99)?.ref,
+    ),
+  );
+};
+let e1 = await startOn('fillet');
+await S((ref) => {
+  const t = window.modellio.features.getState();
+  t.toggleEdge(ref);
+  t.setValue(2);
+}, e1);
+await previewVolume();
+await page.getByTestId('feature-apply').click();
+await S((id) => window.modellio.store.getState().select([id]), cube);
+await page.getByRole('radiogroup', { name: 'Browser view' }).getByRole('radio', { name: 'Features' }).click();
+await tree.getByRole('button', { name: 'Roll back to the start' }).last().click();
+check('8. "Roll back to the start" sets the marker before every operation', (await obj(cube)).feature.rollback === 0);
+check('8b. The fillet is shown rolled back', /rolled back/.test(await tree.textContent()));
+e1 = await startOn('chamfer');
+await S((ref) => {
+  const t = window.modellio.features.getState();
+  t.toggleEdge(ref);
+  t.setValue(1);
+}, e1);
+await previewVolume();
+await page.getByTestId('feature-apply').click();
+const f8 = (await obj(cube)).feature;
+check(
+  '8c. A chamfer added while rolled back goes in at the marker, before the fillet',
+  f8.ops.map((o) => o.kind).join() === 'chamfer,fillet' && f8.rollback === 1,
+  JSON.stringify([f8.ops.map((o) => o.kind), f8.rollback]),
+);
+await tree.getByRole('button', { name: 'Roll forward to the end' }).click();
+check('8d. Rolling forward builds everything again', (await obj(cube)).feature.rollback === undefined);
+const problemText = await until(
+  async () => (await tree.getByTestId('op-problem').count()) && (await tree.getByTestId('op-problem').first().textContent()),
+);
+check('8e. The fillet whose edge the chamfer removed is flagged, never moved', /no longer exist/.test(problemText ?? ''), problemText);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);
