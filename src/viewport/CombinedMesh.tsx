@@ -12,6 +12,7 @@ import { gizmoRecentlyUsed } from './viewportBridge';
 import { useCadReady } from './cadReady';
 import { startSurfaceDrag } from './surfaceDrag';
 import { HOLE_COLOR } from './ShapeMesh';
+import { appearanceProps } from './appearance';
 
 /**
  * Which part of a combination was double-clicked? The parts are not drawn, so
@@ -60,6 +61,8 @@ export const CombinedMesh = memo(function CombinedMesh({
   const geometry = useMemo(() => (result?.mesh ? meshDataToGeometry(result.mesh) : null), [result?.mesh]);
   useEffect(() => () => geometry?.dispose(), [geometry]);
   const [hovered, setHovered] = useState(false);
+  // The result takes the look (finish, opacity) of its first solid part, as it takes its colour.
+  const look = descendantShapes(doc, [id]).find((s) => !s.isHole);
 
   if (!geometry || !result) return null;
 
@@ -99,9 +102,10 @@ export const CombinedMesh = memo(function CombinedMesh({
         <meshStandardMaterial color={HOLE_COLOR} transparent opacity={0.35} depthWrite={false} />
       ) : (
         <meshStandardMaterial
+          // Rebuilt when transparency switches on or off: three.js only changes blending on a new material.
+          key={appearanceProps(look).transparent ? 'see-through' : 'solid'}
           color={result.color}
-          roughness={0.42}
-          metalness={0.04}
+          {...appearanceProps(look)}
           emissive={result.color}
           emissiveIntensity={hovered && !active ? 0.12 : 0}
           polygonOffset

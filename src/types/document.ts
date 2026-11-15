@@ -75,6 +75,9 @@ interface BaseObject {
   parentId: ObjectId | null;
 }
 
+/** On-screen surface finish. Appearance only: it does not change geometry or exports. */
+export type SurfaceFinish = 'matte' | 'satin' | 'gloss';
+
 export interface ShapeObject extends BaseObject {
   kind: 'shape';
   shape: PrimitiveType;
@@ -85,6 +88,10 @@ export interface ShapeObject extends BaseObject {
   color: string;
   /** Holes are used by Boolean subtraction (Phase 3). */
   isHole: boolean;
+  /** How the surface looks on screen (view only; never exported). Omitted means satin. */
+  finish?: SurfaceFinish;
+  /** On-screen opacity, 0.1–1 (view only; never exported). Omitted means 1. */
+  opacity?: number;
   /**
    * Per-local-axis reflection (+1 or -1). Mirroring is genuine: the generated
    * mesh is reflected and its winding corrected. Omitted means [1, 1, 1].

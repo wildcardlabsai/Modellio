@@ -56,7 +56,7 @@ import type { FeatureOp, FeatureRecipe } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
-import type { CombineMode, TextContent } from '@/types/document';
+import type { CombineMode, SurfaceFinish, TextContent } from '@/types/document';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
 import { normalizeDegrees, roundTo } from '@/utils/math';
@@ -167,6 +167,10 @@ export interface EditorState {
   setRotation: (id: ObjectId, rotation: Vec3) => void;
   setParam: (id: ObjectId, key: string, value: number) => void;
   setColor: (id: ObjectId, color: string) => void;
+  /** On-screen finish of a shape (or every shape in a group). Appearance only. */
+  setFinish: (id: ObjectId, finish: SurfaceFinish) => void;
+  /** On-screen opacity (0.1–1) of a shape (or every shape in a group). Appearance only. */
+  setOpacity: (id: ObjectId, opacity: number) => void;
   rename: (id: ObjectId, name: string) => void;
   setVisible: (id: ObjectId, visible: boolean) => void;
   setLocked: (id: ObjectId, locked: boolean) => void;
@@ -600,6 +604,23 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply('Change colour', (doc) => {
         // Colouring a group colours every shape inside it.
         for (const s of descendantShapes(doc, [id])) (doc.objects[s.id] as ShapeObject).color = color;
+      }),
+    setFinish: (id, finish) =>
+      get().apply('Change finish', (doc) => {
+        for (const s of descendantShapes(doc, [id])) {
+          const o = doc.objects[s.id] as ShapeObject;
+          if (finish === 'satin') delete o.finish;
+          else o.finish = finish;
+        }
+      }),
+    setOpacity: (id, opacity) =>
+      get().apply('Change transparency', (doc) => {
+        const v = Math.min(1, Math.max(0.1, opacity));
+        for (const s of descendantShapes(doc, [id])) {
+          const o = doc.objects[s.id] as ShapeObject;
+          if (v >= 1) delete o.opacity;
+          else o.opacity = Math.round(v * 100) / 100;
+        }
       }),
     rename: (id, name) =>
       get().apply('Rename', (doc) => {

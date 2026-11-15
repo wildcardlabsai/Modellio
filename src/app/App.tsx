@@ -247,7 +247,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
         </main>
         {(!compact || inspectorOpen) && (
           <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">
-            <Inspector />
+            <Inspector onOpenPanel={choosePanel} />
           </div>
         )}
         {/* The editor stays mounted (keeps the WebGL context) while the projects page is shown. */}

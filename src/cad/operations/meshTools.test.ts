@@ -3,10 +3,31 @@ import { initKernel } from '../kernel/kernel';
 import { geometryToMeshData } from '../kernel/meshData';
 import { buildShapeGeometry } from '../shapeRegistry';
 import { validatePart } from '@/split/geometry/split';
-import { applyMeshTool, meshReport, weldMesh } from './meshTools';
+import { applyMeshTool, meshMeasures, meshReport, weldMesh } from './meshTools';
 
 const sphere = () => geometryToMeshData(buildShapeGeometry('sphere', [20, 20, 20], { segments: 48 }));
 const cube = () => geometryToMeshData(buildShapeGeometry('box', [20, 20, 20], { radius: 0 }));
+
+describe('mesh measures', () => {
+  it('a 20 mm cube is 8000 mm³ with 2400 mm² of surface', () => {
+    const m = meshMeasures(cube());
+    expect(m.volume).toBeCloseTo(8000, 3);
+    expect(m.area).toBeCloseTo(2400, 3);
+  });
+
+  it('a sphere is within 1% of the ideal volume and area', () => {
+    const m = meshMeasures(sphere());
+    expect(Math.abs(m.volume - (4 / 3) * Math.PI * 1000) / ((4 / 3) * Math.PI * 1000)).toBeLessThan(0.01);
+    expect(Math.abs(m.area - 4 * Math.PI * 100) / (4 * Math.PI * 100)).toBeLessThan(0.01);
+  });
+
+  it('gives a positive volume for an inside-out (flipped) mesh', () => {
+    const m = cube();
+    const flipped = new Uint32Array(m.indices);
+    for (let t = 0; t < flipped.length; t += 3) [flipped[t + 1], flipped[t + 2]] = [flipped[t + 2], flipped[t + 1]];
+    expect(meshMeasures({ positions: m.positions, indices: flipped }).volume).toBeCloseTo(8000, 3);
+  });
+});
 
 describe('mesh tools', () => {
   it('reports a closed solid, and an open one after removing a triangle', () => {

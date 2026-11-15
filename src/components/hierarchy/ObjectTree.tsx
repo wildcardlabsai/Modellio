@@ -1,7 +1,22 @@
 import { useMemo, useRef, useState, type DragEvent } from 'react';
-import { ChevronRight, Eye, EyeOff, Lock, Unlock, Trash2, FolderClosed, FolderOpen, Combine } from 'lucide-react';
+import {
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock,
+  Trash2,
+  FolderClosed,
+  FolderOpen,
+  Combine,
+  Box,
+  Type,
+  Gem,
+  PencilRuler,
+  Shapes,
+} from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
-import type { ModelDocument, ObjectId } from '@/types/document';
+import type { ModelDocument, ObjectId, ShapeObject } from '@/types/document';
 import { isEffectivelyLocked, siblingsOf } from '@/cad/hierarchy';
 
 const TREE_MIME = 'application/x-modellio-tree';
@@ -244,6 +259,7 @@ export function ObjectTree() {
                   }
                 />
               )}
+              {!isGroup && <KindIcon object={o} />}
               {renaming === id ? (
                 <input
                   autoFocus
@@ -314,5 +330,33 @@ export function ObjectTree() {
       })}
       {drop?.id === null && <li className="mx-2 h-0.5 rounded bg-brand" />}
     </ul>
+  );
+}
+
+/** What kind of body a row is: a plain shape, text, an imported mesh, a sketched solid or a precise solid. */
+function KindIcon({ object }: { object: ShapeObject }) {
+  const [Icon, label] =
+    object.shape === 'text'
+      ? [Type, 'Text']
+      : object.shape === 'mesh'
+        ? [Shapes, 'Imported mesh']
+        : object.shape === 'profile'
+          ? [PencilRuler, 'Sketched solid']
+          : object.shape === 'solid'
+            ? [Gem, 'Precise solid']
+            : [Box, 'Shape'];
+  return (
+    <span
+      title={label}
+      className="shrink-0 text-muted"
+      data-testid="tree-kind"
+      data-kind={
+        object.shape === 'text' || object.shape === 'mesh' || object.shape === 'profile' || object.shape === 'solid'
+          ? object.shape
+          : 'shape'
+      }
+    >
+      <Icon size={13} aria-hidden />
+    </span>
   );
 }

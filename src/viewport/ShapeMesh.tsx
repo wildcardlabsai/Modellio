@@ -12,6 +12,7 @@ import { gizmoRecentlyUsed } from './viewportBridge';
 import { useCadReady } from './cadReady';
 import { startSurfaceDrag } from './surfaceDrag';
 import { DEG2RAD } from '@/utils/math';
+import { appearanceProps } from './appearance';
 
 export const HOLE_COLOR = '#8C97AB';
 
@@ -102,9 +103,10 @@ export const ShapeMesh = memo(function ShapeMesh({ object, selected, highlighted
         />
       ) : (
         <meshStandardMaterial
+          // Rebuilt when transparency switches on or off: three.js only changes blending on a new material.
+          key={appearanceProps(object).transparent ? 'see-through' : 'solid'}
           color={color}
-          roughness={0.42}
-          metalness={0.04}
+          {...appearanceProps(object)}
           emissive={color}
           emissiveIntensity={hovered && !active ? 0.12 : 0}
           polygonOffset

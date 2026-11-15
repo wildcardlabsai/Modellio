@@ -111,6 +111,11 @@ export function migrateDocument(raw: unknown): ModelDocument {
       o.params = isObj(o.params) ? o.params : {};
       o.color = typeof o.color === 'string' ? o.color : '#2463EB';
       o.isHole = o.isHole === true;
+      if (o.finish !== undefined && !(['matte', 'satin', 'gloss'] as unknown[]).includes(o.finish)) delete o.finish;
+      if (o.opacity !== undefined) {
+        if (typeof o.opacity !== 'number' || !Number.isFinite(o.opacity) || o.opacity >= 1) delete o.opacity;
+        else o.opacity = Math.max(0.1, o.opacity);
+      }
     }
     doc.objects[id] = o;
   }

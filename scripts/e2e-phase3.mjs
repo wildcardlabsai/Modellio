@@ -74,6 +74,8 @@ const waitFor = async (fn, ms = 4000) => {
   return false;
 };
 
+/** The Inspector shows one tab at a time (Properties, Appearance, Features, Print). */
+const inspectorTab = (name) => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 check(
@@ -130,6 +132,7 @@ check(
   close(info.volume, expected, expected * 0.003),
   `${info.volume?.toFixed(1)} mm³ vs ${expected.toFixed(1)}`,
 );
+await inspectorTab('Features');
 check('2c. Inspector reports a watertight solid', await page.getByText(/Watertight solid · [\d,]+ triangles/).isVisible());
 await page.waitForTimeout(300);
 check(
@@ -159,6 +162,7 @@ check('3c. Esc leaves the measure tool', (await S(() => window.modellio.store.ge
 await page.locator('[role=treeitem] > div').filter({ hasText: 'Cylinder' }).first().click();
 s = await state();
 check('4. Selecting a part in the tree shows it as a ghost', s.selection[0] === cylId && (await inScene(cylId)));
+await inspectorTab('Properties');
 await setField('Size X', 20);
 await setField('Size Y', 20);
 await waitFor(async () => !(info = await resultInfo(gid)).pending);
@@ -172,6 +176,7 @@ check('4c. Undo restores the original result', close(info.volume, expected, expe
 
 // --- 5. Combine mode switch in the inspector
 await S((g) => window.modellio.store.getState().select([g]), gid);
+await inspectorTab('Features');
 await page.getByRole('radio', { name: 'Assembly' }).click();
 check(
   '5. Switching to Assembly shows the parts again',
@@ -332,6 +337,7 @@ check(
   kinds.join(),
 );
 await page.locator('button[title^="Add Box "]').click();
+await inspectorTab('Properties');
 await setField('Fillet radius', 4);
 s = await state();
 check('10b. Box fillet radius is editable', s.doc.objects[s.selection[0]].params.radius === 4);
