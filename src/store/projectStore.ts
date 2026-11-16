@@ -209,6 +209,8 @@ let initPromise: Promise<void> | null = null;
 
 async function initOnce() {
   const { getState: get, setState: set } = useProjects;
+  // Anything the user opens while start-up is still reading storage wins over start-up's own choice.
+  const since = switchSeq;
   const [repo, drafts] = await Promise.all([createDefaultRepository(), createDraftStore()]);
   set({ repo, drafts });
   // Opened from a share link: show it view-only, without touching the user's projects.
@@ -237,7 +239,9 @@ async function initOnce() {
   // The editor reopens the design last open in it; maker projects open there too when that is
   // where they were last (one project, two views).
   const target = projects.find((p) => p.id === last) ?? projects.find((p) => workspaceOf(p) === 'design');
-  if (target) await openStored(target.id);
+  if (switchSeq !== since) {
+    /* the user already opened a design */
+  } else if (target) await openUnlessSwitched(target.id, since);
   else {
     // Never saved: a new design, keeping the id of unsaved work so its draft can be recovered.
     const draft = last ? await drafts.load(last).catch(() => null) : null;
@@ -257,6 +261,7 @@ async function initOnce() {
 /** Make `p` the open design (resetting everything that belonged to the previous one). */
 function switchTo(p: ProjectData, maker: MakerProjectState | null) {
   const { setState: set } = useProjects;
+  switchSeq++;
   if (draftTimer) clearTimeout(draftTimer);
   draftTimer = null;
   loadIntoEditor(p);
@@ -279,6 +284,22 @@ async function offerRecovery(meta: ProjectMeta) {
 }
 
 /** Load a stored project into the editor (a maker project keeps its maker settings). */
+/** Counts designs made current, so start-up can tell when the user opened one meanwhile. */
+let switchSeq = 0;
+
+/**
+ * Open a stored design unless another one was made current after `since` (e.g. while this one
+ * was still loading). Start-up opens the last design this way.
+ */
+export async function openUnlessSwitched(id: string, since = switchSeq) {
+  const { repo } = useProjects.getState();
+  if (!repo) return false;
+  const p = await repo.load(id).catch(() => null);
+  if (!p || switchSeq !== since) return false;
+  switchTo(p, p.maker ?? null);
+  return true;
+}
+
 async function openStored(id: string) {
   const { repo } = useProjects.getState();
   if (!repo) return false;

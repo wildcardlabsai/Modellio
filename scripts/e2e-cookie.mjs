@@ -231,6 +231,12 @@ await page.getByRole('button', { name: 'Open in Design Studio' }).click();
 await page.getByTestId('project-name-input').fill('Star cookie');
 await page.getByTestId('project-name-save').click();
 await page.getByTestId('left-panel').waitFor();
+// The Design Studio shows at once; the project itself finishes loading a moment later.
+await page
+  .waitForFunction(() => window.modellio.projects.getState().current?.id === window.modellioCookie.store.getState().project?.id, null, {
+    timeout: 15000,
+  })
+  .catch(() => {});
 const opened = await S(() => ({
   current: window.modellio.projects.getState().current?.id,
   cookie: window.modellioCookie.store.getState().project?.id,
