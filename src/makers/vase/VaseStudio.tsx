@@ -756,7 +756,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
             ))}
             {result.notes.map((n) => (
               <p key={n} className="mt-2 flex gap-2 text-[12px] leading-relaxed text-muted">
-                <Info size={14} className="mt-0.5 shrink-0 text-brand-ink" /> {n}
+                <Info size={14} className="mt-0.5 shrink-0 text-accent-2" /> {n}
               </p>
             ))}
           </>

@@ -16,6 +16,7 @@ import {
   Shapes,
   Anchor,
   Link2,
+  Link2Off,
   CircleSlash,
 } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
@@ -203,7 +204,7 @@ export function ObjectTree() {
             aria-selected={active}
             aria-expanded={isGroup ? !collapsed[id] : undefined}
             aria-level={depth + 1}
-            aria-label={`${o.name}${isGroup ? (o.combine ? ', combination' : ', group') : o.isHole ? ', hole' : ''}${linked > 1 ? `, linked component (${linked} copies)` : linked ? ', component' : ''}${o.grounded ? ', grounded' : ''}${o.suppressed ? ', suppressed' : ''}${o.visible ? '' : ', hidden'}${o.locked ? ', locked' : ''}`}
+            aria-label={`${o.name}${isGroup ? (o.combine ? ', combination' : ', group') : o.isHole ? ', hole' : ''}${linked > 1 ? `, linked component (${linked} copies)` : linked ? ', independent component' : ''}${o.grounded ? ', grounded' : ''}${o.suppressed ? ', suppressed' : ''}${o.visible ? '' : ', hidden'}${o.locked ? ', locked' : ''}`}
             data-row-id={id}
             tabIndex={currentFocus === id ? 0 : -1}
             onFocus={(e) => e.target === e.currentTarget && setFocusId(id)}
@@ -298,12 +299,21 @@ export function ObjectTree() {
               )}
               {linked > 1 && (
                 <span
-                  className="flex shrink-0 items-center gap-0.5 text-[11px] text-ink-3"
+                  className="flex shrink-0 items-center gap-0.5 text-[11px] text-accent-2"
                   title={`Linked: ${linked} copies of this component change together`}
                   data-testid="tree-linked"
                 >
                   <Link2 size={12} />
                   {linked}
+                </span>
+              )}
+              {linked === 1 && (
+                <span
+                  className="flex shrink-0 items-center text-[11px] text-ink-3"
+                  title="Independent component: not linked to any other copy"
+                  data-testid="tree-independent"
+                >
+                  <Link2Off size={12} />
                 </span>
               )}
               {o.grounded && <Anchor size={13} className="shrink-0 text-ink-3" aria-hidden data-testid="tree-grounded" />}

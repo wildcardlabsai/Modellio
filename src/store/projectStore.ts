@@ -613,8 +613,8 @@ export const useProjects = create<ProjectState>()((set, get) => ({
       await get().refresh();
       return;
     }
-    if (p.maker?.studio === 'split') {
-      // A Split Studio project holds the split parts (the source model is not kept): they open in the Design Studio.
+    if (p.maker?.studio === 'split' && !(p.maker.state as { source?: unknown } | null)?.source) {
+      // An older (or very large) split project holds only the split parts: they open in the Design Studio.
       await get().openInDesign(id);
       return;
     }

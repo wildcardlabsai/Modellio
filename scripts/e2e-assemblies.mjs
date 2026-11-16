@@ -133,6 +133,10 @@ check(
   '5b. Make independent: the copy no longer follows the original',
   !freed.some((sz) => JSON.stringify(sz) === '[70,12,3]') && (await instances(cid)).length === 4,
 );
+check(
+  '5b2. Breaking the link leaves the original and the other copies linked: all 4 took the edit',
+  (await sizesOf(cid, node)).length === 4 && (await sizesOf(cid, node)).every((sz) => JSON.stringify(sz) === '[70,12,3]'),
+);
 check('5c. …and is listed as a component of its own', (await panel.getByTestId('component-item').count()) === 2);
 
 // 6. Insert an independent copy.
@@ -196,6 +200,11 @@ const tree = page.getByRole('tree', { name: 'Object tree' });
 await until(async () => (await tree.getByTestId('tree-linked').count()) > 0);
 check('11. The tree marks linked copies', (await tree.getByTestId('tree-linked').count()) >= 4);
 check('11b. …and suppressed parts', (await tree.getByTestId('tree-suppressed').count()) === 1);
+check(
+  '11c. …and marks independent components differently from linked ones',
+  (await tree.getByTestId('tree-independent').count()) >= 2 &&
+    (await tree.locator('[data-testid="tree-linked"]').first().getAttribute('title')).startsWith('Linked'),
+);
 await page.screenshot({ path: `${OUT}/assemblies-browser.png` });
 
 // 12. Save, reload, duplicate.

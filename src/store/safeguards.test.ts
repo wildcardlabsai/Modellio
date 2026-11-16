@@ -133,6 +133,15 @@ describe('spline validity', () => {
     expect(splineIssues(spline([1, 0.6], [0, 0.6])).map((i) => i.kind)).toEqual(['cusp']);
     expect(splineIssues(spline([1.6, 0.8], [-0.6, 0.8])).map((i) => i.kind)).toEqual(['self-crossing']);
   });
+  it('a loft or sweep with a looping spline is refused before building, naming the sketch', async () => {
+    const { defaultLoft, defaultSweep, splineProblem } = await import('@/components/features/solidBuilder');
+    const loft = defaultLoft();
+    expect(splineProblem(loft)).toBeNull();
+    loft.sections[1] = { ...loft.sections[1], sketch: spline([1.6, 0.8], [-0.6, 0.8]) };
+    expect(splineProblem(loft)).toMatch(/^Section 2: .*loops over itself/);
+    const sweep = { ...defaultSweep(), path: spline([1, 0.6], [0, 0.6]) };
+    expect(splineProblem(sweep)).toMatch(/^Path: .*doubles back/);
+  });
   it('finds folded and flat smooth joins', () => {
     const s: Sketch = {
       points: [

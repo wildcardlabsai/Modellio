@@ -16,6 +16,13 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, dev
 await page.addInitScript(() => localStorage.setItem('modellio:onboarded', '1'));
 await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
+// Each template replaces the previous one unsaved: answer "Discard" whenever the app asks.
+await page.evaluate(() =>
+  setInterval(() => {
+    const p = window.modellio.projects.getState().prompt;
+    if (p?.kind === 'guard') p.resolve('discard');
+  }, 50),
+);
 const ids = await page.evaluate(() => window.modellio.templates.map((t) => t.id));
 let failed = 0;
 for (let i = 0; i < ids.length; i++) {

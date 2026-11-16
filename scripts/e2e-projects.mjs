@@ -304,6 +304,47 @@ check(
 await page.screenshot({ path: `${OUT}/projects-02-open.png` });
 await page.keyboard.press('Escape');
 
+// 10. Split Studio projects: saved with their source model, reopened in Split Studio to carry on.
+await page.getByRole('button', { name: 'Split Studio', exact: true }).click();
+await page.getByTestId('split-studio').waitFor();
+await page.getByRole('button', { name: 'Try a sample' }).click();
+await until(() => S(() => !!window.modellioSplit.store.getState().doc));
+const islands = await S(() => {
+  const st = window.modellioSplit.store.getState();
+  st.setSplitOptions({ separateIslands: !st.splitOptions.separateIslands });
+  return window.modellioSplit.store.getState().splitOptions.separateIslands;
+});
+await menu(/^Save(?! as)/);
+await nameAs('Badge split');
+await until(async () => (await stored()).some((p) => p.name === 'Badge split'), 60000);
+check(
+  '32. A Split Studio design saves as a project (splitting it first), listed with its type',
+  (await stored()).some((p) => p.name === 'Badge split') &&
+    (await S(() => window.modellioSplit.store.getState().project?.name)) === 'Badge split',
+);
+await menu('New design…');
+await page.getByTestId('new-blank').click();
+await page.getByTestId('viewport').waitFor();
+await until(async () => /Not saved yet/.test(await status()));
+await menu('Open…');
+const splitRow = page.getByTestId('open-design-row').filter({ hasText: 'Badge split' });
+check(
+  '32b. The Open dialog shows it as a Split Studio design',
+  /Split Studio/.test(await splitRow.getByTestId('open-design-type').textContent()),
+);
+await page.getByRole('button', { name: 'Open Badge split', exact: true }).click();
+await page.getByTestId('split-studio').waitFor();
+await until(() => S(() => !!window.modellioSplit.store.getState().doc && !window.modellioSplit.store.getState().importing), 60000);
+const back = await S(() => {
+  const st = window.modellioSplit.store.getState();
+  return { file: st.doc?.fileName, islands: st.splitOptions.separateIslands, project: st.project?.name, dirty: st.dirty };
+});
+check(
+  '33. Opening it carries on in Split Studio: same model, same settings, same project, nothing unsaved',
+  /sample/i.test(back.file ?? '') && back.islands === islands && back.project === 'Badge split' && back.dirty === false,
+  JSON.stringify(back),
+);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

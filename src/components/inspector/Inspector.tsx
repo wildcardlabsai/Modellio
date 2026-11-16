@@ -346,7 +346,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
           <>
             {parent && (
               <div className="mx-5 mt-4 flex items-start gap-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-muted">
-                <Info size={14} className="mt-px shrink-0" />
+                <Info size={14} className="mt-px shrink-0 text-accent-2" />
                 <span>
                   Inside <strong className="font-semibold text-ink">{parent.name}</strong>. Position and rotation are relative to the group.
                 </span>
@@ -630,7 +630,7 @@ function AppearanceTab({ object, color, locked, isGroup }: { object: SceneObject
         </div>
       </Section>
       <p className="mx-5 mt-4 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted">
-        <Info size={13} className="mt-px shrink-0" />
+        <Info size={13} className="mt-px shrink-0 text-accent-2" />
         Appearance is for viewing only: it isn’t exported or printed. Colour is still included in 3MF and GLB files.
       </p>
     </>
@@ -1671,7 +1671,7 @@ function AssemblySection({ object, locked }: { object: SceneObject; locked: bool
         <div className="mb-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="instance-info">
           {copies > 1 ? (
             <>
-              Linked component: <strong className="font-semibold text-ink">{copies} copies</strong> change together. Position, name,
+              Linked component: <strong className="font-semibold text-accent-2">{copies} copies</strong> change together. Position, name,
               grounding and suppression are this copy's own.
             </>
           ) : (

@@ -8,6 +8,17 @@ import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { SplitViewport, splitView } from './SplitViewport';
 import { openSample, openSplitPicker } from './intake';
+import { base64ToBytes, bytesToBase64 } from '@/utils/base64';
+
+/** Largest source file kept inside a saved split project (bigger ones save their parts only). */
+export const MAX_KEPT_SOURCE = 40 * 1024 * 1024;
+
+/** What a saved split project holds (maker state). */
+export interface SavedSplit {
+  settings?: Record<string, unknown>;
+  fileName?: string | null;
+  source?: { name: string; data: string };
+}
 
 /**
  * Split Studio shell: guided stepper (Import → Split → Connect → Export), step panel,
@@ -27,16 +38,34 @@ export default function SplitStudio() {
     dirty: () => useSplit.getState().dirty,
     state: () => {
       const st = useSplit.getState();
+      // The source file is kept (up to a size limit) so the project can be reopened here and carried on.
+      const src = st.source && st.source.bytes.length <= MAX_KEPT_SOURCE ? st.source : null;
       return {
         settings: { splitOptions: st.splitOptions, connectorSettings: st.connectorSettings, plateSettings: st.plateSettings },
         fileName: st.doc?.fileName ?? null,
+        ...(src ? { source: { name: src.name, data: bytesToBase64(src.bytes) } } : {}),
       };
     },
-    parts: () => {
+    parts: async () => {
+      // Saving at the Import step splits the model first (the project holds its parts).
+      const st = useSplit.getState();
+      if (st.doc && !currentParts(st).length) {
+        if (st.step === 'import') st.setStep('split');
+        await useSplit.getState().ensure();
+      }
       const parts = currentParts(useSplit.getState());
       return parts.length ? parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })) : null;
     },
-    load: () => undefined,
+    load: (state) => {
+      const saved = state as SavedSplit | undefined;
+      if (!saved?.source) return;
+      void useSplit
+        .getState()
+        .resume({ name: saved.source.name, bytes: base64ToBytes(saved.source.data), settings: saved.settings })
+        .then((ok) => {
+          if (!ok) useSplit.setState({ error: `“${saved.source!.name}” could not be reopened from this project.` });
+        });
+    },
     startBlank: () => useSplit.getState().closeDocument(),
     suggestedName: () => {
       const d = useSplit.getState().doc;

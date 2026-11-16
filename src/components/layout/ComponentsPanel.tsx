@@ -84,7 +84,8 @@ export function ComponentsPanel() {
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-semibold text-ink">{name}</span>
                       <span className="block text-[11px] text-muted" data-testid="component-count">
-                        {parts} part{parts === 1 ? '' : 's'} · {list.length} {list.length === 1 ? 'copy' : 'linked copies'}
+                        {parts} part{parts === 1 ? '' : 's'} ·{' '}
+                        {list.length === 1 ? 'independent' : <span className="text-accent-2">{list.length} linked copies</span>}
                       </span>
                     </span>
                   </button>

@@ -4,6 +4,7 @@ import { buildBrepAsync } from '@/cad/brep/client';
 import { findFreePosition } from '@/cad/document';
 import type { BrepBuild, FeatureBase, LoftSection } from '@/cad/brep/types';
 import type { Sketch } from '@/cad/sketch/types';
+import { splineIssues } from '@/cad/sketch/splineCheck';
 import type { Vec3 } from '@/types/document';
 import { onProjectSwitch } from '@/platform/projectScope';
 
@@ -96,6 +97,22 @@ interface BuilderState {
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
+
+/** The first spline problem in a loft's sections or a sweep's profile and path, named, or null. */
+export function splineProblem(base: LoftBase | SweepBase): string | null {
+  const parts: [string, Sketch][] =
+    base.kind === 'loft'
+      ? base.sections.map((sec, i) => [`Section ${i + 1}`, sec.sketch] as [string, Sketch])
+      : [
+          ['Profile', base.profile],
+          ['Path', base.path],
+        ];
+  for (const [name, sk] of parts) {
+    const issue = splineIssues(sk)[0];
+    if (issue) return `${name}: ${issue.message}`;
+  }
+  return null;
+}
 let opened = 0;
 let seq = 0;
 
@@ -104,6 +121,12 @@ export const useSolidBuilder = create<BuilderState>((set, get) => {
     if (timer) clearTimeout(timer);
     const s = get().session;
     if (!s) return;
+    // A spline that loops or doubles back can't be built reliably (sketches from older files may have one).
+    const bad = splineProblem(s.base);
+    if (bad) {
+      set({ session: { ...s, preview: { state: 'error', message: bad } } });
+      return;
+    }
     set({ session: { ...s, preview: { ...s.preview, state: 'building' } } });
     timer = setTimeout(async () => {
       const cur = get().session;
