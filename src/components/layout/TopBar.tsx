@@ -31,8 +31,9 @@ const NAV = [
   { label: 'Design', Icon: Box, view: 'editor' as const },
   { label: 'Split Studio', Icon: Scissors, studio: 'split' as const, hint: 'Split a multi-colour 3MF into parts' },
   { label: 'My Projects', Icon: FolderOpen, view: 'projects' as const },
-  { label: 'Templates', Icon: LayoutGrid, view: 'templates' as const },
-  { label: 'Community', Icon: Users, soon: 'Coming soon' },
+  // On a phone these two are left out of the bar (Templates is on the Dashboard; Community is not open yet).
+  { label: 'Templates', Icon: LayoutGrid, view: 'templates' as const, wide: true },
+  { label: 'Community', Icon: Users, soon: 'Coming soon', wide: true },
 ];
 
 /** Focused makers (from the shared catalogue), plus makers still to come, shown disabled. */
@@ -67,7 +68,7 @@ function MakersMenu({ active, onOpen }: { active: boolean; onOpen: (s: StudioId)
           aria-haspopup="menu"
           aria-label="Makers"
           aria-current={active ? 'page' : undefined}
-          className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-[14px] font-medium transition-colors lg:px-3 xl:px-3.5 ${
+          className={`flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2 text-[14px] sm:px-2.5 font-medium transition-colors lg:px-3 xl:px-3.5 ${
             active ? 'bg-brand text-white shadow-sm' : 'text-white/80 hover:bg-white/10'
           }`}
         >
@@ -109,10 +110,10 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const studio = useStudio((s) => s.studio);
   const setStudio = useStudio((s) => s.setStudio);
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 bg-navy px-3 text-white sm:gap-6 sm:px-5">
+    <header className="flex h-14 shrink-0 items-center gap-2 bg-navy px-3 text-white sm:gap-6 sm:px-5">
       <a
         href="/"
-        className="flex items-center"
+        className="flex shrink-0 items-center"
         aria-label="Modellio home"
         onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -120,10 +121,10 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
           setStudio('home');
         }}
       >
-        <img src="/logo-light.png" alt="modellio" className="h-[26px] w-auto" draggable={false} />
+        <img src="/logo-light.png" alt="modellio" className="h-[22px] w-auto max-w-none sm:h-[26px]" draggable={false} />
       </a>
-      <nav className="flex items-center gap-1" aria-label="Main">
-        {NAV.map(({ label, Icon, view: target, studio: targetStudio, soon, hint }) => {
+      <nav className="flex min-w-0 items-center gap-0.5 sm:gap-1" aria-label="Main">
+        {NAV.map(({ label, Icon, view: target, studio: targetStudio, soon, hint, wide }) => {
           const enabled = !!(target || targetStudio);
           const active = targetStudio ? studio === targetStudio : studio === 'design' && target === view;
           const button = (
@@ -141,7 +142,7 @@ export function TopBar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
               title={soon ?? hint}
               aria-current={active ? 'page' : undefined}
               aria-label={label}
-              className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-[14px] font-medium transition-colors lg:px-3 xl:px-3.5 ${
+              className={`flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2 text-[14px] sm:px-2.5 font-medium transition-colors lg:px-3 xl:px-3.5 ${wide ? 'max-sm:hidden' : ''} ${
                 active ? 'bg-brand text-white shadow-sm' : enabled ? 'text-white/80 hover:bg-white/10' : 'text-white/40'
               } disabled:cursor-default`}
             >

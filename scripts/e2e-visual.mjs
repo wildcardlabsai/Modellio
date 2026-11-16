@@ -98,12 +98,30 @@ const audit = () => {
     measured++;
     if (ratio < (large ? 3 : 4.5)) fails.push(`${el.textContent.trim().slice(0, 30)} (${ratio.toFixed(2)})`);
   }
+  // The logo keeps its proportions (it was once squeezed by the nav on phones).
+  const logo = document.querySelector('header img[alt="modellio"]');
+  const logoRatio =
+    logo && logo.naturalWidth
+      ? logo.getBoundingClientRect().width / logo.getBoundingClientRect().height / (logo.naturalWidth / logo.naturalHeight)
+      : 1;
+  // Floating controls at the bottom of the Design Studio view must not sit on top of each other.
+  const boxes = ['[aria-label="Units"]', '[aria-label="Snap increment"]', 'button[aria-label="Home view"]']
+    .map((q) => document.querySelector(q)?.parentElement?.getBoundingClientRect())
+    .filter(Boolean);
+  let overlaps = 0;
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const [a, b] = [boxes[i], boxes[j]];
+      if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlaps++;
+    }
   return {
     themed,
     white,
     fails,
     measured,
     overflow: document.documentElement.scrollWidth - innerWidth,
+    logoRatio,
+    overlaps,
   };
 };
 
@@ -126,6 +144,8 @@ for (const size of SIZES) {
       a.fails.length ? a.fails.slice(0, 4).join(' | ') : `${a.measured} text elements`,
     );
     check(`${tag}: no sideways scrolling`, a.overflow <= 1, a.overflow > 1 ? `${a.overflow}px too wide` : '');
+    check(`${tag}: the logo keeps its proportions`, Math.abs(a.logoRatio - 1) < 0.05, a.logoRatio.toFixed(2));
+    if (w.id === 'design') check(`${tag}: the floating view controls don't overlap`, a.overlaps === 0, `${a.overlaps} overlapping`);
     await page.screenshot({ path: `${OUT}/visual-${w.id}-${size.id}.png` });
   }
   await context.close();

@@ -107,8 +107,8 @@ export function ViewportOverlay() {
         </div>
       )}
 
-      {/* Units + snapping */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-2">
+      {/* Units + snapping (on a phone, above the camera bar: the two don't fit side by side) */}
+      <div className="absolute bottom-3 left-3 flex items-center gap-2 max-sm:bottom-[60px]">
         <label className="flex h-9 items-center rounded-lg border border-line bg-panel px-2 text-[13px] font-semibold text-ink shadow-panel">
           <span className="sr-only">Units</span>
           <select
@@ -131,7 +131,7 @@ export function ViewportOverlay() {
           >
             <Magnet size={15} />
           </IconButton>
-          <span className="text-muted">Snap:</span>
+          <span className="text-muted max-sm:hidden">Snap:</span>
           <select
             aria-label="Snap increment"
             value={snap.translate}
@@ -145,13 +145,13 @@ export function ViewportOverlay() {
               </option>
             ))}
           </select>
-          <span className="ml-1 text-muted">·</span>
+          <span className="ml-1 text-muted max-sm:hidden">·</span>
           <select
             aria-label="Rotation snap increment"
             value={snap.rotate}
             disabled={!snap.enabled}
             onChange={(e) => setSnap({ rotate: Number(e.target.value) })}
-            className="bg-transparent font-medium tabular-nums outline-none disabled:opacity-40"
+            className="bg-transparent max-sm:hidden font-medium tabular-nums outline-none disabled:opacity-40"
           >
             {[...new Set([1, 5, 15, 22.5, 45, 90, snap.rotate])]
               .sort((a, b) => a - b)
