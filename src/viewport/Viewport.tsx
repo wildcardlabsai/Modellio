@@ -24,12 +24,19 @@ import { ViewportOverlay } from './ViewportOverlay';
 import { MeasureTool } from './MeasureTool';
 import { LayFlatTool } from './LayFlatTool';
 import { EdgePickTool } from './EdgePickTool';
+import { SketchFacePicker } from './SketchFacePicker';
+import { RefPlanes } from './RefPlanes';
+import { FacePickTool } from './FacePickTool';
 import { SolidPreview } from './SolidPreview';
 import { PrintOverlay } from './PrintOverlay';
 import { CrashProbe, useDebug } from '@/utils/debug';
 import { SnapGuides } from './guides';
 import { LabelLayer, LabelProjector } from './labels';
 import { ResizeHandles } from './ResizeHandles';
+import { JointGlyphs } from './JointGlyphs';
+import { JointPickTool } from './JointPickTool';
+import { JointDialog } from '@/components/assembly/JointDialog';
+import { useAssemblyUi } from '@/components/assembly/assemblyUi';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ViewportCrash } from '@/components/layout/CrashScreens';
 
@@ -48,7 +55,9 @@ function SceneObjects() {
   const doc = useEditor((s) => s.doc);
   const rootIds = useEditor((s) => s.doc.rootIds);
   const selection = useEditor((s) => s.selection);
-  const items = topLevel(doc, selection).filter((id) => isEffectivelyVisible(doc, id));
+  // Outlines mark where parts are; while an exploded view is shown they'd be in the wrong place.
+  const exploded = useEditor((s) => !!s.explode && s.explode.progress > 0);
+  const items = exploded ? [] : topLevel(doc, selection).filter((id) => isEffectivelyVisible(doc, id));
 
   return (
     <>
@@ -93,6 +102,11 @@ export function Viewport() {
   const colors = WORKSPACE_COLORS[useWorkspaceTheme((s) => s.theme)];
   const [dragOver, setDragOver] = useState(false);
   const [sceneError, setSceneError] = useState<Error | null>(null);
+  // While an exploded view shows, or faces are being picked for a joint, parts can't be moved or resized.
+  const exploded = useEditor((s) => !!s.explode && s.explode.progress > 0);
+  const jointDialog = useAssemblyUi((s) => s.jointDialog);
+  const jointPicking = useAssemblyUi((s) => s.jointDialog && s.draft.mode === 'faces' && s.draft.target !== null);
+  const noHandles = exploded || jointPicking;
   const [sceneKey, setSceneKey] = useState(0);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
@@ -123,7 +137,7 @@ export function Viewport() {
       const { doc, select } = useEditor.getState();
       // An object is boxed when the centre of its bounds is inside the rectangle.
       const hits = doc.rootIds.filter((id) => {
-        if (!doc.objects[id]?.visible) return false;
+        if (!doc.objects[id]?.visible || doc.objects[id]?.suppressed) return false;
         const c = worldBoundsOf(doc, [id]).getCenter(new THREE.Vector3());
         const p = worldToScreen(c.x, c.y, c.z);
         return !!p && p.x >= xa && p.x <= xb && p.y >= ya && p.y <= yb;
@@ -230,12 +244,18 @@ export function Viewport() {
           <Suspense fallback={null}>
             <SceneObjects />
           </Suspense>
-          <TransformGizmo />
-          <ResizeHandles />
+          {/* Exploded views are display only, and joint picking needs clicks: no handles meanwhile. */}
+          {!noHandles && <TransformGizmo />}
+          {!noHandles && <ResizeHandles />}
+          <JointGlyphs />
+          <JointPickTool />
           <ViewCube />
           <MeasureTool />
           <LayFlatTool />
           <EdgePickTool />
+          <FacePickTool />
+          <SketchFacePicker />
+          <RefPlanes />
           <SolidPreview />
           <PrintOverlay />
           <SnapGuides />
@@ -244,6 +264,7 @@ export function Viewport() {
       </Canvas>
       <LabelLayer />
       <ViewportOverlay />
+      {jointDialog && <JointDialog />}
       {marquee && (
         <div
           data-testid="marquee"

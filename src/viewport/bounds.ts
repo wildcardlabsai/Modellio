@@ -9,6 +9,6 @@ export function selectionBounds(doc: ModelDocument, ids: ObjectId[]): THREE.Box3
 export function sceneBounds(doc: ModelDocument): THREE.Box3 {
   return worldBoundsOf(
     doc,
-    doc.rootIds.filter((id) => doc.objects[id]?.visible),
+    doc.rootIds.filter((id) => doc.objects[id]?.visible && !doc.objects[id]?.suppressed),
   );
 }

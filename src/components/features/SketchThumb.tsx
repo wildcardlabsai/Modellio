@@ -18,7 +18,7 @@ export function SketchThumb({ sketch, size = 56, label }: { sketch: Sketch; size
       }
       continue;
     }
-    for (const id of e.kind === 'arc' ? [e.a, e.b, e.c] : [e.a, e.b]) {
+    for (const id of e.kind === 'arc' ? [e.a, e.b, e.c] : e.kind === 'bezier' ? [e.a, e.b, e.c1, e.c2] : [e.a, e.b]) {
       const p = P.get(id);
       if (p) add(p.x, p.y);
     }
@@ -56,6 +56,11 @@ export function SketchThumb({ sketch, size = 56, label }: { sketch: Sketch; size
         const b = P.get(e.b);
         if (!a || !b) return null;
         if (e.kind === 'line') return <line key={e.id} x1={a.x} y1={-a.y} x2={b.x} y2={-b.y} {...style} />;
+        if (e.kind === 'bezier') {
+          const [h1, h2] = [P.get(e.c1), P.get(e.c2)];
+          if (!h1 || !h2) return null;
+          return <path key={e.id} d={`M ${a.x} ${-a.y} C ${h1.x} ${-h1.y} ${h2.x} ${-h2.y} ${b.x} ${-b.y}`} {...style} />;
+        }
         const c = P.get(e.c);
         if (!c) return null;
         const r = Math.hypot(a.x - c.x, a.y - c.y);

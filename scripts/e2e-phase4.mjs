@@ -46,7 +46,15 @@ const waitFor = async (fn, ms = 6000) => {
   return false;
 };
 const saveStatus = () => page.getByTestId('save-status').textContent();
-const waitSaved = () => waitFor(async () => (await saveStatus())?.includes('Saved'));
+const waitSaved = () => waitFor(async () => /(^|\s)Saved/.test((await saveStatus()) ?? ''));
+/** Save through the File menu (projects change only when saved); the first save asks for a name. */
+const saveDesign = async () => {
+  await page.getByRole('button', { name: 'File menu' }).click();
+  await page.getByRole('menuitem', { name: /^Save(?! as)/ }).click();
+  const nameDialog = page.getByTestId('project-name-save');
+  if (await nameDialog.isVisible({ timeout: 800 }).catch(() => false)) await nameDialog.click();
+  return waitSaved();
+};
 const download = async (trigger) => {
   const [dl] = await Promise.all([page.waitForEvent('download'), trigger()]);
   const file = path.join(OUT, dl.suggestedFilename());
@@ -74,7 +82,11 @@ function readBinaryStl(buf) {
 
 await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
-check('1. A new project is created and saved on first launch', await waitSaved(), await saveStatus());
+check(
+  '1. A new design opens on first launch (not saved until the user saves)',
+  await waitFor(async () => /Not saved yet/.test((await saveStatus()) ?? '')),
+  await saveStatus(),
+);
 
 // --- 2. Build a design
 await S(async () => {
@@ -99,7 +111,8 @@ const nameField = page.getByLabel('Project name');
 await nameField.fill('Desk Organiser');
 await nameField.press('Enter');
 await page.waitForTimeout(300);
-check('2. Changes autosave ("Saved")', await waitSaved(), await saveStatus());
+check('2. Changes are unsaved until Save', /Unsaved changes/.test((await saveStatus()) ?? ''), await saveStatus());
+check('2b. Save (first time: name confirmed) writes the project ("Saved")', await saveDesign(), await saveStatus());
 let s;
 const designBounds = await S(() => {
   const { store, hierarchy } = window.modellio;
@@ -202,7 +215,7 @@ s = await state();
 check('5c. Imported part is watertight and usable', s.doc.objects[s.selection[0]]?.shape === 'mesh');
 
 // --- 6. Reload: everything comes back
-await waitSaved();
+await saveDesign();
 const snapshot = (await state()).doc;
 await page.reload({ waitUntil: 'networkidle' });
 await waitFor(async () => (await saveStatus())?.includes('Saved'));
@@ -238,12 +251,13 @@ check(
     ((await page.getByTestId('project-card').locator('img').getAttribute('src')) ?? '').startsWith('data:image/jpeg'),
 );
 await page.getByRole('button', { name: 'New design' }).first().click();
+await page.getByTestId('new-blank').click();
 await waitFor(async () => (await page.getByLabel('Project name').inputValue()) === 'Untitled design');
 const n7b = Object.keys((await state()).doc.objects).length;
 const name7b = await page.getByLabel('Project name').inputValue();
 check('7b. New design opens an empty project', n7b === 0 && name7b === 'Untitled design', `${n7b} objects, “${name7b}”`);
 await S(() => window.modellio.store.getState().addShape('sphere'));
-await waitSaved();
+await saveDesign();
 await page.getByRole('button', { name: 'My Projects' }).click();
 check(
   '7c. Both projects are listed, newest first',

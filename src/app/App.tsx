@@ -17,7 +17,7 @@ import { Viewport } from '@/viewport/Viewport';
 const ShortcutsDialog = lazy(() => import('@/components/layout/ShortcutsDialog').then((m) => ({ default: m.ShortcutsDialog })));
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { CadResources } from '@/viewport/cadReady';
-import { useProjects } from '@/store/projectStore';
+import { flushDraft, useProjects } from '@/store/projectStore';
 const TemplatesPage = lazy(() => import('@/components/projects/TemplatesPage').then((m) => ({ default: m.TemplatesPage })));
 const ProjectsPage = lazy(() => import('@/components/projects/ProjectsPage').then((m) => ({ default: m.ProjectsPage })));
 const ImportDialog = lazy(() => import('@/components/files/ImportDialog').then((m) => ({ default: m.ImportDialog })));
@@ -34,6 +34,13 @@ import { SharedBanner } from '@/components/layout/SharedBanner';
 import { TEMPLATES } from '@/templates/templates';
 import { Tour, useFirstRunTour } from '@/components/onboarding/Tour';
 import { useGuides } from '@/viewport/guides';
+import { SketchResizeDialog } from '@/components/sketch/SketchResizeDialog';
+import { ProjectPrompts } from '@/components/projects/ProjectPrompts';
+import { NewDesignDialog } from '@/components/projects/NewDesignDialog';
+import { OpenDesignDialog } from '@/components/projects/OpenDesignDialog';
+import { RecoveryBanner } from '@/components/projects/RecoveryBanner';
+import { FacePickBanner } from '@/components/sketch/FacePickBanner';
+import { watchAttachments } from '@/cad/sketch/attachments';
 import { useEditor } from '@/store/editorStore';
 import { viewport, worldToScreen } from '@/viewport/viewportBridge';
 import * as hierarchy from '@/cad/hierarchy';
@@ -84,6 +91,21 @@ export function App() {
     if (useLayout.getState().compact) useLayout.getState().setLeftOpen(false);
   }, [objectCount]);
 
+  // Keep sketches placed on planes and faces where they belong as the design changes.
+  useEffect(
+    () =>
+      watchAttachments({
+        subscribe: (fn) =>
+          useEditor.subscribe((st, prev) => {
+            if (st.doc !== prev.doc || st.transaction !== prev.transaction) fn();
+          }),
+        get: () => useEditor.getState().doc,
+        set: (doc) => useEditor.setState({ doc }),
+        busy: () => !!useEditor.getState().transaction,
+      }),
+    [],
+  );
+
   // Expose the store for debugging and automated workflow tests.
   useEffect(() => {
     (window as unknown as { modellio: unknown }).modellio = {
@@ -112,13 +134,14 @@ export function App() {
   // Open the last project (or start a new one), and protect unsaved work.
   useEffect(() => {
     void useProjects.getState().init();
+    // Unsaved work is kept as a recovery draft (never written into the project without Save).
     const onHide = () => {
-      if (document.visibilityState === 'hidden' && useProjects.getState().status === 'unsaved') void useProjects.getState().saveNow();
+      if (document.visibilityState === 'hidden' && useProjects.getState().status === 'unsaved') void flushDraft();
     };
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       const status = useProjects.getState().status;
       if (status === 'unsaved' || status === 'saving') {
-        void useProjects.getState().saveNow();
+        void flushDraft();
         e.preventDefault();
       }
     };
@@ -144,10 +167,15 @@ export function App() {
   const Workspace = WORKSPACES[studio];
 
   return (
-    // The Design Studio uses the dark professional shell; the makers keep their light look.
-    <div className="flex h-full flex-col" data-ui={Workspace ? undefined : 'studio-dark'}>
+    // One visual system: the Design Studio, every maker and Split Studio share the dark
+    // professional theme (the dashboard keeps its own night surfaces).
+    <div className="flex h-full flex-col" data-ui={studio === 'dashboard' ? undefined : 'studio-dark'}>
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <ReturnBar />
+      {/* Project questions and dialogs work in every workspace. */}
+      <ProjectPrompts />
+      <NewDesignDialog />
+      <OpenDesignDialog />
       {Workspace ? (
         <Suspense
           fallback={
@@ -206,6 +234,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
     <>
       <Toolbar />
       <SharedBanner />
+      <RecoveryBanner />
       <SmallScreenNotice />
       <div className="relative flex min-h-0 flex-1">
         <LeftRail panel={panel} onChange={choosePanel} />
@@ -249,6 +278,8 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
           </div>
           {!compact && <HistoryTimeline />}
           <SketchHost />
+          <FacePickBanner />
+          <SketchResizeDialog />
         </main>
         {(!compact || inspectorOpen) && (
           <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">

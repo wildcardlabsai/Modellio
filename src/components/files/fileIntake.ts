@@ -10,6 +10,7 @@ import { isOutlineFile, outlineFromFile, outlineToMesh } from '@/assets/outlines
 import { ProjectFormatError } from '@/cad/serialization/project';
 import { useEditor } from '@/store/editorStore';
 import { useProjects } from '@/store/projectStore';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 interface FileUiState {
   /** Parsed mesh files waiting for the user to confirm import options. */
@@ -156,3 +157,6 @@ export function openProjectPicker() {
   projectInput ??= picker('.modellio,application/json', false);
   projectInput.click();
 }
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('file-ui', () => useFileUi.setState({ queue: [], exportOpen: false }));

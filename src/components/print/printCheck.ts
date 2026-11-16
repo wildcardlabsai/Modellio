@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { analyzePrintability, DEFAULT_PRINT_SETTINGS, type PrintReport, type PrintSettings } from '@/cad/analysis/printability';
 import { collectExportBodies, type ExportBody } from '@/cad/export/collect';
 import { useEditor } from '@/store/editorStore';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 interface PrintCheckState {
   settings: PrintSettings;
@@ -43,3 +44,6 @@ export const usePrintCheck = create<PrintCheckState>()((set, get) => ({
 useEditor.subscribe((s, prev) => {
   if (s.doc !== prev.doc && usePrintCheck.getState().report) usePrintCheck.setState({ stale: true });
 });
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('print-check', () => usePrintCheck.getState().clear());

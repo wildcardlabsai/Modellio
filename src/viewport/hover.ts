@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { collectSubtree } from '@/cad/document';
 import { useEditor } from '@/store/editorStore';
 import type { ObjectId } from '@/types/document';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 /**
  * Objects pointed at outside the 3D view (a Design Browser row, a history step). The view
@@ -23,3 +24,6 @@ export const useHover = create<{ ids: ObjectId[]; set: (ids: ObjectId[]) => void
     set({ ids: all });
   },
 }));
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('hover', () => useHover.setState({ ids: [] }));

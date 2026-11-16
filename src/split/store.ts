@@ -54,6 +54,15 @@ interface SplitState extends Settings {
   explode: number;
   past: Settings[];
   future: Settings[];
+  /** The saved project for this split (its parts, opened in the Design Studio), if saved. */
+  project: { id: string; name: string } | null;
+  /** Changed since it was imported or last saved. */
+  dirty: boolean;
+  /** The imported file itself, kept so a saved split project can be reopened here. */
+  source: { name: string; bytes: Uint8Array } | null;
+  /** Reopen a saved split project: import its source file again and restore its settings. */
+  resume: (saved: { name: string; bytes: Uint8Array; settings?: Partial<Settings> }) => Promise<boolean>;
+  setProject: (p: { id: string; name: string } | null) => void;
 
   importFile: (file: Blob & { name?: string }) => Promise<void>;
   cancelImport: () => void;
@@ -85,6 +94,8 @@ interface SplitState extends Settings {
 }
 
 let controller: AbortController | null = null;
+/** A saved project is being reopened (its import keeps the project it belongs to). */
+let resuming = false;
 let jobController: AbortController | null = null;
 
 /** Largest file the browser importer accepts (keeps memory predictable on tablets). */
@@ -135,7 +146,7 @@ export const useSplit = create<SplitState>((set, get) => {
   });
   const change = (patch: Partial<Settings>) => {
     const before = settings();
-    set({ ...patch, past: [...get().past.slice(-49), before], future: [] });
+    set({ ...patch, past: [...get().past.slice(-49), before], future: [], dirty: !!get().doc });
     saveSettings(settings());
     void get().ensure();
   };
@@ -206,6 +217,10 @@ export const useSplit = create<SplitState>((set, get) => {
 
   return {
     doc: null,
+    project: null,
+    source: null,
+    dirty: false,
+    setProject: (project) => set({ project, dirty: false }),
     components: [],
     importing: null,
     error: null,
@@ -250,8 +265,13 @@ export const useSplit = create<SplitState>((set, get) => {
         if (controller !== mine) return;
         jobController?.abort();
         jobController = null;
+        const bytes = new Uint8Array(await file.arrayBuffer());
         set({
           doc,
+          source: { name: fileName, bytes },
+          // A newly imported model is new work: not saved yet (unless it is a saved project being reopened).
+          project: resuming ? get().project : null,
+          dirty: true,
           components: computeColourComponents(doc),
           importing: null,
           selectedMaterial: null,
@@ -272,6 +292,17 @@ export const useSplit = create<SplitState>((set, get) => {
         if (controller === mine) controller = null;
       }
     },
+    resume: async ({ name, bytes, settings }) => {
+      resuming = true;
+      try {
+        await get().importFile(new File([bytes as BlobPart], name));
+      } finally {
+        resuming = false;
+      }
+      if (!get().doc || get().importing) return false;
+      set({ ...(settings ?? {}), past: [], future: [], dirty: false });
+      return true;
+    },
     cancelImport: () => {
       controller?.abort();
       controller = null;
@@ -283,6 +314,9 @@ export const useSplit = create<SplitState>((set, get) => {
       jobController = null;
       set({
         doc: null,
+        source: null,
+        project: null,
+        dirty: false,
         components: [],
         selectedMaterial: null,
         hidden: [],

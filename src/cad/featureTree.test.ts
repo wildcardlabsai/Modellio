@@ -85,6 +85,17 @@ describe('feature tree', () => {
     expect(solid.children[2]).toMatchObject({ suppressed: true, detail: '1 mm · 0 edges · off' });
   });
 
+  it('shows the rollback marker and greys out the operations after it', () => {
+    const { doc, ids } = design();
+    const rolled = produce(doc, (d) => {
+      (d.objects[ids.solid] as ShapeObject).feature!.rollback = 1;
+    });
+    const solid = deriveFeatureTree(rolled).find((n) => n.objectId === ids.solid)!;
+    expect(solid.children.map((c) => c.kind)).toEqual(['base', 'op', 'rollback', 'op']);
+    expect(solid.children[3]).toMatchObject({ rolledBack: true, edit: undefined });
+    expect(solid.children[1]).toMatchObject({ rolledBack: false, index: 0 });
+  });
+
   it('offers editing only where it really exists', () => {
     const { doc, ids } = design();
     const tree = deriveFeatureTree(doc);

@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { produce, type Draft } from 'immer';
+import { current, isDraft, produce, type Draft } from 'immer';
 import * as THREE from 'three';
 import type {
   AlignMode,
   Axis,
+  GroupObject,
   ModelDocument,
   ObjectId,
   PrimitiveType,
@@ -15,6 +16,7 @@ import type {
 import {
   addObjectDraft,
   clampSize,
+  collectSubtree,
   copySubtrees,
   createEmptyDocument,
   createShape,
@@ -37,13 +39,15 @@ import {
   moveObjectsDraft,
   scaleGroupDraft,
   setWorldMatrixDraft,
+  translateWorldDraft,
   topLevel,
   ungroupDraft,
   worldBoundsOf,
   worldMatrix,
 } from '@/cad/hierarchy';
 import { getShapeDefinition, getTextMesh, solidRequest } from '@/cad/shapeRegistry';
-import { bakeGroupDraft, computeCombined, separateDraft } from '@/cad/operations/combine';
+import { bakeGroupDraft, computeCombined, exactCombineRequest, separateDraft, solidFromGroupDraft } from '@/cad/operations/combine';
+import { requestKey, type BrepBuild, type FeatureBase } from '@/cad/brep/types';
 import { initKernel } from '@/cad/kernel/kernel';
 import { DEFAULT_FONT, loadFont } from '@/cad/text/fonts';
 import { centerMeshData, meshDataBounds, type MeshData } from '@/cad/kernel/meshData';
@@ -56,7 +60,30 @@ import type { FeatureOp, FeatureRecipe } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
-import type { CombineMode, SketchId, SurfaceFinish, TextContent } from '@/types/document';
+import { onProjectSwitch } from '@/platform/projectScope';
+import type {
+  CombineMode,
+  Frame,
+  PlaneId,
+  RefPlane,
+  SketchId,
+  SketchPlacement,
+  SurfaceFinish,
+  TextContent,
+  Joint,
+  JointKind,
+  ExplodeStep,
+  JointPlacement,
+} from '@/types/document';
+import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
+import { guardSketchBodies, sketchControlled, type BlockedResize } from '@/cad/sketchBodies';
+import { instancesOf, linkInstanceDraft, replaceContentDraft, syncLinks, unlinkDraft } from '@/cad/assembly/links';
+import { guardGrounded } from '@/cad/assembly/fixed';
+import { JOINT_DOF, JOINT_NAME, clampValues, frameFrom, jointProblem, solveJoints } from '@/cad/assembly/joints';
+import { autoExplodeSteps, pruneExplodeViews } from '@/cad/assembly/explode';
+import { scaleSketch } from '@/cad/sketch/edit';
+import { splineIssues } from '@/cad/sketch/splineCheck';
+import { planeFrame } from '@/cad/placement';
 import { addSketchRecordDraft, forkSketchLinksDraft, sketchRecords, sketchUsers } from '@/cad/sketchRecords';
 import { matrixToTransform } from '@/cad/transforms/transform';
 import { emptyHistory, pushHistory, redoHistory, undoHistory, type History } from './history';
@@ -113,6 +140,17 @@ export interface EditorState {
   setReadOnly: (v: boolean) => void;
   /** Short message for the UI (e.g. why an operation is unavailable). */
   notice: { text: string; seq: number } | null;
+  /** A resize refused because it would stretch a body away from the sketch that controls it (shown as a dialog). */
+  blockedResize: BlockedResize | null;
+  /** The exploded view being shown, and how far through its steps (display only; null = assembled). */
+  explode: { viewId: string; progress: number } | null;
+  clearBlockedResize: () => void;
+  /**
+   * Resize a sketch-controlled body anyway by giving it its own copy of the sketch, scaled to the
+   * new size (it is no longer linked to or placed by the original). One undo step; dimensions the
+   * scaling breaks are removed and named.
+   */
+  resizeIndependent: (id: ObjectId, size: Vec3) => Promise<boolean>;
 
   // --- generic mutation API ---
   /** Apply a recorded (undoable) change. Inside a transaction it is folded into the transaction. */
@@ -161,6 +199,17 @@ export interface EditorState {
   alignSelected: (axis: Axis, mode: AlignMode) => void;
   distributeSelected: (axis: Axis) => void;
   mirrorSelected: (axis: Axis) => void;
+  /** Add a mirrored copy of the selection, touching it on the + side of the axis; both are grouped. */
+  mirrorCopySelected: (axis: Axis) => void;
+  /**
+   * Copies of the selection in a row (along an axis, `spacing` mm apart) or round a circle (about
+   * the vertical axis through `centre`, spread over `angle` degrees), grouped with the original.
+   */
+  patternSelected: (
+    p:
+      | { kind: 'linear'; count: number; spacing: number; axis: Axis }
+      | { kind: 'circular'; count: number; angle: number; centre: 'origin' | 'selection' },
+  ) => void;
   moveInTree: (ids: ObjectId[], parentId: ObjectId | null, index: number) => void;
   setSize: (id: ObjectId, size: Vec3) => void;
   setGroupSize: (id: ObjectId, size: Vec3) => void;
@@ -198,7 +247,26 @@ export interface EditorState {
    * message) when the sketch has no closed outline.
    */
   /** Save a sketch into a body: edit body `id`, or make a new one (linked to `sketchId` when given, else to a new sketch). */
-  saveSketch: (id: ObjectId | null, sketch: Sketch, op: ProfileOp, sketchId?: SketchId) => Promise<ObjectId | null>;
+  saveSketch: (
+    id: ObjectId | null,
+    sketch: Sketch,
+    op: ProfileOp,
+    sketchId?: SketchId,
+    /** For a new sketch: where it sits (a reference plane or a flat face) and that place's frame. */
+    place?: { placement: SketchPlacement; frame: Frame },
+  ) => Promise<ObjectId | null>;
+
+  // --- reference planes and sketch placements (schema 3) ---
+  /** Add a reference plane: one of the main planes, offset along its normal and tilted about its x axis. */
+  addPlane: (base: RefPlane['base'], offset?: number, tilt?: number) => PlaneId | null;
+  /** Change a plane; sketches on it (and their bodies) move with it in the same undo step. */
+  updatePlane: (id: PlaneId, patch: Partial<Pick<RefPlane, 'name' | 'base' | 'offset' | 'tilt' | 'visible'>>) => void;
+  /** Delete a plane no sketch uses. */
+  deletePlane: (id: PlaneId) => void;
+  /** Free a placed sketch: its bodies stay where they are and can be moved on their own. */
+  detachSketch: (sketchId: SketchId) => void;
+  /** Place a sketch again (e.g. on another face after its face went away); its bodies move there. */
+  reattachSketch: (sketchId: SketchId, placement: SketchPlacement, frame: Frame) => void;
 
   // --- standalone sketches and components (schema 2) ---
   /** Keep a sketch on its own, without making a body from it. */
@@ -214,16 +282,66 @@ export interface EditorState {
   unlinkSketch: (objectId: ObjectId) => void;
   /** Mark a group as a component (or back to a plain assembly). */
   setComponent: (groupId: ObjectId, on: boolean) => void;
+  /** Give a linked instance its own copy of the component: it stops following the others. */
+  breakLink: (instanceId: ObjectId) => void;
+  /** Swap an instance's content for another component's (it keeps its place). */
+  replaceComponent: (instanceId: ObjectId, componentId: string) => void;
+  /** Fix parts in place in the assembly (or free them). */
+  setGrounded: (ids: ObjectId[], on: boolean) => void;
+  /** Remember the parts' current positions as where Reset position puts them. */
+  setHome: (ids: ObjectId[]) => void;
+  /** Put parts back where they were placed (their home positions). */
+  resetToHome: (ids: ObjectId[]) => void;
+  /** Leave parts out of the design (not shown, combined, exported or checked), or bring them back. */
+  setSuppressed: (ids: ObjectId[], on: boolean) => void;
+  /**
+   * Connect two parts with a joint. The joint's axis goes through `origin` (world mm; default the
+   * centre of B) along world `axis`; it is made at the parts' current positions, so nothing moves.
+   * Returns the joint id, or null (with a notice) when it can't be made.
+   */
+  addJoint: (opts: {
+    kind: JointKind;
+    a: ObjectId;
+    b: ObjectId;
+    axis?: 'x' | 'y' | 'z';
+    origin?: Vec3;
+    limits?: Joint['limits'];
+    name?: string;
+    /**
+     * Frames read from picked faces or edges (see `cad/assembly/references`), used instead of the
+     * axis presets; `worldB` moves the moving part onto its mate in the same undo step.
+     */
+    frames?: { frameA: number[]; frameB: number[]; worldB?: number[] };
+    placement?: JointPlacement;
+  }) => string | null;
+  /** Change a joint's name, kind, limits or suppression. */
+  updateJoint: (id: string, patch: Partial<Pick<Joint, 'name' | 'kind' | 'limits' | 'suppressed'>>) => void;
+  /** Drive a joint: set its angle / offset (kept within its limits); the moving part follows. */
+  setJointValues: (id: string, values: Joint['values']) => void;
+  removeJoint: (id: string) => void;
+  /** A new exploded view. With `ids`, its steps spread those parts apart automatically. */
+  addExplodeView: (ids?: ObjectId[], name?: string) => string;
+  removeExplodeView: (viewId: string) => void;
+  addExplodeStep: (viewId: string, ids: ObjectId[], offset: Vec3) => string | null;
+  updateExplodeStep: (viewId: string, stepId: string, patch: Partial<Pick<ExplodeStep, 'name' | 'offset' | 'objectIds'>>) => void;
+  /** Move a step earlier (-1) or later (+1). */
+  moveExplodeStep: (viewId: string, stepId: string, dir: -1 | 1) => void;
+  removeExplodeStep: (viewId: string, stepId: string) => void;
+  /** Show an exploded view at `progress` (0 = assembled … number of steps = fully exploded), or null to show the assembled design. */
+  setExplode: (viewId: string | null, progress?: number) => void;
   /** Make the selection a component (grouping it first when needed). */
   makeComponent: () => void;
   /** Add another copy of a component to the design. */
-  insertComponent: (groupId: ObjectId) => void;
+  /** Place another instance of a component: linked (it follows edits to the component) unless `linked` is false. */
+  insertComponent: (groupId: ObjectId, linked?: boolean) => ObjectId | null;
   /**
    * Turn a box, cylinder, cone, sphere, torus, wedge, tube or sketch into a precise solid (exact
    * OpenCascade geometry that can take fillets and chamfers). Checks the build first; resolves
    * false (with a message) when the shape cannot be converted or the engine fails.
    */
   convertToSolid: (id: ObjectId) => Promise<boolean>;
+  /** Turn a combined group whose parts can all be exact into one precise solid (one undo step). */
+  makeGroupPrecise: (groupId: ObjectId) => Promise<ObjectId | null>;
   /**
    * Add exact solids (e.g. from a STEP file), keeping their relative placement, resting on the
    * plate at a free spot. Several solids are grouped. Returns the new selection.
@@ -237,7 +355,13 @@ export interface EditorState {
   /** Replace a precise solid's base (e.g. edit a loft's sections); its fillets and chamfers stay. */
   setSolidBase: (id: ObjectId, base: FeatureRecipe['base'], size: Vec3, label: string) => void;
   /** Replace a precise solid's operation list (fillets, chamfers): add, edit, reorder, suppress, delete. */
-  setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string) => void;
+  /**
+   * Replace a precise solid's operations (one undo step). `rollback` sets the rollback marker
+   * (null clears it); left out, the marker stays after the same operations as before.
+   */
+  setFeatureOps: (id: ObjectId, ops: FeatureOp[], label: string, rollback?: number | null) => void;
+  /** Roll a precise solid back to just after its first `n` operations (null: roll forward to the end). */
+  setRollback: (id: ObjectId, n: number | null) => void;
   /** Repair, simplify, smooth or subdivide a mesh object's real mesh data (one undo step). */
   applyMeshTool: (id: ObjectId, tool: MeshTool, amount: number) => void;
   addText: (content?: string, at?: [number, number]) => Promise<ObjectId | null>;
@@ -256,6 +380,8 @@ export interface EditorState {
 }
 
 const DUPLICATE_OFFSET: Vec3 = [10, 10, 0];
+/** A plain copy of a value that may or may not be an Immer draft. */
+const plainOf = <T>(v: T): T => (isDraft(v) ? (current(v as Draft<T>) as T) : v);
 const AXIS_NAMES = ['X', 'Y', 'Z'];
 
 const validSelection = (doc: ModelDocument, ids: ObjectId[]) => ids.filter((id) => !!doc.objects[id]);
@@ -275,6 +401,70 @@ export const useEditor = create<EditorState>()((set, get) => {
       const o = doc.objects[id];
       if (o && o.kind === 'shape') fn(o);
     });
+
+  /**
+   * Bodies placed by a sketch keep their place: undo any move of one (telling the user why),
+   * except while the placement itself is putting them there (`placing`).
+   */
+  let placing = false;
+  let lastBlockedNote = 0;
+  const guardPlaced = (prev: ModelDocument, next: ModelDocument): ModelDocument => {
+    if (placing || next === prev) return next;
+    const g = guardPlacedBodies(prev, next);
+    if (g.blocked.length && Date.now() - lastBlockedNote > 1500) {
+      lastBlockedNote = Date.now();
+      get().notify(
+        `${g.blocked.join(', ')} ${g.blocked.length === 1 ? 'sits' : 'sit'} on ${g.blocked.length === 1 ? 'its' : 'their'} sketch's plane or face. Detach the sketch to move ${g.blocked.length === 1 ? 'it' : 'them'} on ${g.blocked.length === 1 ? 'its' : 'their'} own.`,
+      );
+    }
+    return g.doc === next ? next : g.doc;
+  };
+  /**
+   * Every change passes these checks before it is kept: bodies that sit on a placed sketch stay
+   * put, and bodies whose outline comes from a sketch are not stretched away from it.
+   */
+  const afterChange = (prev: ModelDocument, next: ModelDocument): ModelDocument => {
+    if (next === prev) return next;
+    const s = guardSketchBodies(prev, next);
+    if (s.blocked) {
+      if (!get().blockedResize) set({ blockedResize: s.blocked });
+      return prev;
+    }
+    // Linked component instances follow the one that was edited (same undo step).
+    const l = syncLinks(prev, s.doc);
+    if (l.cycle) {
+      get().notify(`${l.cycle} can’t contain an instance of itself, so that change was not made.`);
+      return prev;
+    }
+    // Jointed parts follow their joints (a drag of one is kept to its joint's freedoms and limits).
+    const jn = solveJoints(prev, l.doc);
+    if (jn.limited.length && Date.now() - lastBlockedNote > 1500) {
+      lastBlockedNote = Date.now();
+      get().notify(
+        `${jn.limited.join(', ')} ${jn.limited.length === 1 ? 'is' : 'are'} at ${jn.limited.length === 1 ? 'its' : 'their'} limit.`,
+      );
+    }
+    const placed = guardPlaced(prev, pruneExplodeViews(jn.doc));
+    if (placing) return placed;
+    // Grounded parts stay where they are.
+    const g = guardGrounded(prev, placed);
+    if (g.blocked.length && Date.now() - lastBlockedNote > 1500) {
+      lastBlockedNote = Date.now();
+      get().notify(
+        `${g.blocked.join(', ')} ${g.blocked.length === 1 ? 'is' : 'are'} grounded. Unground ${g.blocked.length === 1 ? 'it' : 'them'} to move.`,
+      );
+    }
+    return g.doc;
+  };
+  /** An undo step that is allowed to move placed bodies (it is what places them). */
+  const applyPlacing = (label: string, recipe: Recipe) => {
+    placing = true;
+    try {
+      get().apply(label, recipe);
+    } finally {
+      placing = false;
+    }
+  };
 
   /**
    * Rebuild the bodies made from a sketch record with a new sketch (each keeps its own extrude or
@@ -322,6 +512,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       t.sketch = sketch;
       t.size = u.size;
     }
+    // A placed sketch's bodies stay on its frame (their centres move with the new outline).
+    placeBodiesDraft(d, rec.id);
   };
   const reportFailed = (failed: ShapeObject[]) => {
     if (failed.length)
@@ -355,6 +547,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     lastAction: null,
     actionSeq: 0,
     notice: null,
+    blockedResize: null,
+    explode: null,
+    clearBlockedResize: () => set({ blockedResize: null }),
     readOnly: false,
     units: (() => {
       try {
@@ -380,7 +575,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         return;
       }
       const { doc, history, transaction } = get();
-      const next = produce(doc, recipe);
+      const next = afterChange(doc, produce(doc, recipe));
       if (next === doc) return;
       if (transaction) {
         set({ doc: next });
@@ -401,7 +596,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     applyTransient: (recipe) => {
       if (get().readOnly) return;
       const { doc } = get();
-      const next = produce(doc, recipe);
+      const next = afterChange(doc, produce(doc, recipe));
       if (next !== doc) set({ doc: next });
     },
 
@@ -642,7 +837,82 @@ export const useEditor = create<EditorState>()((set, get) => {
       const ids = editableSelection();
       if (!ids.length) return;
       const center = worldBoundsOf(doc, ids).getCenter(new THREE.Vector3());
-      get().apply(`Mirror ${AXIS_NAMES[axis]}`, (d) => mirrorDraft(d, ids, axis, center));
+      // A mirror image is a different part: mirrored component instances become independent.
+      const linked = ids.filter((id) => doc.objects[id]?.kind === 'group' && (doc.objects[id] as GroupObject).componentId);
+      get().apply(`Mirror ${AXIS_NAMES[axis]}`, (d) => {
+        for (const id of linked) {
+          unlinkDraft(d, id, createId('cmp'), `${d.objects[id].name} (mirrored)`);
+          forkSketchLinksDraft(d as ModelDocument, [id], { keepLinked: false });
+        }
+        mirrorDraft(d, ids, axis, center);
+      });
+      if (linked.length) get().notify('Mirrored component instances are now independent: a mirror image is a different part.');
+    },
+
+    mirrorCopySelected: (axis) => {
+      const { doc } = get();
+      const ids = editableSelection();
+      if (!ids.length) return;
+      const box = worldBoundsOf(doc, ids);
+      const centre = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const gid = createId('grp');
+      get().apply(`Mirror copy ${AXIS_NAMES[axis]}`, (d) => {
+        const copies = duplicateObjectsDraft(d, ids, [0, 0, 0]);
+        // A mirror image is a different part: copied component instances become independent.
+        for (const id of copies)
+          if (d.objects[id]?.kind === 'group' && (d.objects[id] as GroupObject).componentId)
+            unlinkDraft(d, id, createId('cmp'), `${d.objects[id].name} (mirrored)`);
+        forkSketchLinksDraft(d, copies, { keepLinked: false });
+        // Mirror in place, then move across so the copy touches the original on the + side.
+        mirrorDraft(d, copies, axis, centre);
+        const shift = new THREE.Vector3();
+        shift.setComponent(axis, size.getComponent(axis));
+        for (const id of copies) translateWorldDraft(d, id, shift);
+        groupDraft(d, [...ids, ...copies], { id: gid, name: uniqueName(d, 'Mirrored') });
+      });
+      if (get().doc.objects[gid]) set({ selection: [gid] });
+    },
+
+    patternSelected: (p) => {
+      const { doc } = get();
+      const ids = editableSelection();
+      const count = Math.round(p.count);
+      if (!ids.length || count < 2) return;
+      if (count > 200) {
+        get().notify('That is a lot of copies: use at most 200.');
+        return;
+      }
+      const pivot =
+        p.kind === 'circular' && p.centre === 'selection' ? worldBoundsOf(doc, ids).getCenter(new THREE.Vector3()) : new THREE.Vector3();
+      // A full turn spreads copies evenly without doubling the first; a part turn includes both ends.
+      const full = p.kind === 'circular' && Math.abs(Math.abs(p.angle) - 360) < 1e-6;
+      const step = p.kind === 'circular' ? p.angle / (full ? count : count - 1) : 0;
+      const gid = createId('grp');
+      get().apply(`Pattern ×${count}`, (d) => {
+        const all = [...ids];
+        for (let i = 1; i < count; i++) {
+          const copies = duplicateObjectsDraft(d, ids, [0, 0, 0]);
+          forkSketchLinksDraft(d, copies);
+          for (const id of copies) {
+            if (p.kind === 'linear') {
+              const move = new THREE.Vector3();
+              move.setComponent(p.axis, p.spacing * i);
+              translateWorldDraft(d, id, move);
+            } else {
+              // Turn the copy about the vertical axis through the pivot.
+              const turn = new THREE.Matrix4()
+                .makeTranslation(pivot.x, pivot.y, pivot.z)
+                .multiply(new THREE.Matrix4().makeRotationZ((step * i * Math.PI) / 180))
+                .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+              setWorldMatrixDraft(d, id, turn.multiply(worldMatrix(d, id)));
+            }
+          }
+          all.push(...copies);
+        }
+        groupDraft(d, all, { id: gid, name: uniqueName(d, 'Pattern') });
+      });
+      if (get().doc.objects[gid]) set({ selection: [gid] });
     },
 
     moveInTree: (ids, parentId, index) => {
@@ -800,9 +1070,14 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selection: created });
     },
 
-    saveSketch: async (id, sketch, op, linkTo) => {
+    saveSketch: async (id, sketch, op, linkTo, place) => {
       if (get().readOnly) {
         refuseReadOnly();
+        return null;
+      }
+      const bad = splineIssues(sketch);
+      if (bad.length) {
+        get().notify(`${bad[0].message} Nothing was built.`);
         return null;
       }
       const k = await initKernel();
@@ -811,7 +1086,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         get().notify(
           op.kind === 'revolve'
             ? 'Nothing to revolve: draw a closed outline to the right of the Y axis.'
-            : 'Draw a closed outline first: lines and arcs that join up, or a circle.',
+            : 'Draw a closed outline first: lines, arcs and splines that join up, or a circle.',
         );
         return null;
       }
@@ -821,7 +1096,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       const existing = id ? get().doc.objects[id] : undefined;
       if (existing?.kind === 'shape' && existing.shape === 'profile') {
         const others = existing.sketchId ? await rebuildUsers(existing.sketchId, sketch, existing.id) : { ok: [], failed: [] };
-        get().apply('Edit sketch', (d) => {
+        applyPlacing('Edit sketch', (d) => {
           const t = d.objects[existing.id];
           if (t?.kind !== 'shape') return;
           t.sketch = sketch;
@@ -836,9 +1111,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       const pos = findFreePosition(doc, size, [0, 0]);
       const name = uniqueName(doc, 'Sketch');
       const obj = { ...createShape(doc, 'profile', [pos[0], pos[1], size[2] / 2]), sketch, params, size, name };
-      get().apply('Sketch', (d) => {
+      applyPlacing('Sketch', (d) => {
         addObjectDraft(d, obj);
-        (d.objects[obj.id] as ShapeObject).sketchId = linkTo && d.sketches?.[linkTo] ? linkTo : addSketchRecordDraft(d, sketch, name);
+        const recId = linkTo && d.sketches?.[linkTo] ? linkTo : addSketchRecordDraft(d, sketch, name);
+        (d.objects[obj.id] as ShapeObject).sketchId = recId;
+        const rec = d.sketches![recId];
+        if (place && !rec.placement) {
+          rec.placement = structuredClone(place.placement);
+          rec.frame = structuredClone(place.frame);
+        }
+        placeBodiesDraft(d, recId);
       });
       set({ selection: [obj.id] });
       return obj.id;
@@ -862,8 +1144,13 @@ export const useEditor = create<EditorState>()((set, get) => {
         return false;
       }
       if (!sketchRecords(get().doc)[sketchId]) return false;
+      const bad = splineIssues(sketch);
+      if (bad.length) {
+        get().notify(`${bad[0].message} The sketch was not saved.`);
+        return false;
+      }
       const users = await rebuildUsers(sketchId, sketch);
-      get().apply('Edit sketch', (d) => writeSketch(d, sketchId, sketch, users));
+      applyPlacing('Edit sketch', (d) => writeSketch(d, sketchId, sketch, users));
       reportFailed(users.failed);
       return true;
     },
@@ -896,6 +1183,104 @@ export const useEditor = create<EditorState>()((set, get) => {
       });
     },
 
+    resizeIndependent: async (id, size) => {
+      const o = get().doc.objects[id];
+      if (!sketchControlled(get().doc, o) || !o.sketch) return false;
+      const revolve = (o.params.op ?? 0) >= 1;
+      // Sketch x → body X; sketch y → body Y for an extrude, body Z (height) for a revolve.
+      const f = [size[0] / o.size[0], revolve ? size[2] / o.size[2] : size[1] / o.size[1]];
+      const { sketch, dropped } = scaleSketch(o.sketch, f[0], f[1]);
+      const op: ProfileOp = {
+        kind: revolve ? 'revolve' : 'extrude',
+        depth: revolve ? (o.params.depth ?? 5) : size[2],
+        angle: o.params.angle ?? 360,
+      };
+      const k = await initKernel();
+      const mesh = buildProfileMesh(k, sketch, op);
+      if (!mesh) {
+        get().notify('At that size the outline no longer closes, so nothing was changed.');
+        return false;
+      }
+      const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());
+      applyPlacing('Make independent and resize', (d) => {
+        forkSketchLinksDraft(d, [id]);
+        const t = d.objects[id] as ShapeObject;
+        t.sketch = sketch;
+        if (t.sketchId && d.sketches?.[t.sketchId]) d.sketches[t.sketchId].sketch = sketch;
+        t.params = { ...t.params, depth: op.depth };
+        t.size = [roundTo(ext.x), roundTo(ext.y), roundTo(ext.z)];
+      });
+      get().notify(
+        `${o.name} now has its own sketch, resized.${dropped.length ? ` Dimensions that no longer hold were removed: ${dropped.join(', ')}.` : ''}`,
+      );
+      return true;
+    },
+
+    addPlane: (base, offset = 0, tilt = 0) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      const id = createId('pl');
+      get().apply('Add plane', (d) => {
+        d.planes ??= {};
+        const n = Object.keys(d.planes).length + 1;
+        d.planes[id] = { id, name: `Plane ${n}`, base, offset, tilt, visible: true };
+      });
+      return id;
+    },
+
+    updatePlane: (id, patch) =>
+      applyPlacing(patch.name !== undefined && Object.keys(patch).length === 1 ? 'Rename plane' : 'Edit plane', (d) => {
+        const p = d.planes?.[id];
+        if (!p) return;
+        if (patch.name !== undefined) p.name = patch.name.trim() || p.name;
+        if (patch.base) p.base = patch.base;
+        if (patch.offset !== undefined && Number.isFinite(patch.offset)) p.offset = patch.offset;
+        if (patch.tilt !== undefined && Number.isFinite(patch.tilt)) p.tilt = Math.max(-89, Math.min(89, patch.tilt));
+        if (patch.visible !== undefined) p.visible = patch.visible;
+        // Sketches on the plane, and their bodies, move with it.
+        const frame = planeFrame(p);
+        for (const r of planeUsers(d as ModelDocument, id)) {
+          const rec = d.sketches![r.id];
+          rec.frame = frame;
+          placeBodiesDraft(d, r.id);
+        }
+      }),
+
+    deletePlane: (id) => {
+      const doc = get().doc;
+      const users = planeUsers(doc, id);
+      if (users.length) {
+        get().notify(
+          `${users.map((u) => u.name).join(', ')} ${users.length === 1 ? 'is' : 'are'} on this plane. Detach ${users.length === 1 ? 'it' : 'them'} first.`,
+        );
+        return;
+      }
+      get().apply('Delete plane', (d) => {
+        if (d.planes) delete d.planes[id];
+      });
+    },
+
+    detachSketch: (sketchId) =>
+      get().apply('Detach sketch', (d) => {
+        const r = d.sketches?.[sketchId];
+        if (!r) return;
+        delete r.placement;
+        delete r.frame;
+        delete r.broken;
+      }),
+
+    reattachSketch: (sketchId, placement, frame) =>
+      applyPlacing('Re-attach sketch', (d) => {
+        const r = d.sketches?.[sketchId];
+        if (!r) return;
+        r.placement = structuredClone(placement);
+        r.frame = structuredClone(frame);
+        delete r.broken;
+        placeBodiesDraft(d, sketchId);
+      }),
+
     unlinkSketch: (objectId) => {
       const o = get().doc.objects[objectId];
       if (o?.kind !== 'shape' || o.shape !== 'profile' || !o.sketch) return;
@@ -906,9 +1291,224 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply(on ? 'Make component' : 'Make assembly', (d) => {
         const g = d.objects[groupId];
         if (g?.kind !== 'group') return;
-        if (on) g.component = true;
-        else delete g.component;
+        if (on) {
+          linkInstanceDraft(d, groupId, g.componentId ?? createId('cmp'), g.name);
+          g.home ??= structuredClone(plainOf(g).transform);
+        } else {
+          delete g.component;
+          delete g.componentId;
+          for (const id of collectSubtree(d as ModelDocument, [groupId]).slice(1)) delete d.objects[id].defNode;
+        }
       }),
+
+    breakLink: (instanceId) => {
+      const g = get().doc.objects[instanceId];
+      if (g?.kind !== 'group' || !g.componentId) return;
+      get().apply('Make independent', (d) => {
+        unlinkDraft(d, instanceId, createId('cmp'), `${g.name}`);
+        forkSketchLinksDraft(d as ModelDocument, [instanceId], { keepLinked: false });
+      });
+    },
+
+    replaceComponent: (instanceId, componentId) => {
+      const doc = get().doc;
+      const g = doc.objects[instanceId];
+      const src = instancesOf(doc, componentId).find((i) => i.id !== instanceId);
+      if (g?.kind !== 'group' || !src) return;
+      get().apply(`Replace with ${doc.components?.[componentId]?.name ?? src.name}`, (d) => replaceContentDraft(d, src.id, instanceId));
+    },
+
+    setGrounded: (ids, on) => {
+      const driven = on ? ids.filter((id) => Object.values(get().doc.joints ?? {}).some((j) => j.b === id && !j.suppressed)) : [];
+      if (driven.length) {
+        get().notify(`${driven.map((id) => get().doc.objects[id]?.name).join(', ')} moves with a joint, so it can't be grounded.`);
+        ids = ids.filter((id) => !driven.includes(id));
+        if (!ids.length) return;
+      }
+      get().apply(on ? 'Ground' : 'Unground', (d) => {
+        for (const id of ids) {
+          const o = d.objects[id];
+          if (!o) continue;
+          if (on) {
+            o.grounded = true;
+            o.home ??= structuredClone(plainOf(o).transform);
+          } else delete o.grounded;
+        }
+      });
+    },
+
+    setHome: (ids) =>
+      get().apply('Set home position', (d) => {
+        for (const id of ids) if (d.objects[id]) d.objects[id].home = structuredClone(plainOf(d.objects[id]).transform);
+      }),
+
+    resetToHome: (ids) =>
+      applyPlacing('Reset position', (d) => {
+        for (const id of ids) {
+          const o = d.objects[id];
+          if (o?.home) o.transform = structuredClone(plainOf(o).home!);
+        }
+      }),
+
+    setSuppressed: (ids, on) =>
+      get().apply(on ? 'Suppress' : 'Unsuppress', (d) => {
+        for (const id of ids) {
+          const o = d.objects[id];
+          if (!o) continue;
+          if (on) o.suppressed = true;
+          else delete o.suppressed;
+        }
+      }),
+
+    addJoint: ({ kind, a, b, axis = 'z', origin, limits, name, frames, placement }) => {
+      const doc = get().doc;
+      const id = createId('jt');
+      const n = name ?? `${JOINT_NAME[kind]} ${Object.keys(doc.joints ?? {}).length + 1}`;
+      const why = jointProblem(doc, { id, name: n, a, b }, { moves: !!frames?.worldB });
+      if (why) {
+        get().notify(why);
+        return null;
+      }
+      if (frames) {
+        const values = clampValues({ kind, values: {}, limits }, {});
+        get().apply(`Add ${JOINT_NAME[kind].toLowerCase()} joint`, (d) => {
+          if (frames.worldB) {
+            // Mate the moving part onto the fixed one (its new place is the joint's rest pose).
+            const ob = d.objects[b];
+            const parent = ob.parentId ? worldMatrix(d as ModelDocument, ob.parentId) : null;
+            const w = new THREE.Matrix4().fromArray(frames.worldB);
+            ob.transform = matrixToTransform(parent ? parent.invert().multiply(w) : w);
+          }
+          d.joints ??= {};
+          d.joints[id] = {
+            id,
+            name: n,
+            kind,
+            a,
+            b,
+            frameA: frames.frameA,
+            frameB: frames.frameB,
+            values,
+            ...(limits ? { limits } : {}),
+            ...(placement ? { placement } : {}),
+          };
+        });
+        return get().doc.joints?.[id] ? id : null;
+      }
+      const o = origin ? new THREE.Vector3(...origin) : worldBoundsOf(doc, [b]).getCenter(new THREE.Vector3());
+      const dir = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }[axis];
+      const ref = axis === 'x' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const world = new THREE.Matrix4().fromArray(frameFrom(o, dir, ref));
+      const frameA = worldMatrix(doc, a).invert().multiply(world).toArray();
+      const frameB = worldMatrix(doc, b).invert().multiply(world).toArray();
+      const values = clampValues({ kind, values: {}, limits }, {});
+      get().apply(`Add ${kind} joint`, (d) => {
+        d.joints ??= {};
+        d.joints[id] = { id, name: n, kind, a, b, frameA, frameB, values, ...(limits ? { limits } : {}) };
+      });
+      return get().doc.joints?.[id] ? id : null;
+    },
+
+    updateJoint: (id, patch) => {
+      const j = get().doc.joints?.[id];
+      if (!j) return;
+      get().apply(`Edit ${j.name}`, (d) => {
+        const t = d.joints![id];
+        Object.assign(t, patch);
+        if (patch.kind) t.values = clampValues({ kind: patch.kind, values: {}, limits: t.limits }, plainOf(t).values);
+        if (patch.limits) t.values = clampValues({ kind: t.kind, values: {}, limits: patch.limits }, plainOf(t).values);
+        if (patch.suppressed === false) delete t.suppressed;
+      });
+    },
+
+    setJointValues: (id, values) => {
+      const j = get().doc.joints?.[id];
+      if (!j) return;
+      const next = clampValues(j, { ...j.values, ...values });
+      if (JOINT_DOF[j.kind].some((k) => (values[k] ?? next[k]) !== next[k])) get().notify(`${j.name} is at its limit.`);
+      get().apply(`Move ${j.name}`, (d) => {
+        d.joints![id].values = next;
+      });
+    },
+
+    removeJoint: (id) => {
+      const j = get().doc.joints?.[id];
+      if (!j) return;
+      get().apply(`Delete ${j.name}`, (d) => {
+        delete d.joints![id];
+      });
+    },
+
+    addExplodeView: (ids, name) => {
+      const id = createId('ex');
+      const doc = get().doc;
+      get().apply('New exploded view', (d) => {
+        d.explodeViews ??= {};
+        d.explodeViews[id] = {
+          id,
+          name: name ?? `Exploded view ${Object.keys(doc.explodeViews ?? {}).length + 1}`,
+          steps: ids?.length ? autoExplodeSteps(doc, ids, () => createId('st')) : [],
+        };
+      });
+      set({ explode: { viewId: id, progress: get().doc.explodeViews![id].steps.length } });
+      return id;
+    },
+
+    removeExplodeView: (viewId) => {
+      if (!get().doc.explodeViews?.[viewId]) return;
+      get().apply('Delete exploded view', (d) => {
+        delete d.explodeViews![viewId];
+      });
+      if (get().explode?.viewId === viewId) set({ explode: null });
+    },
+
+    addExplodeStep: (viewId, ids, offset) => {
+      if (!get().doc.explodeViews?.[viewId] || !ids.length) return null;
+      const id = createId('st');
+      get().apply('Add explode step', (d) => {
+        d.explodeViews![viewId].steps.push({ id, objectIds: [...ids], offset });
+      });
+      set({ explode: { viewId, progress: get().doc.explodeViews![viewId].steps.length } });
+      return id;
+    },
+
+    updateExplodeStep: (viewId, stepId, patch) => {
+      if (!get().doc.explodeViews?.[viewId]?.steps.some((st) => st.id === stepId)) return;
+      get().apply('Edit explode step', (d) => {
+        Object.assign(
+          d.explodeViews![viewId].steps.find((st) => st.id === stepId)!,
+          patch,
+        );
+      });
+    },
+
+    moveExplodeStep: (viewId, stepId, dir) => {
+      const steps = get().doc.explodeViews?.[viewId]?.steps;
+      const i = steps?.findIndex((st) => st.id === stepId) ?? -1;
+      if (!steps || i < 0 || i + dir < 0 || i + dir >= steps.length) return;
+      get().apply('Reorder explode steps', (d) => {
+        const list = d.explodeViews![viewId].steps;
+        const [m] = list.splice(i, 1);
+        list.splice(i + dir, 0, m);
+      });
+    },
+
+    removeExplodeStep: (viewId, stepId) => {
+      if (!get().doc.explodeViews?.[viewId]) return;
+      get().apply('Delete explode step', (d) => {
+        const v = d.explodeViews![viewId];
+        v.steps = v.steps.filter((st) => st.id !== stepId);
+      });
+      const ex = get().explode;
+      if (ex?.viewId === viewId)
+        set({ explode: { viewId, progress: Math.min(ex.progress, get().doc.explodeViews![viewId].steps.length) } });
+    },
+
+    setExplode: (viewId, progress) => {
+      const v = viewId ? get().doc.explodeViews?.[viewId] : null;
+      if (!v) return set({ explode: null });
+      set({ explode: { viewId: v.id, progress: Math.max(0, Math.min(v.steps.length, progress ?? v.steps.length)) } });
+    },
 
     makeComponent: () => {
       const ids = editableSelection();
@@ -922,22 +1522,60 @@ export const useEditor = create<EditorState>()((set, get) => {
       }
       const gid = createId('grp');
       get().apply('Make component', (d) => {
-        if (!groupDraft(d, ids, { id: gid, name: uniqueName(d, 'Component') })) return;
+        const name = uniqueName(d, 'Component');
+        if (!groupDraft(d, ids, { id: gid, name })) return;
+        linkInstanceDraft(d, gid, createId('cmp'), name);
         const g = d.objects[gid];
-        if (g?.kind === 'group') g.component = true;
+        g.home = structuredClone(plainOf(g).transform);
       });
       if (get().doc.objects[gid]) set({ selection: [gid] });
     },
 
-    insertComponent: (groupId) => {
+    insertComponent: (groupId, linked = true) => {
       const g = get().doc.objects[groupId];
-      if (g?.kind !== 'group' || !g.component) return;
+      if (g?.kind !== 'group' || !g.component) return null;
       let created: ObjectId[] = [];
-      get().apply(`Insert ${g.name}`, (d) => {
+      get().apply(`Insert ${g.name}${linked ? '' : ' (independent)'}`, (d) => {
         created = duplicateObjectsDraft(d, [groupId], DUPLICATE_OFFSET);
-        forkSketchLinksDraft(d, created);
+        const copy = d.objects[created[0]];
+        // A new instance is not grounded, and comes home to where it was placed.
+        delete copy.grounded;
+        copy.home = structuredClone(plainOf(copy).transform);
+        if (!linked) {
+          unlinkDraft(d, created[0], createId('cmp'), copy.name);
+          forkSketchLinksDraft(d as ModelDocument, created, { keepLinked: false });
+        }
       });
       set({ selection: created });
+      return created[0] ?? null;
+    },
+
+    makeGroupPrecise: async (groupId) => {
+      if (get().readOnly) {
+        refuseReadOnly();
+        return null;
+      }
+      const x = exactCombineRequest(get().doc, groupId);
+      if ('why' in x) {
+        get().notify(`This combination cannot be made precise: ${x.why}`);
+        return null;
+      }
+      let build: BrepBuild;
+      try {
+        build = await buildBrepAsync(x.req);
+      } catch (e) {
+        get().notify(e instanceof Error ? e.message : String(e));
+        return null;
+      }
+      // The group may have changed while the engine worked: only replace what was built.
+      const now = exactCombineRequest(get().doc, groupId);
+      if ('why' in now || requestKey(now.req) !== requestKey(x.req)) return null;
+      let id: ObjectId | null = null;
+      get().apply('Make precise solid', (d) => {
+        id = solidFromGroupDraft(d, groupId, x.req.recipe.base as Extract<FeatureBase, { kind: 'boolean' }>, build);
+      });
+      if (id) set({ selection: [id] });
+      return id;
     },
 
     convertToSolid: async (id) => {
@@ -1068,7 +1706,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       });
     },
 
-    setFeatureOps: (id, ops, label) => {
+    setFeatureOps: (id, ops, label, rollback) => {
       if (isEffectivelyLocked(get().doc, id)) {
         get().notify('This object is locked.');
         return;
@@ -1076,8 +1714,25 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply(label, (d) => {
         const t = d.objects[id];
         if (t?.kind !== 'shape' || t.shape !== 'solid' || !t.feature) return;
+        const old = t.feature;
+        let marker: number | undefined;
+        if (rollback === null) marker = undefined;
+        else if (rollback !== undefined) marker = rollback;
+        else if (old.rollback !== undefined) {
+          // Keep the marker after the same operations (some may have been deleted).
+          const active = new Set(old.ops.slice(0, old.rollback).map((o) => o.id));
+          marker = ops.filter((o) => active.has(o.id)).length;
+        }
         t.feature.ops = ops;
+        if (marker === undefined || marker >= ops.length) delete t.feature.rollback;
+        else t.feature.rollback = Math.max(0, marker);
       });
+    },
+
+    setRollback: (id, n) => {
+      const o = get().doc.objects[id];
+      if (o?.kind !== 'shape' || o.shape !== 'solid' || !o.feature) return;
+      get().setFeatureOps(id, o.feature.ops, n === null ? 'Roll forward' : 'Roll back', n);
     },
 
     applyMeshTool: (id, tool, amount) => {
@@ -1275,3 +1930,16 @@ export const useEditor = create<EditorState>()((set, get) => {
 
 /** Convenience selectors */
 export const selectPrimaryId = (s: EditorState) => s.selection[s.selection.length - 1] ?? null;
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('editor', () =>
+  useEditor.setState({
+    tool: 'select',
+    measurePoints: [],
+    notice: null,
+    blockedResize: null,
+    explode: null,
+    transaction: null,
+    readOnly: false,
+  }),
+);

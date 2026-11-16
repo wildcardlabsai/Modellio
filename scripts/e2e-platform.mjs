@@ -72,8 +72,9 @@ await page.getByTestId('maker-keyring').click();
 await page.getByTestId('keyring-studio').waitFor();
 await settled('modellioKeyring');
 await page.getByTestId('maker-save').click();
-await page.getByLabel('Project name').fill('Gift keyring');
-await page.getByRole('button', { name: 'Save project', exact: true }).last().click();
+// A design never saved before asks for its name (the same dialog in every workspace).
+await page.getByTestId('project-name-input').fill('Gift keyring');
+await page.getByTestId('project-name-save').click();
 await page.waitForFunction(() => window.modellioKeyring.store.getState().project?.name === 'Gift keyring', null, { timeout: 10000 });
 check('6. Save project stores the keyring as a project', true);
 const savedElements = await S(() => JSON.stringify(window.modellioKeyring.store.getState().elements));

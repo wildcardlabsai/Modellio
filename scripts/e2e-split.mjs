@@ -147,7 +147,10 @@ const canvasStats = (hex) =>
     let painted = 0;
     let match = 0;
     for (let i = 0; i < d.length; i += 4) {
-      if (Math.abs(d[i] - 245) + Math.abs(d[i + 1] - 247) + Math.abs(d[i + 2] - 251) > 30) painted++;
+      // The workspace background (#0b1128) and its grid lines (#1f2852, #34427e, anti-aliased
+      // between them) are dark and blue-dominant; anything else is the model.
+      const scenery = Math.max(d[i], d[i + 1], d[i + 2]) < 150 && d[i + 2] >= d[i] && d[i + 2] >= d[i + 1] && d[i + 2] - d[i] > 12;
+      if (!scenery) painted++;
       if (target) {
         // Hue match tolerant to shading: compare normalised RGB direction.
         const s1 = d[i] + d[i + 1] + d[i + 2] + 1;
@@ -232,7 +235,9 @@ await page.getByRole('button', { name: 'Show all' }).click();
 await S(() => window.modellioSplit.store.getState().select(null));
 // Click the model in the viewport.
 const vp = await page.getByTestId('split-viewport').boundingBox();
-// Click a pixel that shows the model (the first non-background pixel nearest the centre).
+// Click a point well inside the model: the pixel nearest the centre whose whole neighbourhood is
+// model (on the downsampled image an edge pixel is a blend of model and background, and clicking it
+// can land just outside the model).
 const hitPoint = await S(() => {
   const c = document.querySelector('[data-testid="split-viewport"] canvas');
   const cv = document.createElement('canvas');
@@ -241,13 +246,20 @@ const hitPoint = await S(() => {
   const ctx = cv.getContext('2d');
   ctx.drawImage(c, 0, 0, cv.width, cv.height);
   const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+  // The workspace background (#0b1128) and its grid lines (#1f2852, #34427e, anti-aliased
+  // between them) are dark and blue-dominant: not the model.
+  const scenery = (x, y) => {
+    if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) return true;
+    const i = (y * cv.width + x) * 4;
+    return Math.max(d[i], d[i + 1], d[i + 2]) < 150 && d[i + 2] >= d[i] && d[i + 2] >= d[i + 1] && d[i + 2] - d[i] > 12;
+  };
+  const R = 3;
   let best = null;
   for (let y = 0; y < cv.height; y++)
     for (let x = 0; x < cv.width; x++) {
-      const i = (y * cv.width + x) * 4;
-      const bg = Math.abs(d[i] - 245) + Math.abs(d[i + 1] - 247) + Math.abs(d[i + 2] - 251) < 40;
-      const grid = Math.abs(d[i] - d[i + 2]) < 25 && d[i] > 180;
-      if (bg || grid) continue;
+      let inside = true;
+      for (let dy = -R; dy <= R && inside; dy++) for (let dx = -R; dx <= R && inside; dx++) if (scenery(x + dx, y + dy)) inside = false;
+      if (!inside) continue;
       const dist = Math.hypot(x - cv.width / 2, y - cv.height / 2);
       if (!best || dist < best.dist) best = { x: x / cv.width, y: y / cv.height, dist };
     }
@@ -255,7 +267,11 @@ const hitPoint = await S(() => {
 });
 await page.mouse.click(vp.x + (hitPoint?.x ?? 0.5) * vp.width, vp.y + (hitPoint?.y ?? 0.5) * vp.height);
 await page.waitForTimeout(200);
-check('17. Clicking the model selects the colour under the cursor', (await split()).selected !== null);
+check(
+  '17. Clicking the model selects the colour under the cursor',
+  hitPoint !== null && (await split()).selected !== null,
+  hitPoint ? '' : 'no point inside the model was found',
+);
 await page.getByTestId('split-fit').click();
 check('18. Fit view button works', true);
 
@@ -396,7 +412,8 @@ check('36. Browser Forward returns to Design', (await page.getByTestId('split-st
 await page.getByRole('button', { name: 'Split Studio' }).click();
 await page.getByTestId('split-studio').waitFor();
 
-// 10. Accessibility
+// 10. Accessibility (measured once colour transitions, e.g. the nav buttons', have finished)
+await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'), null, { timeout: 5000 }).catch(() => {});
 const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
 await page.addScriptTag({ content: axeSource });
 const violations = await S(async () => {

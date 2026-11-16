@@ -5,9 +5,7 @@ import { Box, CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, Sh
 import type { KeyringParams, KeyringPart, KeyringRole } from '../keyring/geometry';
 import { usePlaque, type PlaqueConfig } from './config';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
-import { capturePreview } from '../shell/capture';
-import { useProjects } from '@/store/projectStore';
-import { useMakerHandoff } from '@/platform/handoff';
+import { useMakerProject } from '../shell/makerProject';
 import { DesignCanvas, type RoleStyle } from '../canvas/DesignCanvas';
 import { AddBar, Inspector, LayersPanel } from '../canvas/DesignPanels';
 import { MakerPreview, downloadBytes, slugify } from '../canvas/MakerPreview';
@@ -17,8 +15,6 @@ import { Toggle } from '@/components/ui/Toggle';
 import { Segmented } from '@/components/ui/Modal';
 import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
-import { useEditor } from '@/store/editorStore';
-import { useStudio } from '@/app/studio';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 
 const MONO = "font-['Space_Mono',ui-monospace,monospace]";
@@ -42,13 +38,6 @@ export function PlaqueStudio() {
       startBlank: cfg.startBlank,
       ...cfg.testHooks,
     };
-    // A saved project opened from the dashboard.
-    const handed = useMakerHandoff.getState().take(cfg.studio);
-    if (handed) {
-      const st = handed.state as { elements: never[]; params: KeyringParams; templateId: string | null };
-      useKeyring.getState().load(st.elements, st.params, st.templateId);
-      useKeyring.getState().setProject({ id: handed.projectId, name: handed.name });
-    }
     useKeyring.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -65,15 +54,39 @@ export function PlaqueStudio() {
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Saving, opening, new designs and Open in Design Studio: the shared project lifecycle.
+  const mp = useMakerProject({
+    studio: cfg.studio,
+    label: cfg.label,
+    schema: 1,
+    project: () => useKeyring.getState().project,
+    setProject: (p) => useKeyring.getState().setProject(p),
+    dirty: () => useKeyring.getState().dirty,
+    state: () => {
+      const st = useKeyring.getState();
+      return { elements: st.elements, params: st.params, templateId: st.templateId };
+    },
+    parts: () => useKeyring.getState().result?.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })) ?? null,
+    load: (state) => {
+      const st = state as { elements: never[]; params: KeyringParams; templateId: string | null };
+      useKeyring.getState().load(st.elements, st.params, st.templateId);
+    },
+    startBlank: cfg.startBlank,
+    suggestedName: () => designName(cfg),
+  });
+  const project = useKeyring((s) => s.project);
+  const dirty = useKeyring((s) => s.dirty);
+  const controls = { name: project?.name ?? null, dirty, busy: mp.busy, actions: mp.actions, save: () => mp.save() };
   const pane = useMakerPane((s) => s.pane);
   const [tab, setTab] = useState<'templates' | 'design'>('design');
   const [view, setView] = useState<'design' | '3d'>('design');
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid={`${cfg.id}-studio`}>
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} project={controls} />
+      {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <aside
-          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
+          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-panel xl:w-[320px] ${paneClass(pane, 'tools')}`}
           aria-label={`${cfg.title} design`}
           data-testid={`${cfg.id}-left`}
         >
@@ -98,30 +111,37 @@ export function PlaqueStudio() {
             <button
               type="button"
               onClick={() => setView('3d')}
-              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-white shadow-panel"
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-panel shadow-panel"
               aria-label="Show the 3D preview larger"
               data-testid={`${cfg.id}-mini-preview`}
             >
-              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-[#344054]">3D preview</span>
+              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-ink-2">3D preview</span>
               <span className="pointer-events-none block h-full w-full">
                 <Preview3D />
               </span>
             </button>
           )}
         </main>
-        <RightPanel />
+        <RightPanel openInDesign={() => void mp.openInDesign()} />
       </div>
       <MobilePaneTabs labels={{ tools: 'Templates & tools', canvas: 'Design', settings: 'Settings & export' }} />
     </div>
   );
 }
 
-function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design' | '3d') => void }) {
+function Header({
+  view,
+  setView,
+  project: controls,
+}: {
+  view: 'design' | '3d';
+  setView: (v: 'design' | '3d') => void;
+  project: NonNullable<Parameters<typeof MakerHeader>[0]['project']>;
+}) {
   const cfg = usePlaque();
   const useKeyring = cfg.store;
   const canUndo = useKeyring((s) => s.past.length > 0);
   const canRedo = useKeyring((s) => s.future.length > 0);
-  const project = useKeyring((s) => s.project);
   const { undo, redo } = useKeyring.getState();
   return (
     <MakerHeader
@@ -132,24 +152,7 @@ function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design
       onUndo={undo}
       onRedo={redo}
       help={cfg.help}
-      save={{
-        project,
-        suggestedName: () => designName(cfg),
-        run: async (name) => {
-          const st = useKeyring.getState();
-          if (!st.result) throw new Error('The design has not finished building.');
-          const id = await useProjects.getState().saveMakerProject({
-            id: st.project?.id,
-            name,
-            studio: cfg.studio,
-            schema: 1,
-            state: { elements: st.elements, params: st.params, templateId: st.templateId },
-            parts: st.result.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })),
-            thumbnail: capturePreview(),
-          });
-          st.setProject({ id, name });
-        },
-      }}
+      project={controls}
     >
       <HeaderTabs<'design' | '3d'>
         label="View"
@@ -264,7 +267,7 @@ function SideSwitch() {
   const backCount = useKeyring((s) => s.elements.filter((e) => e.side === 'back').length);
   return (
     <div className="absolute left-3 top-3 flex items-center gap-2" data-testid={`${cfg.id}-sides`}>
-      <div className="w-[180px] rounded-lg bg-white shadow-sm">
+      <div className="w-[180px] rounded-lg bg-panel shadow-sm">
         <Segmented<'front' | 'back'>
           label="Side of the tag"
           value={side}
@@ -276,9 +279,7 @@ function SideSwitch() {
         />
       </div>
       {side === 'back' && (
-        <span className="rounded-md bg-white/90 px-2 py-1 text-[11px] text-[#475467] shadow-sm">
-          Seen from behind · engraved or flush only
-        </span>
+        <span className="rounded-md bg-panel/90 px-2 py-1 text-[11px] text-ink-3 shadow-sm">Seen from behind · engraved or flush only</span>
       )}
     </div>
   );
@@ -362,7 +363,7 @@ function Preview3D({ large = false }: { large?: boolean }) {
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1 text-[13px] text-[#344054]">
+    <div className="flex items-center justify-between gap-3 py-1 text-[13px] text-ink-2">
       <span>{label}</span>
       <div className="w-[110px]">{children}</div>
     </div>
@@ -382,7 +383,7 @@ function Swatches({ value, onChange, label }: { value: string; onChange: (c: str
             aria-checked={value.toLowerCase() === c.toLowerCase()}
             aria-label={c}
             onClick={() => onChange(c)}
-            className={`h-6 w-6 rounded-full border ${value.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-brand ring-offset-1' : 'border-[#c9d1de]'}`}
+            className={`h-6 w-6 rounded-full border ${value.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-brand ring-offset-1' : 'border-line-strong'}`}
             style={{ background: c }}
           />
         ))}
@@ -391,7 +392,7 @@ function Swatches({ value, onChange, label }: { value: string; onChange: (c: str
           value={value}
           onChange={(e) => onChange(e.target.value)}
           aria-label={`${label}: custom colour`}
-          className="h-6 w-8 cursor-pointer rounded border border-line bg-white p-0"
+          className="h-6 w-8 cursor-pointer rounded border border-line bg-panel p-0"
         />
       </div>
     </div>
@@ -514,7 +515,7 @@ function TagSettings() {
             <button
               type="button"
               onClick={cfg.placeHoleAtEdge}
-              className="shrink-0 rounded-md border border-line px-2 py-1 text-[11px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+              className="shrink-0 rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-2 hover:bg-canvas"
             >
               Put on edge
             </button>
@@ -538,7 +539,7 @@ function designName(cfg: PlaqueConfig) {
   return cfg.templates.find((t) => t.id === templateId)?.name ?? `My ${cfg.noun}`;
 }
 
-function RightPanel() {
+function RightPanel({ openInDesign }: { openInDesign: () => void }) {
   const pane = useMakerPane((s) => s.pane);
   const cfg = usePlaque();
   const useKeyring = cfg.store;
@@ -553,17 +554,9 @@ function RightPanel() {
   };
   const downloadStl = (p: KeyringPart) =>
     downloadBytes(new Uint8Array(writeBinaryStl([body(p)])), `${slugify(designName(cfg))}-${p.id}.stl`, 'model/stl');
-  const customise = () => {
-    if (!result) return;
-    useEditor.getState().importMeshes(
-      result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
-      { groupName: designName(cfg) },
-    );
-    useStudio.getState().openInDesign({ studio: cfg.studio, label: cfg.label });
-  };
   return (
     <aside
-      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-panel xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Tag settings and result"
       data-testid={`${cfg.id}-right`}
     >
@@ -571,7 +564,7 @@ function RightPanel() {
       {cfg.ExtraSettings && <cfg.ExtraSettings />}
       <section className={section} aria-labelledby={`${cfg.id}-result-heading`}>
         <h2 id={`${cfg.id}-result-heading`} className={`${heading} flex items-center gap-2`}>
-          Result {building && <Loader2 size={14} className="animate-spin text-brand" aria-label="updating" />}
+          Result {building && <Loader2 size={14} className="animate-spin text-brand-ink" aria-label="updating" />}
         </h2>
         {error && (
           <p role="alert" className="flex gap-2 rounded-lg bg-red-50 p-2 text-[12px] text-red-800" data-testid={`${cfg.id}-error`}>
@@ -587,20 +580,20 @@ function RightPanel() {
               {result.parts.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center gap-2 rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]"
+                  className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-[12px]"
                   data-testid={`${cfg.id}-part`}
                   data-part={p.id}
                 >
                   <span className="h-3.5 w-3.5 shrink-0 rounded border border-black/10" style={{ background: p.colour }} aria-hidden />
                   <span className="min-w-0 flex-1 font-medium text-ink">{p.name}</span>
                   {p.watertight ? (
-                    <CircleCheck size={14} className="shrink-0 text-[#067647]" aria-label="closed solid" />
+                    <CircleCheck size={14} className="shrink-0 text-emerald-700" aria-label="closed solid" />
                   ) : (
                     <CircleAlert size={14} className="text-red-600" aria-label="not a closed solid" />
                   )}
                   <button
                     type="button"
-                    className="rounded-md px-1.5 py-1 font-medium text-brand hover:bg-brand-50"
+                    className="rounded-md px-1.5 py-1 font-medium text-brand-ink hover:bg-brand-50"
                     aria-label={`Download ${p.name} as STL`}
                     onClick={() => downloadStl(p)}
                   >
@@ -620,7 +613,7 @@ function RightPanel() {
             ))}
             {result.notes.map((n) => (
               <p key={n} className="mt-2 flex gap-2 text-[12px] leading-relaxed text-muted" data-testid={`${cfg.id}-note`}>
-                <Info size={14} className="mt-0.5 shrink-0 text-brand" /> {n}
+                <Info size={14} className="mt-0.5 shrink-0 text-accent-2" /> {n}
               </p>
             ))}
           </>
@@ -639,14 +632,14 @@ function RightPanel() {
           </button>
           <button
             type="button"
-            onClick={customise}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+            onClick={openInDesign}
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
           >
-            <PencilRuler size={16} /> Open a copy in Design Studio
+            <PencilRuler size={16} /> Open in Design Studio
           </button>
           <p className="flex gap-1.5 text-[11px] leading-relaxed text-muted">
             <Shapes size={13} className="mt-0.5 shrink-0" />
-            Keep editing here; the Design Studio gets a copy for changes this maker can’t do, with a button to come back.
+            Saves this design, then opens the same project in the Design Studio for changes this maker can’t do. Come back here any time.
           </p>
         </section>
       )}

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { produce } from 'immer';
 import { addObjectDraft, createEmptyDocument, createShape } from './document';
-import { migrateDocument, projectFromFile, projectToFile } from './serialization/project';
+import { CURRENT_SCHEMA, migrateDocument, projectFromFile, projectToFile } from './serialization/project';
 import { forkSketchLinksDraft, sketchUsers } from './sketchRecords';
 import { decodeShareFragment, encodeShareFragment } from './serialization/share';
 import { circleSketch, rectSketch } from '@/components/features/solidBuilder';
@@ -26,7 +26,7 @@ describe('schema 2: standalone sketches and components', () => {
   it('upgrades a version 1 document: each sketched body gets its own standalone sketch', () => {
     const { raw, id } = versionOne();
     const doc = migrateDocument(raw);
-    expect(doc.schemaVersion).toBe(2);
+    expect(doc.schemaVersion).toBe(CURRENT_SCHEMA);
     const body = doc.objects[id] as ShapeObject;
     expect(body.sketchId).toBeTruthy();
     const rec = doc.sketches![body.sketchId!];
@@ -78,7 +78,7 @@ describe('schema 2: standalone sketches and components', () => {
     const v3 = JSON.parse(projectToFile({ meta, document: doc, assets: {} }));
     v3.version = 3;
     v3.document = versionOne().raw;
-    expect(projectFromFile(JSON.stringify(v3)).document.schemaVersion).toBe(2);
+    expect(projectFromFile(JSON.stringify(v3)).document.schemaVersion).toBe(CURRENT_SCHEMA);
   });
 
   it('survives a share link', () => {

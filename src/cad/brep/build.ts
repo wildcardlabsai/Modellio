@@ -1,7 +1,21 @@
 import type * as Replicad from 'replicad';
 import type { Sketch, SketchEntity } from '@/cad/sketch/types';
+import { bezierPoints, pointMap, segmentOf, sketchOutlines, solidEdges, type Segment } from '@/cad/sketch/outline';
 import type { Vec3 } from '@/types/document';
-import type { BrepBuild, BrepEdge, BrepRequest, EdgeRef, FeatureBase } from './types';
+import { activeOps } from './types';
+import type {
+  BooleanPart,
+  BrepBuild,
+  BrepEdge,
+  BrepFace,
+  BrepRequest,
+  EdgeRef,
+  FaceRef,
+  FeatureBase,
+  FeatureOp,
+  HolePattern,
+  HoleSpec,
+} from './types';
 
 /**
  * Recipe → exact OpenCascade solid → mesh, edges and volume. Runs wherever OpenCascade is
@@ -19,6 +33,9 @@ const as3d = (s: Replicad.AnyShape) => s as Shape3D;
 /** A single closed drawing sketches to one Sketch. */
 const asSketch = (s: ReturnType<Drawing['sketchOnPlane']>) => s as Replicad.Sketch;
 const MATCH_TOLERANCE = 0.02;
+/** Two candidates closer than this to each other's score are "equally good": refuse, don't guess. */
+const AMBIGUITY = MATCH_TOLERANCE / 4;
+const FACE_TOLERANCE = 0.05;
 
 // --- bases -----------------------------------------------------------------------------------
 function primitive(r: R, base: Extract<FeatureBase, { kind: 'primitive' }>, size: Vec3): Shape3D {
@@ -79,71 +96,27 @@ function primitive(r: R, base: Extract<FeatureBase, { kind: 'primitive' }>, size
   }
 }
 
-type Segment =
-  | { kind: 'line'; from: [number, number]; to: [number, number] }
-  | { kind: 'arc'; from: [number, number]; to: [number, number]; mid: [number, number] };
-
-/** Closed outlines of a sketch with exact arcs: chains of lines/arcs, and circles. */
-export function sketchOutlines(s: Sketch): { chains: Segment[][]; circles: { c: [number, number]; r: number }[] } {
-  const pts = new Map(s.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
-  const edges = s.entities.filter(
-    (e): e is Extract<SketchEntity, { kind: 'line' | 'arc' }> => (e.kind === 'line' || e.kind === 'arc') && !e.construction,
-  );
-  const circles = s.entities
-    .filter((e): e is Extract<SketchEntity, { kind: 'circle' }> => e.kind === 'circle' && !e.construction && e.r > 0 && pts.has(e.c))
-    .map((e) => ({ c: pts.get(e.c)!, r: e.r }));
-  const byPoint = new Map<string, typeof edges>();
-  for (const e of edges)
-    for (const id of [e.a, e.b]) {
-      if (!byPoint.has(id)) byPoint.set(id, []);
-      byPoint.get(id)!.push(e);
-    }
-  const used = new Set<string>();
-  const chains: Segment[][] = [];
-  for (const start of edges) {
-    if (used.has(start.id)) continue;
-    const chain: Segment[] = [];
-    let e = start;
-    let from = start.a;
-    let closed = false;
-    for (let guard = 0; guard <= edges.length; guard++) {
-      used.add(e.id);
-      const to = e.a === from ? e.b : e.a;
-      const pa = pts.get(from)!;
-      const pb = pts.get(to)!;
-      if (e.kind === 'arc') {
-        // Arcs run a → b counter-clockwise around c.
-        const c = pts.get(e.c)!;
-        const [ea, eb] = [pts.get(e.a)!, pts.get(e.b)!];
-        const a0 = Math.atan2(ea[1] - c[1], ea[0] - c[0]);
-        let sweep = Math.atan2(eb[1] - c[1], eb[0] - c[0]) - a0;
-        while (sweep <= 0) sweep += 2 * Math.PI;
-        const rad = Math.hypot(ea[0] - c[0], ea[1] - c[1]);
-        const mid: [number, number] = [c[0] + rad * Math.cos(a0 + sweep / 2), c[1] + rad * Math.sin(a0 + sweep / 2)];
-        chain.push({ kind: 'arc', from: pa, to: pb, mid });
-      } else chain.push({ kind: 'line', from: pa, to: pb });
-      if (to === start.a) {
-        closed = true;
-        break;
-      }
-      const next = (byPoint.get(to) ?? []).find((x) => x.id !== e.id && !used.has(x.id));
-      if (!next) break;
-      from = to;
-      e = next;
-    }
-    if (closed && chain.length >= 2) chains.push(chain);
-  }
-  return { chains, circles };
-}
+export { sketchOutlines };
 
 function polygonOf(chain: Segment[]): [number, number][] {
   const out: [number, number][] = [];
   for (const s of chain) {
     out.push(s.from);
     if (s.kind === 'arc') out.push(s.mid);
+    if (s.kind === 'bezier') out.push(...bezierPoints(s, 12).slice(1));
   }
   return out;
 }
+/** Continue a pen along a segment: true arcs and Bézier curves, not samples. */
+function drawSegment<
+  P extends { lineTo(p: Pt2): P; threePointsArcTo(end: Pt2, mid: Pt2): P; cubicBezierCurveTo(end: Pt2, c1: Pt2, c2: Pt2): P },
+>(pen: P, seg: Segment): P {
+  if (seg.kind === 'line') return pen.lineTo(seg.to);
+  if (seg.kind === 'arc') return pen.threePointsArcTo(seg.to, seg.mid);
+  return pen.cubicBezierCurveTo(seg.to, seg.c1, seg.c2);
+}
+type Pt2 = [number, number];
+
 function inside(p: [number, number], poly: [number, number][]) {
   let c = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -162,7 +135,7 @@ export function sketchDrawing(r: R, s: Sketch): Drawing | null {
     items.push({
       drawing: () => {
         let pen = r.draw(chain[0].from);
-        for (const seg of chain) pen = seg.kind === 'line' ? pen.lineTo(seg.to) : pen.threePointsArcTo(seg.to, seg.mid);
+        for (const seg of chain) pen = drawSegment(pen, seg);
         return pen.close();
       },
       poly: polygonOf(chain),
@@ -206,18 +179,16 @@ export function singleOutline(r: R, s: Sketch, what: string): Drawing {
 }
 
 /**
- * A sweep path: one connected chain of lines and arcs (open or closed), or a single circle.
+ * A sweep path: one connected chain of lines, arcs and splines (open or closed), or a single circle.
  * Returns an error message when the sketch is not one chain.
  */
 export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } | { circle: { c: [number, number]; r: number } } | string {
-  const pts = new Map(s.points.map((p) => [p.id, [p.x, p.y] as [number, number]]));
-  const edges = s.entities.filter(
-    (e): e is Extract<SketchEntity, { kind: 'line' | 'arc' }> => (e.kind === 'line' || e.kind === 'arc') && !e.construction,
-  );
+  const pts = pointMap(s);
+  const edges = solidEdges(s);
   const circles = s.entities.filter((e): e is Extract<SketchEntity, { kind: 'circle' }> => e.kind === 'circle' && !e.construction);
   if (!edges.length && circles.length === 1 && pts.has(circles[0].c)) return { circle: { c: pts.get(circles[0].c)!, r: circles[0].r } };
-  if (circles.length) return 'A path is one chain of lines and arcs (or a single circle).';
-  if (!edges.length) return 'Draw a path: connected lines and arcs.';
+  if (circles.length) return 'A path is one chain of lines, arcs and splines (or a single circle).';
+  if (!edges.length) return 'Draw a path: connected lines, arcs or splines.';
   const degree = new Map<string, number>();
   for (const e of edges) for (const id of [e.a, e.b]) degree.set(id, (degree.get(id) ?? 0) + 1);
   if ([...degree.values()].some((d) => d > 2)) return 'The path branches; it must be a single chain.';
@@ -232,17 +203,7 @@ export function sketchPath(s: Sketch): { segments: Segment[]; closed: boolean } 
     if (!e) break;
     used.add(e.id);
     const to = e.a === from ? e.b : e.a;
-    const pa = pts.get(from)!;
-    const pb = pts.get(to)!;
-    if (e.kind === 'arc') {
-      const c = pts.get(e.c)!;
-      const [ea, eb] = [pts.get(e.a)!, pts.get(e.b)!];
-      const a0 = Math.atan2(ea[1] - c[1], ea[0] - c[0]);
-      let sweep = Math.atan2(eb[1] - c[1], eb[0] - c[0]) - a0;
-      while (sweep <= 0) sweep += 2 * Math.PI;
-      const rad = Math.hypot(ea[0] - c[0], ea[1] - c[1]);
-      segments.push({ kind: 'arc', from: pa, to: pb, mid: [c[0] + rad * Math.cos(a0 + sweep / 2), c[1] + rad * Math.sin(a0 + sweep / 2)] });
-    } else segments.push({ kind: 'line', from: pa, to: pb });
+    segments.push(segmentOf(pts, e, from));
     from = to;
   }
   if (used.size !== edges.length) return 'The path must be one connected chain.';
@@ -272,7 +233,7 @@ function sweepBase(r: R, base: Extract<FeatureBase, { kind: 'sweep' }>): Shape3D
   if ('circle' in path) pathDrawing = r.drawCircle(path.circle.r).translate(path.circle.c[0], path.circle.c[1]);
   else {
     let pen = r.draw(path.segments[0].from);
-    for (const seg of path.segments) pen = seg.kind === 'line' ? pen.lineTo(seg.to) : pen.threePointsArcTo(seg.to, seg.mid);
+    for (const seg of path.segments) pen = drawSegment(pen, seg);
     pathDrawing = path.closed ? pen.close() : pen.done();
   }
   const pathSketch = asSketch(pathDrawing.sketchOnPlane(base.pathPlane));
@@ -317,7 +278,7 @@ interface EdgeInfo {
 }
 
 /** Signature and display polyline of one edge, relative to `centre` and half-extents `half`. */
-function describeEdge(e: Replicad.Edge, centre: V, half: V): EdgeInfo {
+function describeEdge(e: Replicad.Edge, centre: V, half: V, faces?: [V, V]): EdgeInfo {
   const type = e.geomType;
   const kind: EdgeRef['kind'] = type === 'LINE' ? 'line' : type === 'CIRCLE' ? 'circle' : 'curve';
   const at = (t: number) => sub(v(e.pointAt(t)), centre);
@@ -337,65 +298,325 @@ function describeEdge(e: Replicad.Edge, centre: V, half: V): EdgeInfo {
     const t2 = cross(ac, axis).map((x) => x * dot(ab, ab));
     const centreC: V = [a[0] + (t1[0] + t2[0]) / d, a[1] + (t1[1] + t2[1]) / d, a[2] + (t1[2] + t2[2]) / d];
     const radius = Math.hypot(...sub(a, centreC));
+    // A circle is fixed by centre, axis and radius; face normals vary along it (and between the two
+    // halves OpenCascade splits it into), so they are not part of its reference.
     return { ref: tidy({ kind, mid: scaleN(centreC), dir: canon(norm(axis)), radius: radius / meanHalf }), points };
   }
   const t = v(e.tangentAt(0.5));
   return {
-    ref: tidy({ kind, mid: scaleN(at(0.5)), dir: canon(norm([t[0] / half[0], t[1] / half[1], t[2] / half[2]])), radius: 0 }),
+    ref: tidy({ kind, mid: scaleN(at(0.5)), dir: canon(norm([t[0] / half[0], t[1] / half[1], t[2] / half[2]])), radius: 0, faces }),
     points,
   };
 }
 
 /** Rounded so the two halves of a circle (and repeated builds) give identical references. */
+const q9 = (x: number) => Math.round(x * 1e9) / 1e9 + 0; // + 0 turns −0 into 0
 const tidy = (ref: EdgeRef): EdgeRef => {
-  const q = (x: number) => Math.round(x * 1e9) / 1e9 + 0; // + 0 turns −0 into 0
-  return { kind: ref.kind, mid: ref.mid.map(q) as Vec3, dir: ref.dir.map(q) as Vec3, radius: q(ref.radius) };
+  const out: EdgeRef = { kind: ref.kind, mid: ref.mid.map(q9) as Vec3, dir: ref.dir.map(q9) as Vec3, radius: q9(ref.radius) };
+  if (ref.faces) out.faces = ref.faces.map((n) => n.map(q9)) as [Vec3, Vec3];
+  return out;
 };
 
-/**
- * The solid's real edges. Seam edges (where a curved face meets itself, e.g. the join line of a
- * cylinder's side) belong to a single face: they are not edges of the part and cannot be filleted.
- */
-function realEdges(shape: Shape3D): Replicad.Edge[] {
-  const faces = new Map<number, Set<number>>();
-  shape.faces.forEach((f, fi) => {
-    for (const e of f.edges) {
-      const h = e.hashCode;
-      if (!faces.has(h)) faces.set(h, new Set());
-      faces.get(h)!.add(fi);
-      e.delete();
-    }
-    f.delete();
-  });
-  return shape.edges.filter((e) => {
-    const keep = (faces.get(e.hashCode)?.size ?? 0) !== 1;
-    if (!keep) e.delete();
-    return keep;
-  });
+/** A surface normal in the normalised space of `mid` (normals scale by the inverse, i.e. by `half`). */
+const scaleNormal = (n: V, half: V): V => norm([n[0] * half[0], n[1] * half[1], n[2] * half[2]]);
+/** The two face normals in a fixed order, so a reference does not depend on face order. */
+const sortPair = (a: V, b: V): [V, V] => ((a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) <= 0 ? [a, b] : [b, a]);
+
+const FACE_KIND: Record<string, FaceRef['kind']> = {
+  PLANE: 'plane',
+  CYLINDRE: 'cylinder',
+  CONE: 'cone',
+  SPHERE: 'sphere',
+  TORUS: 'torus',
+};
+
+/** Reference of one face, relative to `centre` and half-extents `half`. */
+function describeFace(r: R, f: Replicad.Face, centre: V, half: V): FaceRef {
+  const c = sub(v(f.center), centre);
+  // A point on the surface itself (the centroid of a curved face may lie off it, e.g. on a cylinder's axis).
+  const onSurface = f.pointOnSurface(0.5, 0.5);
+  const nv = f.normalAt(onSurface);
+  const raw = norm(v(nv));
+  nv.delete();
+  onSurface.delete();
+  // Area in the normalised space: a patch with unit normal m scales by |h ⊙ m| / (hx·hy·hz). Exact
+  // for flat faces, a good estimate for curved ones (taken at their representative normal).
+  const k = Math.hypot(raw[0] * half[0], raw[1] * half[1], raw[2] * half[2]) / (half[0] * half[1] * half[2]);
+  return {
+    kind: FACE_KIND[f.geomType] ?? 'other',
+    centre: [q9(c[0] / half[0]), q9(c[1] / half[1]), q9(c[2] / half[2])],
+    normal: scaleNormal(raw, half).map(q9) as Vec3,
+    area: q9(r.measureArea(f) * k),
+  };
 }
 
-const distance = (a: EdgeRef, b: EdgeRef) =>
-  a.kind !== b.kind ? Infinity : Math.hypot(...sub(a.mid, b.mid)) + 0.5 * (1 - Math.abs(dot(a.dir, b.dir))) + Math.abs(a.radius - b.radius);
+/**
+ * The solid's real edges, each with the normals of its two faces, and the references of all its
+ * faces (in the order OpenCascade meshes them). Everything OpenCascade allocated is released.
+ */
+function topology(r: R, shape: Shape3D, centre: V, half: V): { edges: EdgeInfo[]; faces: FaceRef[]; faceHashes: number[] } {
+  const faceList = shape.faces;
+  const byEdge = new Map<number, number[]>();
+  faceList.forEach((f, fi) => {
+    for (const e of f.edges) {
+      const list = byEdge.get(e.hashCode) ?? [];
+      if (!list.includes(fi)) list.push(fi);
+      byEdge.set(e.hashCode, list);
+      e.delete();
+    }
+  });
+  const edges: EdgeInfo[] = [];
+  for (const e of shape.edges) {
+    const owners = byEdge.get(e.hashCode) ?? [];
+    // Seam edges (where a curved face meets itself) belong to one face: not edges of the part.
+    if (owners.length >= 2) {
+      const p = e.pointAt(0.5);
+      const normals = owners.slice(0, 2).map((fi) => {
+        const nv = faceList[fi].normalAt(p);
+        const out = scaleNormal(v(nv), half);
+        nv.delete();
+        return out;
+      });
+      p.delete();
+      edges.push(describeEdge(e, centre, half, sortPair(normals[0], normals[1])));
+    }
+    e.delete();
+  }
+  const faces = faceList.map((f) => describeFace(r, f, centre, half));
+  const faceHashes = faceList.map((f) => f.hashCode);
+  faceList.forEach((f) => f.delete());
+  return { edges, faces, faceHashes };
+}
 
-/** For each reference, the closest edge of the same kind within tolerance (or −1). */
-export function matchEdges(refs: EdgeRef[], edges: EdgeRef[]): number[] {
+/** How different two face-normal pairs are (0 = the same), whichever way round they are stored. */
+const pairCost = (a: [Vec3, Vec3], b: [Vec3, Vec3]) =>
+  Math.min(2 - dot(a[0], b[0]) - dot(a[1], b[1]), 2 - dot(a[0], b[1]) - dot(a[1], b[0])) / 2;
+
+const distance = (a: EdgeRef, b: EdgeRef) =>
+  a.kind !== b.kind
+    ? Infinity
+    : Math.hypot(...sub(a.mid, b.mid)) +
+      0.5 * (1 - Math.abs(dot(a.dir, b.dir))) +
+      Math.abs(a.radius - b.radius) +
+      (a.faces && b.faces ? 0.25 * pairCost(a.faces, b.faces) : 0);
+
+const faceDistance = (a: FaceRef, b: FaceRef) =>
+  a.kind !== b.kind
+    ? Infinity
+    : Math.hypot(...sub(a.centre, b.centre)) +
+      0.5 * (1 - dot(a.normal, b.normal)) +
+      (0.5 * Math.abs(a.area - b.area)) / Math.max(a.area, b.area, EPS);
+
+/** Not found, or more than one candidate fits equally well. */
+export const NO_MATCH = -1;
+export const AMBIGUOUS = -2;
+
+/**
+ * For each reference, the index of the closest candidate within `tolerance`. Returns NO_MATCH when
+ * nothing is close enough and AMBIGUOUS when a different candidate is (almost) as close: the
+ * caller then flags the operation instead of guessing. Candidates with identical references (the
+ * two halves OpenCascade splits a full circle into) count as one.
+ */
+function match<T>(refs: T[], cands: T[], dist: (a: T, b: T) => number, tolerance: number): number[] {
   return refs.map((ref) => {
-    let best = -1;
-    let bestD = MATCH_TOLERANCE;
-    edges.forEach((e, i) => {
-      const d = distance(ref, e);
+    let best = NO_MATCH;
+    let bestD = tolerance;
+    cands.forEach((c, i) => {
+      const d = dist(ref, c);
       if (d < bestD) [best, bestD] = [i, d];
     });
+    if (best < 0) return NO_MATCH;
+    for (let i = 0; i < cands.length; i++) {
+      if (i === best || dist(cands[best], cands[i]) < 1e-9) continue;
+      const d = dist(ref, cands[i]);
+      if (d < tolerance && d - bestD < AMBIGUITY) return AMBIGUOUS;
+    }
     return best;
   });
 }
 
+export const matchEdges = (refs: EdgeRef[], edges: EdgeRef[]) => match(refs, edges, distance, MATCH_TOLERANCE);
+export const matchFaces = (refs: FaceRef[], faces: FaceRef[]) => match(refs, faces, faceDistance, FACE_TOLERANCE);
+
 const friendly = (e: unknown, what: string) => {
+  if (e instanceof BrepError) return e.message;
   const msg = e instanceof Error ? e.message : '';
   return msg && !/WebAssembly|object Object/.test(msg)
     ? `${what}: ${msg}`
     : `${what} could not be made on these edges. Try a smaller size.`;
 };
+
+// --- exact Booleans ------------------------------------------------------------------------------
+/** A rigid 4×4 (column-major) as a rotation (degrees about a unit axis) and a translation. */
+export function rigid(m: number[]): { axis: Vec3; angle: number; t: Vec3 } {
+  const [m00, m10, m20, , m01, m11, m21, , m02, m12, m22] = m;
+  const t: Vec3 = [m[12], m[13], m[14]];
+  const trace = m00 + m11 + m22;
+  const angle = Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
+  if (angle < 1e-9) return { axis: [0, 0, 1], angle: 0, t };
+  let axis: Vec3;
+  if (Math.PI - angle > 1e-6) axis = [m21 - m12, m02 - m20, m10 - m01];
+  else {
+    // 180°: the axis is the column of (R + I) with the largest diagonal.
+    const d = [m00, m11, m22];
+    const i = d.indexOf(Math.max(...d));
+    const cols: Vec3[] = [
+      [m00 + 1, m10, m20],
+      [m01, m11 + 1, m21],
+      [m02, m12, m22 + 1],
+    ];
+    axis = cols[i];
+  }
+  const l = Math.hypot(...axis) || 1;
+  return { axis: [axis[0] / l, axis[1] / l, axis[2] / l], angle: (angle * 180) / Math.PI, t };
+}
+
+/** One part, placed in the combination's frame exactly as it is displayed. */
+function placedPart(r: R, p: BooleanPart): Shape3D {
+  let s = buildShape(r, { recipe: p.recipe, size: p.size }).shape;
+  if (p.fit) {
+    const bb = s.boundingBox;
+    const ext = [bb.width, bb.height, bb.depth];
+    const k = ext.map((e, i) => (e > EPS ? p.fit![i] / e : 1));
+    if (Math.max(...k) - Math.min(...k) > 1e-4 * Math.max(...k))
+      throw new BrepError(`${p.name} is stretched unevenly, so it can only be combined as a mesh.`);
+    const c: V = [
+      (bb.bounds[0][0] + bb.bounds[1][0]) / 2,
+      (bb.bounds[0][1] + bb.bounds[1][1]) / 2,
+      (bb.bounds[0][2] + bb.bounds[1][2]) / 2,
+    ];
+    s = s.translate([-c[0], -c[1], -c[2]]);
+    if (Math.abs(k[0] - 1) > 1e-9) s = s.scale(k[0]);
+  }
+  const planes = ['YZ', 'XZ', 'XY'] as const;
+  p.mirror?.forEach((m, i) => {
+    if (m < 0) s = s.mirror(planes[i]);
+  });
+  const { angle, axis, t } = rigid(p.matrix);
+  if (angle > 1e-9) s = s.rotate(angle, [0, 0, 0], axis);
+  return s.translate(t);
+}
+
+/** Union or intersection of the solid parts, minus the hole parts, all exact. */
+function booleanBase(r: R, base: Extract<FeatureBase, { kind: 'boolean' }>): Shape3D {
+  let body: Shape3D | null = null;
+  let holes: Shape3D | null = null;
+  for (const p of base.parts) {
+    const s = placedPart(r, p);
+    if (p.hole) holes = holes ? (holes.fuse(s) as Shape3D) : s;
+    else body = !body ? s : base.mode === 'intersect' ? (body.intersect(s) as Shape3D) : (body.fuse(s) as Shape3D);
+  }
+  if (!body) throw new BrepError('A combination with only holes has no solid of its own.');
+  const out = holes ? (body.cut(holes) as Shape3D) : body;
+  if (!out.solids?.length) throw new BrepError('These parts do not overlap: the combination is empty.');
+  return out;
+}
+
+// --- operations ---------------------------------------------------------------------------------
+const OP_LABEL: Record<FeatureOp['kind'], string> = {
+  fillet: 'This fillet',
+  chamfer: 'This chamfer',
+  shell: 'This shell',
+  draft: 'This draft',
+  hole: 'This hole',
+};
+
+/** Record why references could not be used (and say so); false when they were all found. */
+function refusal(hit: number[], what: 'edges' | 'faces', id: string, problems: BrepBuild['problems']): boolean {
+  if (hit.some((i) => i === NO_MATCH)) {
+    problems.push({
+      id,
+      reason: what === 'edges' ? 'missing-edges' : 'missing-faces',
+      message: `Some of its ${what} no longer exist after an earlier change.`,
+    });
+    return true;
+  }
+  if (hit.some((i) => i === AMBIGUOUS)) {
+    problems.push({
+      id,
+      reason: what === 'edges' ? 'ambiguous-edges' : 'ambiguous-faces',
+      message: `After an earlier change, more than one of the part's ${what} fits equally well, so none was chosen.`,
+    });
+    return true;
+  }
+  return false;
+}
+
+/** The profile of a hole (radius against depth, the surface at 0), revolved about +Z. */
+function holeTool(r: R, h: HoleSpec, through: number): Shape3D {
+  const rad = h.diameter / 2;
+  const depth = h.depth > 0 ? h.depth : through;
+  const lift = 0.01; // start just above the surface so the cut never leaves a skin
+  const pts: [number, number][] = [[0, lift]];
+  if (h.style === 'counterbore' && h.cbDiameter && h.cbDepth) {
+    const cb = h.cbDiameter / 2;
+    pts.push([cb, lift], [cb, -h.cbDepth], [rad, -h.cbDepth]);
+  } else if (h.style === 'countersink' && h.csDiameter && h.csAngle) {
+    const cs = h.csDiameter / 2;
+    const sink = (cs - rad) / Math.tan(((h.csAngle / 2) * Math.PI) / 180);
+    pts.push([cs, lift], [cs, 0], [rad, -sink]);
+  } else pts.push([rad, lift]);
+  pts.push([rad, -depth], [0, -depth]);
+  let pen = r.draw(pts[0]);
+  for (const p of pts.slice(1)) pen = pen.lineTo(p);
+  return as3d(pen.close().sketchOnPlane('XZ').revolve([0, 0, 1]));
+}
+
+/** Turn a tool built along +Z so +Z points along `n`, then move it to `p`. */
+function orient(tool: Shape3D, n: V, p: V): Shape3D {
+  const c = n[2];
+  let t = tool;
+  if (c < -0.999999) t = t.rotate(180, [0, 0, 0], [1, 0, 0]);
+  else if (c < 0.999999) t = t.rotate((Math.acos(c) * 180) / Math.PI, [0, 0, 0], norm(cross([0, 0, 1], n)));
+  return t.translate(p);
+}
+
+/** Rotate point p about the axis through `o` along unit `k` by `deg` degrees (Rodrigues). */
+function rotateAbout(p: V, o: V, k: V, deg: number): V {
+  const a = (deg * Math.PI) / 180;
+  const v0 = sub(p, o);
+  const kv = cross(k, v0);
+  const kd = dot(k, v0);
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [0, 1, 2].map((i) => o[i] + v0[i] * c + kv[i] * s + k[i] * kd * (1 - c)) as V;
+}
+
+/** Where each copy of a hole goes (base coordinates). */
+export function holePositions(p: V, n: V, pattern: HolePattern | undefined, centre: V, half: V): V[] {
+  if (!pattern || pattern.count <= 1) return [p];
+  const out: V[] = [];
+  if (pattern.kind === 'linear') {
+    const d = norm(pattern.dir as V);
+    for (let i = 0; i < pattern.count; i++)
+      out.push([p[0] + d[0] * pattern.spacing * i, p[1] + d[1] * pattern.spacing * i, p[2] + d[2] * pattern.spacing * i]);
+  } else {
+    const o: V = [
+      centre[0] + pattern.centre[0] * half[0],
+      centre[1] + pattern.centre[1] * half[1],
+      centre[2] + pattern.centre[2] * half[2],
+    ];
+    // A full turn spaces copies evenly without doubling the first; a part turn includes both ends.
+    const full = Math.abs(Math.abs(pattern.angle) - 360) < 1e-6;
+    const step = pattern.angle / (full ? pattern.count : Math.max(1, pattern.count - 1));
+    for (let i = 0; i < pattern.count; i++) out.push(rotateAbout(p, o, n, step * i));
+  }
+  return out;
+}
+
+/** Cut a hole (and its pattern copies) into the shape at a point of the chosen face. */
+function cutHole(r: R, shape: Shape3D, op: Extract<FeatureOp, { kind: 'hole' }>, face: FaceRef, centre: V, half: V, diag: number): Shape3D {
+  if (face.kind !== 'plane') throw new BrepError('Holes go into flat faces.');
+  const p: V = [centre[0] + op.at[0] * half[0], centre[1] + op.at[1] * half[1], centre[2] + op.at[2] * half[2]];
+  // The face's real outward normal (the reference's is in normalised space).
+  const n = norm([face.normal[0] / half[0], face.normal[1] / half[1], face.normal[2] / half[2]]);
+  let tools: Shape3D | null = null;
+  for (const at of holePositions(p, n, op.pattern, centre, half)) {
+    const one = orient(holeTool(r, op.hole, diag * 2 + 1), n, at);
+    tools = tools ? (tools.fuse(one) as Shape3D) : one;
+  }
+  return shape.clone().cut(tools!) as Shape3D;
+}
 
 // --- build -----------------------------------------------------------------------------------
 export interface BuildOptions {
@@ -420,7 +641,9 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
             ? loftBase(r, recipe.base)
             : recipe.base.kind === 'sweep'
               ? sweepBase(r, recipe.base)
-              : sketchBase(r, recipe.base);
+              : recipe.base.kind === 'boolean'
+                ? booleanBase(r, recipe.base)
+                : sketchBase(r, recipe.base);
   } catch (e) {
     if (e instanceof BrepError) throw e;
     throw new BrepError(friendly(e, 'The base shape'));
@@ -435,33 +658,67 @@ export function buildShape(r: R, req: BrepRequest): { shape: Shape3D; centre: V;
   const half: V = [Math.max(EPS, bb0.width / 2), Math.max(EPS, bb0.height / 2), Math.max(EPS, bb0.depth / 2)];
   const problems: BrepBuild['problems'] = [];
 
-  for (const op of recipe.ops) {
+  const zMin = bb0.bounds[0][2];
+  const diag = Math.hypot(bb0.width, bb0.height, bb0.depth);
+
+  for (const op of activeOps(recipe)) {
     if (op.suppressed) continue;
-    const infos = realEdges(shape).map((e) => {
-      const info = describeEdge(e, centre, half);
-      e.delete();
-      return info;
-    });
-    const hit = matchEdges(
-      op.edges,
-      infos.map((i) => i.ref),
-    );
-    if (hit.some((i) => i < 0)) {
-      problems.push({ id: op.id, reason: 'missing-edges', message: 'Some of its edges no longer exist after an earlier change.' });
-      continue;
-    }
-    const chosen = hit.map((i) => infos[i].ref);
-    const pick = (f: Replicad.EdgeFinder) =>
-      f.when(({ element }) => {
-        const ref = describeEdge(element, centre, half).ref;
-        return chosen.some((c) => distance(c, ref) < 1e-6);
-      });
+    const label = OP_LABEL[op.kind];
     try {
-      const next = op.kind === 'fillet' ? shape.clone().fillet(op.radius, pick) : shape.clone().chamfer(op.distance, pick);
-      shape.delete();
-      shape = next;
+      let next: Shape3D | null = null;
+      if (op.kind === 'fillet' || op.kind === 'chamfer') {
+        const infos = topology(r, shape, centre, half).edges;
+        const hit = matchEdges(
+          op.edges,
+          infos.map((i) => i.ref),
+        );
+        if (refusal(hit, 'edges', op.id, problems)) continue;
+        const chosen = hit.map((i) => infos[i].ref);
+        const pick = (f: Replicad.EdgeFinder) =>
+          f.when(({ element }) => {
+            const ref = describeEdge(element, centre, half).ref;
+            return chosen.some((c) => distance(c, ref) < 1e-6);
+          });
+        next = op.kind === 'fillet' ? shape.clone().fillet(op.radius, pick) : shape.clone().chamfer(op.distance, pick);
+      } else {
+        const faces = topology(r, shape, centre, half).faces;
+        const refs = op.kind === 'hole' ? [op.face] : op.faces;
+        const hit = matchFaces(refs, faces);
+        if (refusal(hit, 'faces', op.id, problems)) continue;
+        const chosen = hit.map((i) => faces[i]);
+        const pick = (f: Replicad.FaceFinder) =>
+          f.when(({ element }) => {
+            const ref = describeFace(r, element, centre, half);
+            return chosen.some((c) => faceDistance(c, ref) < 1e-6);
+          });
+        if (op.kind === 'shell') {
+          if (op.thickness >= Math.min(...half)) throw new BrepError('These walls are too thick for this part.');
+          next = shape.clone().shell(op.thickness, pick); // positive: walls grow inwards
+          // OpenCascade can return a malformed result instead of failing: an inward shell must stay
+          // inside the part and take material away.
+          const nb = next.boundingBox;
+          const grew = [0, 1, 2].some(
+            (k) => nb.bounds[0][k] < shape.boundingBox.bounds[0][k] - 1e-4 || nb.bounds[1][k] > shape.boundingBox.bounds[1][k] + 1e-4,
+          );
+          if (grew || r.measureVolume(next) >= r.measureVolume(shape) - EPS) {
+            next.delete();
+            throw new BrepError('These walls are too thick for this part.');
+          }
+        } else if (op.kind === 'draft') next = shape.clone().draft(op.angle, pick, r.makePlane('XY', zMin));
+        else next = cutHole(r, shape, op, chosen[0], centre, half, diag);
+      }
+      if (next) {
+        // A failed boolean or offset can quietly give an empty result: never accept one.
+        if (!next.solids?.length || r.measureVolume(next) <= EPS) {
+          next.delete();
+          problems.push({ id: op.id, reason: 'failed', message: `${label} would leave no solid. Try a smaller size.` });
+          continue;
+        }
+        shape.delete();
+        shape = next;
+      }
     } catch (e) {
-      problems.push({ id: op.id, reason: 'failed', message: friendly(e, op.kind === 'fillet' ? 'This fillet' : 'This chamfer') });
+      problems.push({ id: op.id, reason: 'failed', message: friendly(e, label) });
     }
   }
 
@@ -481,18 +738,23 @@ export function buildBrep(r: R, req: BrepRequest, opts: BuildOptions = {}): Brep
       positions[i + 1] = mesh.vertices[i + 1] - centre[1];
       positions[i + 2] = mesh.vertices[i + 2] - centre[2];
     }
-    const edges: BrepEdge[] = realEdges(shape).map((e) => {
-      const info = describeEdge(e, centre, half);
-      e.delete();
-      return info;
-    });
+    const topo = topology(r, shape, centre, half);
+    const edges: BrepEdge[] = topo.edges;
+    // OpenCascade meshes face by face; each group names its face by hash code.
+    const faces: BrepFace[] = [];
+    for (const g of mesh.faceGroups) {
+      const fi = topo.faceHashes.indexOf(g.faceId);
+      if (fi >= 0) faces.push({ ref: topo.faces[fi], start: g.start / 3, count: g.count / 3 });
+    }
     return {
       positions,
       indices: Uint32Array.from(mesh.triangles),
       edges,
+      faces,
       volume: r.measureVolume(shape),
       size,
       centre: [...centre] as Vec3,
+      half: [...half] as Vec3,
       problems,
     };
   } finally {

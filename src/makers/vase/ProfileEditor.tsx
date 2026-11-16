@@ -100,7 +100,7 @@ export function ProfileEditor() {
       <svg
         ref={svg}
         viewBox={`0 0 ${W} ${heightPx}`}
-        className="w-full touch-none select-none rounded-md border border-[#E4E0D6] bg-[#FAF9F6]"
+        className="w-full touch-none select-none rounded-md border border-[#E4E0D6] bg-artboard"
         role="group"
         aria-label="Vase profile. Drag the points to shape the vase; click the outline to add a point."
         onPointerMove={onMove}
@@ -150,12 +150,12 @@ export function ProfileEditor() {
           );
         })}
       </svg>
-      <div className={`${MONO} mt-1.5 flex justify-between text-[11px] text-[#5B6270]`}>
+      <div className={`${MONO} mt-1.5 flex justify-between text-[11px] text-muted`}>
         <span>⌀ {width.toFixed(0)} mm max</span>
         <span>{points.length} points</span>
         <span>{H.toFixed(0)} mm tall</span>
       </div>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-[#667085]">
+      <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
         Drag points to shape it. Click the blue line to add a point; double-click a point (or press Delete) to remove it.
       </p>
     </div>

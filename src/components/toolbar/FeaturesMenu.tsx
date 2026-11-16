@@ -1,4 +1,4 @@
-import { Layers3, Route, Spline, SquareDashedBottom } from 'lucide-react';
+import { Layers3, Route, Spline, SquareDashedBottom, BoxSelect, Triangle, CircleDot } from 'lucide-react';
 import { useSolidBuilder } from '@/components/features/solidBuilder';
 import { useEditor } from '@/store/editorStore';
 import { solidConversion, CONVERTIBLE_LABEL } from '@/cad/brep/convert';
@@ -22,6 +22,9 @@ export function FeaturesMenu({ onDone }: { onDone: () => void }) {
   const items: { kind: FeatureKind; label: string; hint: string; Icon: typeof Spline }[] = [
     { kind: 'fillet', label: 'Fillet', hint: 'Round chosen edges with an exact radius.', Icon: Spline },
     { kind: 'chamfer', label: 'Chamfer', hint: 'Bevel chosen edges with a flat cut.', Icon: SquareDashedBottom },
+    { kind: 'shell', label: 'Shell', hint: 'Hollow the part with even walls, leaving chosen faces open.', Icon: BoxSelect },
+    { kind: 'draft', label: 'Draft', hint: 'Taper chosen faces inwards going up.', Icon: Triangle },
+    { kind: 'hole', label: 'Hole', hint: 'Drill a hole, counterbore or countersink into a flat face.', Icon: CircleDot },
   ];
   const ok = !!target && !!conv?.ok;
   return (

@@ -41,7 +41,8 @@ export default function Dashboard() {
   const projects = useProjects((s) => s.projects);
   const repo = useProjects((s) => s.repo);
   const error = useProjects((s) => s.error);
-  const recent = useMemo(() => projects.filter(hasContent), [projects]);
+  // By last activity (opened or saved), each project once.
+  const recent = useMemo(() => useProjects.getState().recent(projects.length).filter(hasContent), [projects]);
   const goDesign = (fn?: () => void) => {
     fn?.();
     useStudio.getState().setStudio('design');
@@ -111,7 +112,8 @@ export default function Dashboard() {
           <button
             type="button"
             className={buttonClass('secondary', 'sm')}
-            onClick={() => goDesign(() => void useProjects.getState().newProject())}
+            onClick={() => useProjects.getState().setDialog('new')}
+            data-testid="dashboard-new-design"
           >
             <Plus size={15} /> New Design
           </button>

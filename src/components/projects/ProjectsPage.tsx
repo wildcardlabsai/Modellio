@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, MoreHorizontal, Copy, Trash2, Pencil, FileInput, Box, CircleAlert } from 'lucide-react';
+import { Plus, MoreHorizontal, Copy, Trash2, Pencil, PencilRuler, FileInput, Box, CircleAlert } from 'lucide-react';
+import { workspaceOf } from '@/cad/serialization/project';
+import { WORKSPACE_LABEL } from '@/platform/catalog';
 import { useProjects } from '@/store/projectStore';
 import { openProjectPicker } from '@/components/files/fileIntake';
 import { Popover } from '@/components/ui/Popover';
@@ -62,7 +64,7 @@ export function ProjectsPage() {
             <button type="button" className={secondaryBtn} onClick={openProjectPicker}>
               <FileInput size={16} /> Open project file
             </button>
-            <button type="button" className={primaryBtn} onClick={() => void p.newProject()}>
+            <button type="button" className={primaryBtn} onClick={() => p.setDialog('new')}>
               <Plus size={16} /> New design
             </button>
           </div>
@@ -94,7 +96,7 @@ export function ProjectsPage() {
           <li>
             <button
               type="button"
-              onClick={() => void p.newProject()}
+              onClick={() => p.setDialog('new')}
               className="flex aspect-[4/3.6] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line-strong text-muted transition-colors hover:border-brand hover:bg-brand-50 hover:text-brand-ink"
             >
               <Plus size={28} />
@@ -105,7 +107,7 @@ export function ProjectsPage() {
             <li key={m.id} className="group relative" data-testid="project-card">
               <button
                 type="button"
-                onClick={() => void p.open(m.id)}
+                onClick={() => void p.openProject(m.id)}
                 className={`block w-full overflow-hidden rounded-2xl border bg-panel text-left shadow-panel transition-shadow hover:shadow-float ${
                   current?.id === m.id ? 'border-brand ring-2 ring-brand/20' : 'border-line'
                 }`}
@@ -123,7 +125,10 @@ export function ProjectsPage() {
                     {m.name}
                   </p>
                   <p className="mt-0.5 text-[12px] text-muted">
-                    {ago(m.updatedAt)} · {m.objectCount} object{m.objectCount === 1 ? '' : 's'}
+                    <span className="mr-1 rounded bg-canvas px-1.5 py-px font-medium text-ink-2">
+                      {WORKSPACE_LABEL[workspaceOf(m)] ?? workspaceOf(m)}
+                    </span>
+                    {ago(m.savedAt ?? m.updatedAt)} · {m.objectCount} object{m.objectCount === 1 ? '' : 's'}
                     {current?.id === m.id && <span className="ml-1 font-medium text-brand-ink">· open</span>}
                   </p>
                 </div>
@@ -146,6 +151,9 @@ export function ProjectsPage() {
                   {(close) => (
                     <div className="w-44" role="menu">
                       {[
+                        ...(workspaceOf(m) !== 'design'
+                          ? [{ label: 'Open in Design Studio', Icon: PencilRuler, run: () => void p.openInDesign(m.id) }]
+                          : []),
                         { label: 'Rename', Icon: Pencil, run: () => setRenaming(m) },
                         { label: 'Duplicate', Icon: Copy, run: () => void p.duplicate(m.id) },
                         { label: 'Delete', Icon: Trash2, run: () => setDeleting(m), danger: true },
@@ -205,7 +213,7 @@ export function ProjectsPage() {
   );
 }
 
-function RenameDialog({ meta, onClose }: { meta: ProjectMeta; onClose: () => void }) {
+export function RenameDialog({ meta, onClose }: { meta: ProjectMeta; onClose: () => void }) {
   const [name, setName] = useState(meta.name);
   const submit = () => {
     if (!name.trim()) return;

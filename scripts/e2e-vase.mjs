@@ -233,15 +233,29 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.getByTestId('vase-studio').waitFor();
 check('24. The design is remembered after a reload', (await S(() => JSON.stringify(window.modellioVase.store.getState().params))) === kept);
 await settled();
-const rootsBefore = await S(() => window.modellio.store.getState().doc.rootIds.length);
-await page.getByRole('button', { name: 'Open a copy in Design Studio' }).click();
+await page.getByRole('button', { name: 'Open in Design Studio' }).click();
+// Saved first (it was never saved), then opened as the same project.
+await page.getByTestId('project-name-input').fill('Studio vase');
+await page.getByTestId('project-name-save').click();
 await page.getByTestId('left-panel').waitFor();
+// The Design Studio shows at once; the project itself finishes loading a moment later.
+await page
+  .waitForFunction(() => window.modellio.projects.getState().current?.id === window.modellioVase.store.getState().project?.id, null, {
+    timeout: 15000,
+  })
+  .catch(() => {});
+const opened = await S(() => ({
+  current: window.modellio.projects.getState().current?.id,
+  vase: window.modellioVase.store.getState().project?.id,
+  roots: window.modellio.store.getState().doc.rootIds.length,
+}));
 check(
-  '25. "Open a copy in Design Studio" opens it in the editor',
-  (await S(() => window.modellio.store.getState().doc.rootIds.length)) === rootsBefore + 1,
+  '25. "Open in Design Studio" opens the vase as its own project in the editor',
+  opened.current === opened.vase && opened.roots === 1,
+  JSON.stringify(opened),
 );
 check('25b. A bar in the Design Studio leads back to the Vase Maker', await page.getByTestId('return-bar').isVisible());
-await page.getByRole('button', { name: 'Back to Vase Maker' }).click();
+await page.getByRole('button', { name: /^Back to Vase/ }).click();
 await page.getByTestId('vase-studio').waitFor();
 check('25c. "Back to Vase Maker" returns to the vase', page.url().includes('studio=vase'));
 await page.getByRole('button', { name: 'Makers' }).click();

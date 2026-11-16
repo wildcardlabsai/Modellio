@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMakerPane, paneClass } from '../shell/mobilePane';
 import { MobilePaneTabs } from '../shell/MobilePaneTabs';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
-import { capturePreview } from '../shell/capture';
-import { useProjects } from '@/store/projectStore';
-import { useMakerHandoff } from '@/platform/handoff';
-import { clearPreview, productShot } from '@/utils/productShot';
+import { useMakerProject } from '../shell/makerProject';
+import { PREVIEW_GRID, clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -34,8 +32,6 @@ import { Segmented } from '@/components/ui/Modal';
 import { IconButton } from '@/components/ui/IconButton';
 import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
-import { useEditor } from '@/store/editorStore';
-import { useStudio } from '@/app/studio';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 
 const MONO = "font-['Space_Mono',ui-monospace,monospace]";
@@ -51,12 +47,6 @@ const TYPE_LABEL: Record<BodyType, string> = { vase: 'Vase', pot: 'Plant pot', l
 export default function VaseStudio() {
   useEffect(() => {
     (window as unknown as { modellioVase: unknown }).modellioVase = { store: useVase };
-    const handed = useMakerHandoff.getState().take('vase');
-    if (handed) {
-      const st = handed.state as { params: VaseParams; templateId: string | null };
-      useVase.getState().loadSaved(st.params, st.templateId);
-      useVase.getState().setProject({ id: handed.projectId, name: handed.name });
-    }
     useVase.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -72,28 +62,52 @@ export default function VaseStudio() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // Saving, opening, new designs and Open in Design Studio: the shared project lifecycle.
+  const mp = useMakerProject({
+    studio: 'vase',
+    label: 'Vase Maker',
+    schema: 1,
+    project: () => useVase.getState().project,
+    setProject: (p) => useVase.getState().setProject(p),
+    dirty: () => useVase.getState().dirty,
+    state: () => ({ params: useVase.getState().params, templateId: useVase.getState().templateId }),
+    // Saved at export quality.
+    parts: async () => (await buildFine()).parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
+    load: (state) => {
+      const st = state as { params: VaseParams; templateId: string | null };
+      useVase.getState().loadSaved(st.params, st.templateId);
+    },
+    startBlank: () => useVase.getState().startBlank(),
+    suggestedName: () => {
+      const st = useVase.getState();
+      return VASE_TEMPLATES.find((t) => t.id === st.templateId)?.name ?? `My ${TYPE_LABEL[st.params.type].toLowerCase()}`;
+    },
+  });
+  const project = useVase((s) => s.project);
+  const dirty = useVase((s) => s.dirty);
+  const controls = { name: project?.name ?? null, dirty, busy: mp.busy, actions: mp.actions, save: () => mp.save() };
   const pane = useMakerPane((s) => s.pane);
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid="vase-studio">
-      <Header />
+      <Header project={controls} />
+      {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <LeftPanel />
         <main className={`relative min-w-0 flex-1 ${paneClass(pane, 'canvas')}`} aria-label="Preview">
           <Preview />
         </main>
-        <RightPanel />
+        <RightPanel openInDesign={() => void mp.openInDesign()} />
       </div>
       <MobilePaneTabs labels={{ tools: 'Shape', canvas: 'Preview', settings: 'Export' }} />
     </div>
   );
 }
 
-function Header() {
+function Header({ project: controls }: { project: NonNullable<Parameters<typeof MakerHeader>[0]['project']> }) {
   const type = useVase((s) => s.params.type);
   const setParams = useVase((s) => s.setParams);
   const canUndo = useVase((s) => s.past.length > 0);
   const canRedo = useVase((s) => s.future.length > 0);
-  const project = useVase((s) => s.project);
   const { undo, redo, surpriseMe } = useVase.getState();
   return (
     <MakerHeader
@@ -114,27 +128,7 @@ function Header() {
           </ol>
         </>
       }
-      save={{
-        project,
-        suggestedName: () => {
-          const st = useVase.getState();
-          return VASE_TEMPLATES.find((t) => t.id === st.templateId)?.name ?? `My ${TYPE_LABEL[st.params.type].toLowerCase()}`;
-        },
-        run: async (name) => {
-          const st = useVase.getState();
-          const fine = await buildFine();
-          const id = await useProjects.getState().saveMakerProject({
-            id: st.project?.id,
-            name,
-            studio: 'vase',
-            schema: 1,
-            state: { params: st.params, templateId: st.templateId },
-            parts: fine.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
-            thumbnail: capturePreview(),
-          });
-          st.setProject({ id, name });
-        },
-      }}
+      project={controls}
     >
       <HeaderTabs<BodyType>
         label="What to make"
@@ -164,7 +158,7 @@ function LeftPanel() {
   const setTab = useVase((s) => s.setTab);
   return (
     <aside
-      className={`flex w-[300px] shrink-0 flex-col border-r border-line bg-white xl:w-[330px] ${paneClass(pane, 'tools')}`}
+      className={`flex w-[300px] shrink-0 flex-col border-r border-line bg-panel xl:w-[330px] ${paneClass(pane, 'tools')}`}
       aria-label="Vase design"
       data-testid="vase-left"
     >
@@ -198,7 +192,7 @@ function Gallery() {
             type="button"
             aria-pressed={cat === c}
             onClick={() => setCat(c)}
-            className={`rounded-full border px-2.5 py-1 text-[12px] font-medium ${cat === c ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
+            className={`rounded-full border px-2.5 py-1 text-[12px] font-medium ${cat === c ? 'border-brand bg-brand-50 text-brand-ink' : 'border-line text-ink-2 hover:bg-canvas'}`}
           >
             {c}
           </button>
@@ -209,7 +203,7 @@ function Gallery() {
           <button
             type="button"
             onClick={startBlank}
-            className="flex aspect-[4/5] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[#c9d1de] text-center text-[13px] font-semibold text-[#344054] hover:border-brand hover:text-brand"
+            className="flex aspect-[4/5] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line-strong text-center text-[13px] font-semibold text-ink-2 hover:border-brand hover:text-brand-ink"
             data-testid="vase-blank"
           >
             <Plus size={22} />
@@ -224,7 +218,7 @@ function Gallery() {
               onClick={() => applyTemplate(t.id)}
               aria-pressed={templateId === t.id}
               title={t.description}
-              className={`block w-full overflow-hidden rounded-lg border text-left ${templateId === t.id ? 'border-brand ring-2 ring-brand/30' : 'border-line hover:border-[#98a2b3]'}`}
+              className={`block w-full overflow-hidden rounded-lg border text-left ${templateId === t.id ? 'border-brand ring-2 ring-brand/30' : 'border-line hover:border-line-strong'}`}
               data-testid="vase-template"
               data-template={t.id}
             >
@@ -234,7 +228,7 @@ function Gallery() {
                 width={200}
                 height={200}
                 loading="lazy"
-                className="aspect-square w-full bg-[#f5f7fb] object-cover"
+                className="aspect-square w-full bg-canvas object-cover"
               />
               <span className="block px-2 py-1.5">
                 <span className="block truncate text-[12px] font-semibold text-ink">{t.name}</span>
@@ -324,7 +318,7 @@ function DesignPanel() {
           <div className="flex items-end gap-1">
             <button
               type="button"
-              className="h-9 flex-1 rounded-md border border-line text-[12px] font-medium hover:bg-[#f9fafb]"
+              className="h-9 flex-1 rounded-md border border-line text-[12px] font-medium hover:bg-canvas"
               onClick={() => scaleProfile(0.9)}
               aria-label="Make narrower"
             >
@@ -332,7 +326,7 @@ function DesignPanel() {
             </button>
             <button
               type="button"
-              className="h-9 flex-1 rounded-md border border-line text-[12px] font-medium hover:bg-[#f9fafb]"
+              className="h-9 flex-1 rounded-md border border-line text-[12px] font-medium hover:bg-canvas"
               onClick={() => scaleProfile(1.1)}
               aria-label="Make wider"
             >
@@ -355,7 +349,7 @@ function DesignPanel() {
               aria-label={s.label}
               aria-pressed={p.shape.kind === s.kind}
               onClick={() => shape({ kind: s.kind })}
-              className={`flex aspect-square items-center justify-center rounded-md border ${p.shape.kind === s.kind ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
+              className={`flex aspect-square items-center justify-center rounded-md border ${p.shape.kind === s.kind ? 'border-brand bg-brand-50 text-brand-ink' : 'border-line text-ink-2 hover:bg-canvas'}`}
             >
               <ShapeIcon
                 kind={s.kind}
@@ -453,7 +447,7 @@ function DesignPanel() {
               type="button"
               aria-pressed={pk === x.kind}
               onClick={() => pattern({ kind: x.kind })}
-              className={`rounded-md border px-1 py-1.5 text-[12px] font-medium ${pk === x.kind ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
+              className={`rounded-md border px-1 py-1.5 text-[12px] font-medium ${pk === x.kind ? 'border-brand bg-brand-50 text-brand-ink' : 'border-line text-ink-2 hover:bg-canvas'}`}
             >
               {x.label}
             </button>
@@ -532,7 +526,7 @@ function DesignPanel() {
                 <button
                   type="button"
                   onClick={() => pattern({ seed: Math.floor(Math.random() * 10000) })}
-                  className="flex h-9 w-full items-center justify-center gap-1 rounded-md border border-line text-[12px] font-medium hover:bg-[#f9fafb]"
+                  className="flex h-9 w-full items-center justify-center gap-1 rounded-md border border-line text-[12px] font-medium hover:bg-canvas"
                 >
                   <Shuffle size={13} /> New
                 </button>
@@ -652,7 +646,7 @@ function download(bytes: Uint8Array, name: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-function RightPanel() {
+function RightPanel({ openInDesign }: { openInDesign: () => void }) {
   const pane = useMakerPane((s) => s.pane);
   const result = useVase((s) => s.result);
   const error = useVase((s) => s.error);
@@ -680,30 +674,22 @@ function RightPanel() {
       setExporting(false);
     }
   };
-  const customise = () => {
-    if (!result) return;
-    useEditor.getState().importMeshes(
-      result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
-      { groupName: name },
-    );
-    useStudio.getState().openInDesign({ studio: 'vase', label: 'Vase Maker' });
-  };
   const overhangTone = !result
     ? ''
     : result.maxOverhang > 60
       ? 'text-red-700'
       : result.maxOverhang > 45
         ? 'text-amber-700'
-        : 'text-[#067647]';
+        : 'text-emerald-700';
   return (
     <aside
-      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-panel xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Result"
       data-testid="vase-right"
     >
       <section className={section} aria-labelledby="vase-result-heading">
         <h2 id="vase-result-heading" className={`${heading} flex items-center gap-2`}>
-          {name} {building && <Loader2 size={14} className="animate-spin text-brand" aria-label="updating" />}
+          {name} {building && <Loader2 size={14} className="animate-spin text-brand-ink" aria-label="updating" />}
         </h2>
         {error && (
           <p role="alert" className="flex gap-2 rounded-lg bg-red-50 p-2 text-[12px] text-red-800" data-testid="vase-error">
@@ -733,7 +719,7 @@ function RightPanel() {
               {result.parts.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center gap-2 rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]"
+                  className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-[12px]"
                   data-testid="vase-part"
                   data-part={p.id}
                 >
@@ -743,14 +729,14 @@ function RightPanel() {
                     <span className="text-muted">{p.size.map((v) => v.toFixed(0)).join(' × ')} mm</span>
                   </span>
                   {p.watertight ? (
-                    <CircleCheck size={14} className="shrink-0 text-[#067647]" aria-label="closed solid" />
+                    <CircleCheck size={14} className="shrink-0 text-emerald-700" aria-label="closed solid" />
                   ) : (
                     <CircleAlert size={14} className="text-red-600" aria-label="not a closed solid" />
                   )}
                   <button
                     type="button"
                     disabled={exporting}
-                    className="rounded-md px-1.5 py-1 font-medium text-brand hover:bg-brand-50 disabled:opacity-50"
+                    className="rounded-md px-1.5 py-1 font-medium text-brand-ink hover:bg-brand-50 disabled:opacity-50"
                     aria-label={`Download ${p.name} as STL`}
                     onClick={() => void exportFine(p.id)}
                   >
@@ -770,7 +756,7 @@ function RightPanel() {
             ))}
             {result.notes.map((n) => (
               <p key={n} className="mt-2 flex gap-2 text-[12px] leading-relaxed text-muted">
-                <Info size={14} className="mt-0.5 shrink-0 text-brand" /> {n}
+                <Info size={14} className="mt-0.5 shrink-0 text-accent-2" /> {n}
               </p>
             ))}
           </>
@@ -789,10 +775,10 @@ function RightPanel() {
           </button>
           <button
             type="button"
-            onClick={customise}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+            onClick={openInDesign}
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
           >
-            <PencilRuler size={16} /> Open a copy in Design Studio
+            <PencilRuler size={16} /> Open in Design Studio
           </button>
           <p className="text-[11px] leading-relaxed text-muted">
             Downloads use a finer mesh than the preview. Vases for flowers: seal the inside or use a glass insert, as printed walls can
@@ -825,7 +811,7 @@ function Preview() {
         <hemisphereLight args={['#ffffff', '#b9c2d0', 1.5]} />
         <directionalLight position={[120, -160, 260]} intensity={1.7} />
         <directionalLight position={[-160, 120, 80]} intensity={0.5} />
-        {!productShot && <gridHelper args={[600, 60, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
+        {!productShot && <gridHelper args={[600, 60, ...PREVIEW_GRID]} rotation={[Math.PI / 2, 0, 0]} />}
         <group ref={group}>
           {result?.parts.map((p) => (
             <PartMesh key={`${p.id}-${p.mesh.indices.length}-${p.volume}`} part={p} />
@@ -837,7 +823,7 @@ function Preview() {
           contentKey={result ? `${result.parts.length}-${result.width.toFixed(0)}-${result.height.toFixed(0)}` : ''}
         />
       </Canvas>
-      <div className="absolute right-3 top-3 rounded-xl bg-white/95 p-1 shadow-panel">
+      <div className="absolute right-3 top-3 rounded-xl bg-panel/95 p-1 shadow-panel">
         <IconButton label="Fit in view" tooltipSide="left" onClick={() => fit.current()}>
           <Maximize size={17} />
         </IconButton>

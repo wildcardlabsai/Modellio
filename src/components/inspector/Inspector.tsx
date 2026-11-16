@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import {
   Copy,
@@ -28,19 +28,32 @@ import {
   Loader2,
   EyeOff,
   Printer,
+  FlipHorizontal2,
+  Crosshair,
+  PencilLine,
+  Anchor,
+  CircleSlash,
+  Home,
+  RotateCcw,
 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { instancesOf } from '@/cad/assembly/links';
+import { sameTransform } from '@/cad/placement';
+import { placementLabel, placingRecord } from '@/cad/sketchPlacement';
+import { useFacePick } from '@/components/sketch/facePick';
 import { useInspectorTab, type InspectorTab } from './inspectorTab';
 import { collectExportBodies } from '@/cad/export/collect';
 import type { LeftPanel } from '@/components/layout/LeftRail';
 import { useBrepEngine } from '@/cad/brep/client';
 import { solidConversion } from '@/cad/brep/convert';
-import { useFeatureTool } from '@/components/features/featureTool';
+import { featureTitle, useFeatureTool } from '@/components/features/featureTool';
 import { useSolidBuilder } from '@/components/features/solidBuilder';
-import { computeCombined } from '@/cad/operations/combine';
+import { computeCombined, exactStatus } from '@/cad/operations/combine';
 import { FONTS } from '@/cad/text/fonts';
 import { getMeshAsset } from '@/cad/assets';
 import { meshMeasures, meshReport } from '@/cad/operations/meshTools';
 import { sketchUsers } from '@/cad/sketchRecords';
+import { describeOp } from '@/cad/featureTree';
 import { useCadReady } from '@/viewport/cadReady';
 import type { CombineMode, FontId, SurfaceFinish } from '@/types/document';
 import { useEditor } from '@/store/editorStore';
@@ -264,6 +277,9 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
   const setTab = useInspectorTab((st) => st.setTab);
   const locked = isEffectivelyLocked(doc, object.id);
   const inheritedLock = locked && !object.locked;
+  // A body built from a placed sketch sits on its plane or face: it can't be moved on its own.
+  const placedBy = placingRecord(doc, object.id);
+  const fixedPlace = locked || !!placedBy || !!object.grounded;
   const parent = object.parentId ? doc.objects[object.parentId] : null;
   const isGroup = object.kind === 'group';
 
@@ -330,12 +346,13 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
           <>
             {parent && (
               <div className="mx-5 mt-4 flex items-start gap-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-muted">
-                <Info size={14} className="mt-px shrink-0" />
+                <Info size={14} className="mt-px shrink-0 text-accent-2" />
                 <span>
                   Inside <strong className="font-semibold text-ink">{parent.name}</strong>. Position and rotation are relative to the group.
                 </span>
               </div>
             )}
+            {object.kind === 'shape' && <PlacementNote object={object} locked={locked} />}
             {object.kind === 'shape' && <SolidHoleSwitch object={object} locked={locked} />}
             <Section
               title={isGroup ? `Group size (${units})` : `Size (${units})`}
@@ -369,7 +386,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                     shortcut="L"
                     tooltipSide="left"
                     className="h-7 min-w-7"
-                    disabled={locked}
+                    disabled={fixedPlace}
                     onClick={() => s.setTool('layflat')}
                   >
                     <BetweenHorizontalEnd size={15} />
@@ -379,7 +396,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                     shortcut="D"
                     tooltipSide="left"
                     className="h-7 min-w-7"
-                    disabled={locked}
+                    disabled={fixedPlace}
                     onClick={() => s.dropToWorkplane([object.id])}
                   >
                     <ArrowDownToLine size={15} />
@@ -392,7 +409,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                 length
                 value={object.transform.position}
                 step={1}
-                disabled={locked}
+                disabled={fixedPlace}
                 onCommit={(axis, v) => s.setPosition(object.id, object.transform.position.map((c, i) => (i === axis ? v : c)) as Vec3)}
               />
             </Section>
@@ -403,11 +420,13 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                 value={object.transform.rotation}
                 step={15}
                 decimals={1}
-                disabled={locked}
+                disabled={fixedPlace}
                 onCommit={(axis, v) => s.setRotation(object.id, object.transform.rotation.map((c, i) => (i === axis ? v : c)) as Vec3)}
               />
             </Section>
+            <AssemblySection object={object} locked={locked} />
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
+            <CopiesSection locked={locked} />
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
             <Section title="Options">
               <Toggle
@@ -438,6 +457,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
             {object.kind === 'shape' && object.shape === 'text' && <TextSection object={object} locked={locked} />}
             {object.kind === 'shape' && object.shape === 'profile' && <ProfileSection object={object} locked={locked} />}
             {object.kind === 'shape' && <PreciseSolidSection object={object} locked={locked} />}
+            {object.kind === 'shape' && <SketchOnFaceSection object={object} locked={locked} />}
             {object.kind === 'shape' &&
               object.shape !== 'text' &&
               object.shape !== 'mesh' &&
@@ -610,7 +630,7 @@ function AppearanceTab({ object, color, locked, isGroup }: { object: SceneObject
         </div>
       </Section>
       <p className="mx-5 mt-4 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted">
-        <Info size={13} className="mt-px shrink-0" />
+        <Info size={13} className="mt-px shrink-0 text-accent-2" />
         Appearance is for viewing only: it isn’t exported or printed. Colour is still included in 3MF and GLB files.
       </p>
     </>
@@ -989,6 +1009,95 @@ function MeshSection({ object, locked }: { object: ShapeObject; locked: boolean 
 }
 
 /** A sketched solid: reopen its sketch, or switch between extrude and revolve. */
+/**
+ * Where a body built from a placed sketch sits, or why its sketch's attachment is broken, with
+ * Detach (free it) and Re-attach (pick a face again).
+ */
+function PlacementNote({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const rec = useEditor((st) => (object.sketchId ? st.doc.sketches?.[object.sketchId] : undefined));
+  const doc = useEditor((st) => st.doc);
+  if (!rec?.placement) return null;
+  const where = placementLabel(doc, rec)!;
+  const btn = 'flex items-center gap-1 rounded-md border px-2 py-1 text-[12px] font-medium disabled:opacity-50';
+  return (
+    <div
+      className={`mx-5 mt-4 rounded-lg px-3 py-2 text-[12px] leading-snug ${rec.broken ? 'bg-amber-50 text-amber-900' : 'bg-brand-50 text-brand-ink'}`}
+      data-testid="placement-note"
+    >
+      <p>
+        {rec.broken ? (
+          <>
+            <strong className="font-semibold">Attachment broken.</strong> {rec.broken} It stays where it was until you re-attach or detach
+            its sketch.
+          </>
+        ) : (
+          <>
+            {where} (sketch <strong className="font-semibold">{rec.name}</strong>): it moves with it, so its position and rotation are set
+            there. Detach the sketch to move it on its own.
+          </>
+        )}
+      </p>
+      <span className="mt-1.5 flex gap-1.5">
+        {rec.placement.kind === 'face' && rec.broken && (
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => {
+              const p = rec.placement;
+              const target = p?.kind === 'face' && doc.objects[p.objectId] ? p.objectId : null;
+              if (target) void useFacePick.getState().start(target, { kind: 'reattach', sketchId: rec.id });
+              else useEditor.getState().notify('The body it was attached to is gone. Detach the sketch, or undo the deletion.');
+            }}
+            className={`${btn} border-amber-300 hover:bg-amber-100`}
+            data-testid="reattach-sketch"
+          >
+            <Crosshair size={12} /> Re-attach
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => useEditor.getState().detachSketch(rec.id)}
+          className={`${btn} ${rec.broken ? 'border-amber-300 hover:bg-amber-100' : 'border-brand/30 hover:bg-white/60'}`}
+          data-testid="detach-sketch"
+        >
+          <Link2Off size={12} /> Detach
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Start a new sketch on a flat face of this body (a precise solid, or a shape that can be made one). */
+function SketchOnFaceSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
+  const [busy, setBusy] = useState(false);
+  if (!solidConversion(object).ok) return null;
+  return (
+    <Section title="Sketch on a face">
+      <p className="text-[12px] leading-relaxed text-muted">
+        Draw a sketch on one of this body's flat faces. Bodies made from it stay on the face as this body changes.
+      </p>
+      <button
+        type="button"
+        disabled={locked || busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await useFacePick.getState().start(object.id, { kind: 'new' });
+          } finally {
+            setBusy(false);
+          }
+        }}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
+        data-testid="sketch-on-face"
+      >
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <PencilLine size={15} />}
+        {busy ? 'Finding its faces…' : 'Pick a face to sketch on'}
+      </button>
+    </Section>
+  );
+}
+
 function ProfileSection({ object, locked }: { object: ShapeObject; locked: boolean }) {
   const revolve = (object.params.op ?? 0) >= 1;
   const depth = object.params.depth ?? 5;
@@ -1138,6 +1247,7 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
     );
   }
   const ops = object.feature?.ops ?? [];
+  const rollback = object.feature?.rollback;
   const setOps = (next: typeof ops, label: string) => useEditor.getState().setFeatureOps(object.id, next, label);
   const base = object.feature?.base;
   const what =
@@ -1151,7 +1261,9 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
             ? `Loft (${base.sections.length} sections)`
             : base?.kind === 'sweep'
               ? 'Sweep'
-              : 'Unknown';
+              : base?.kind === 'boolean'
+                ? `Exact ${base.mode === 'intersect' ? 'intersection' : 'combination'} of ${base.parts.length} parts`
+                : 'Unknown';
   return (
     <Section title="Precise solid">
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]" data-testid="solid-info">
@@ -1193,68 +1305,103 @@ function PreciseSolidSection({ object, locked }: { object: ShapeObject; locked: 
           </button>
         ))}
       </div>
+      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+        {(['shell', 'draft', 'hole'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            disabled={locked}
+            onClick={() => void useFeatureTool.getState().start(object.id, k)}
+            className="flex h-8 items-center justify-center rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:bg-canvas disabled:opacity-50"
+            data-testid={`solid-${k}`}
+          >
+            {featureTitle(k)}
+          </button>
+        ))}
+      </div>
       {!!ops.length && (
         <ol className="mt-3 space-y-1" aria-label="Operations" data-testid="solid-ops">
-          {ops.map((op) => {
+          {ops.map((op, i) => {
             const problem = build?.problems.find((p) => p.id === op.id);
-            const size = op.kind === 'fillet' ? `R ${op.radius} mm` : `${op.distance} mm`;
+            const d = describeOp(op);
+            const rolledBack = rollback !== undefined && i >= rollback;
             return (
-              <li
-                key={op.id}
-                className={`rounded-lg border px-2 py-1.5 text-[12px] ${problem ? 'border-amber-300 bg-amber-50' : 'border-line'}`}
-                data-testid="solid-op"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={`flex-1 font-medium ${op.suppressed ? 'text-muted line-through' : 'text-ink'}`}>
-                    {op.kind === 'fillet' ? 'Fillet' : 'Chamfer'} {size} · {op.edges.length} edge{op.edges.length === 1 ? '' : 's'}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={locked}
-                    onClick={() => void useFeatureTool.getState().start(object.id, op.kind, op.id)}
-                    className="rounded px-1.5 py-0.5 text-brand-ink hover:bg-brand-50 disabled:opacity-40"
+              <Fragment key={op.id}>
+                {rollback === i && (
+                  <li
+                    className="flex items-center gap-2 rounded-lg border border-dashed border-brand/50 px-2 py-1.5 text-[12px] text-brand-ink"
+                    data-testid="rollback-marker"
                   >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={locked}
-                    aria-label={op.suppressed ? 'Turn this operation back on' : 'Turn this operation off (suppress)'}
-                    title={op.suppressed ? 'Turn on' : 'Turn off (suppress)'}
-                    onClick={() =>
-                      setOps(
-                        ops.map((o) => (o.id === op.id ? { ...o, suppressed: !o.suppressed } : o)),
-                        op.suppressed ? 'Unsuppress' : 'Suppress',
-                      )
-                    }
-                    className="rounded p-1 text-ink-3 hover:bg-canvas disabled:opacity-40"
-                  >
-                    {op.suppressed ? <EyeOff size={13} /> : <Eye size={13} />}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={locked}
-                    aria-label={`Delete this ${op.kind}`}
-                    onClick={() =>
-                      setOps(
-                        ops.filter((o) => o.id !== op.id),
-                        `Delete ${op.kind}`,
-                      )
-                    }
-                    className="rounded p-1 text-ink-3 hover:text-red-600 disabled:opacity-40"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                {problem && (
-                  <p className="mt-1 flex items-start gap-1 text-amber-800" data-testid="solid-problem">
-                    <CircleAlert size={13} className="mt-px shrink-0" />
-                    {problem.reason === 'missing-edges'
-                      ? `Needs attention: ${problem.message} Edit it to pick the edges again.`
-                      : problem.message}
-                  </p>
+                    <span className="flex-1">Rolled back here: the operations below are not built.</span>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => useEditor.getState().setRollback(object.id, null)}
+                      className="rounded px-1.5 py-0.5 font-medium hover:bg-brand-50 disabled:opacity-40"
+                    >
+                      Roll forward
+                    </button>
+                  </li>
                 )}
-              </li>
+                <li
+                  className={`rounded-lg border px-2 py-1.5 text-[12px] ${problem ? 'border-amber-300 bg-amber-50' : 'border-line'} ${rolledBack ? 'opacity-60' : ''}`}
+                  data-testid="solid-op"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`flex-1 font-medium ${op.suppressed ? 'text-muted line-through' : rolledBack ? 'text-muted' : 'text-ink'}`}
+                    >
+                      {d.label} {d.detail}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={locked || rolledBack}
+                      title={rolledBack ? 'Roll forward to edit this operation' : undefined}
+                      onClick={() => void useFeatureTool.getState().start(object.id, op.kind, op.id)}
+                      className="rounded px-1.5 py-0.5 text-brand-ink hover:bg-brand-50 disabled:opacity-40"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      aria-label={op.suppressed ? 'Turn this operation back on' : 'Turn this operation off (suppress)'}
+                      title={op.suppressed ? 'Turn on' : 'Turn off (suppress)'}
+                      onClick={() =>
+                        setOps(
+                          ops.map((o) => (o.id === op.id ? { ...o, suppressed: !o.suppressed } : o)),
+                          op.suppressed ? 'Unsuppress' : 'Suppress',
+                        )
+                      }
+                      className="rounded p-1 text-ink-3 hover:bg-canvas disabled:opacity-40"
+                    >
+                      {op.suppressed ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      aria-label={`Delete this ${op.kind}`}
+                      onClick={() =>
+                        setOps(
+                          ops.filter((o) => o.id !== op.id),
+                          `Delete ${op.kind}`,
+                        )
+                      }
+                      className="rounded p-1 text-ink-3 hover:text-red-600 disabled:opacity-40"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  {problem && (
+                    <p className="mt-1 flex items-start gap-1 text-amber-800" data-testid="solid-problem">
+                      <CircleAlert size={13} className="mt-px shrink-0" />
+                      {problem.reason === 'failed'
+                        ? problem.message
+                        : `Needs attention: ${problem.message} Edit it to pick the ${problem.reason.endsWith('faces') ? 'faces' : 'edges'} again.`}
+                    </p>
+                  )}
+                </li>
+              </Fragment>
             );
           })}
         </ol>
@@ -1312,6 +1459,7 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
       ) : (
         <p className="mt-2 text-[12px] text-muted">Parts are kept separate. Choose Union to merge them and cut holes.</p>
       )}
+      {group.combine && <ExactCombine group={group} locked={locked} />}
       {group.combine && (
         <button
           type="button"
@@ -1325,6 +1473,267 @@ function CombineSection({ group, locked }: { group: GroupObject; locked: boolean
           <Layers2 size={15} /> Flatten to mesh
         </button>
       )}
+    </Section>
+  );
+}
+
+/** Mirrored copies and patterns of the selection (real copies, grouped with it). */
+function CopiesSection({ locked }: { locked: boolean }) {
+  const s = useEditor.getState();
+  const [kind, setKind] = useState<'linear' | 'circular'>('linear');
+  const [count, setCount] = useState(3);
+  const [spacing, setSpacing] = useState(30);
+  const [axis, setAxis] = useState<0 | 1 | 2>(0);
+  const [angle, setAngle] = useState(360);
+  const [centre, setCentre] = useState<'origin' | 'selection'>('origin');
+  const seg = (on: boolean) => `flex-1 rounded-md py-1 text-[12px] font-medium ${on ? 'bg-panel text-brand-ink shadow-sm' : 'text-ink-2'}`;
+  const btn =
+    'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50';
+  return (
+    <Section title="Copies">
+      <p className="mb-1.5 text-[12px] text-muted">Mirror a copy (placed touching this one):</p>
+      <div className="flex gap-1.5">
+        {(['X', 'Y', 'Z'] as const).map((a, i) => (
+          <button
+            key={a}
+            type="button"
+            className={btn}
+            disabled={locked}
+            onClick={() => s.mirrorCopySelected(i as 0 | 1 | 2)}
+            aria-label={`Mirror a copy across ${a}`}
+          >
+            <FlipHorizontal2 size={14} /> {a}
+          </button>
+        ))}
+      </div>
+      <p className="mb-1.5 mt-3 text-[12px] text-muted">Or repeat it in a pattern:</p>
+      <div role="radiogroup" aria-label="Pattern type" className="flex rounded-lg bg-canvas p-0.5">
+        {(
+          [
+            ['linear', 'Row'],
+            ['circular', 'Circle'],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={seg(kind === k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-[1fr_120px] items-center gap-2 text-[12px] text-ink-2">
+        <span>Copies (with this one)</span>
+        <NumberField
+          value={count}
+          onCommit={(v) => setCount(Math.max(2, Math.round(v)))}
+          min={2}
+          max={200}
+          step={1}
+          decimals={0}
+          ariaLabel="Pattern count"
+        />
+        {kind === 'linear' ? (
+          <>
+            <span>Spacing</span>
+            <NumberField
+              value={spacing}
+              onCommit={setSpacing}
+              min={-10000}
+              max={10000}
+              step={1}
+              decimals={2}
+              suffix="mm"
+              ariaLabel="Pattern spacing (mm)"
+            />
+            <span>Along</span>
+            <div role="radiogroup" aria-label="Pattern axis" className="flex rounded-lg bg-canvas p-0.5">
+              {(['X', 'Y', 'Z'] as const).map((a, i) => (
+                <button
+                  key={a}
+                  type="button"
+                  role="radio"
+                  aria-checked={axis === i}
+                  onClick={() => setAxis(i as 0 | 1 | 2)}
+                  className={seg(axis === i)}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <span>Over</span>
+            <NumberField
+              value={angle}
+              onCommit={setAngle}
+              min={1}
+              max={360}
+              step={15}
+              decimals={0}
+              suffix="°"
+              ariaLabel="Pattern angle (°)"
+            />
+            <span>Round</span>
+            <div role="radiogroup" aria-label="Pattern centre" className="flex rounded-lg bg-canvas p-0.5">
+              {(
+                [
+                  ['origin', 'Origin'],
+                  ['selection', 'Itself'],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={centre === k}
+                  onClick={() => setCentre(k)}
+                  className={seg(centre === k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => s.patternSelected(kind === 'linear' ? { kind, count, spacing, axis } : { kind, count, angle, centre })}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-2 text-[13px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50"
+        data-testid="make-pattern"
+      >
+        <Copy size={15} /> Make pattern
+      </button>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted">
+        Circles turn about the vertical axis. The copies are grouped with the original; each copy is independent.
+      </p>
+    </Section>
+  );
+}
+
+/** Whether a combination is exact (precise solids), and the step to a single precise solid. */
+function ExactCombine({ group, locked }: { group: GroupObject; locked: boolean }) {
+  const doc = useEditor((st) => st.doc);
+  const version = useCadReady((st) => st.version);
+  const engine = useBrepEngine((st) => st.status);
+  const [busy, setBusy] = useState(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const st = useMemo(() => exactStatus(doc, group.id), [doc, group, version, engine]);
+  const make = async () => {
+    setBusy(true);
+    try {
+      await useEditor.getState().makeGroupPrecise(group.id);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const text =
+    st.state === 'exact'
+      ? 'Exact: computed from the precise shapes, and written exactly to STEP.'
+      : st.state === 'building'
+        ? 'Computing the exact result…'
+        : st.state === 'available'
+          ? 'Every part can be exact. Make it exact to fillet the result or export exact STEP.'
+          : `Mesh result. ${st.reason ?? ''}`;
+  return (
+    <div className="mt-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="combine-exact">
+      <p className="flex items-start gap-1.5">
+        <Gem size={13} className={`mt-px shrink-0 ${st.state === 'exact' ? 'text-emerald-600' : 'text-muted'}`} />
+        {text}
+      </p>
+      {st.state !== 'mesh' && (
+        <button
+          type="button"
+          disabled={locked || busy || st.state === 'building'}
+          onClick={() => void make()}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-line py-1.5 text-[12px] font-medium text-ink-2 hover:border-brand hover:text-brand-ink disabled:opacity-50"
+          data-testid="combine-make-precise"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Gem size={14} />}
+          {busy ? (engine === 'loading' ? 'Loading the precise-solid engine…' : 'Building…') : 'Make one precise solid'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Assembly controls: grounding, home position, suppression and, for a linked instance, its link. */
+function AssemblySection({ object, locked }: { object: SceneObject; locked: boolean }) {
+  const s = useEditor.getState();
+  const doc = useEditor((st) => st.doc);
+  const cid = object.kind === 'group' ? object.componentId : undefined;
+  const copies = cid ? instancesOf(doc, cid).length : 0;
+  const others = Object.entries(doc.components ?? {}).filter(([id]) => id !== cid && instancesOf(doc, id).length > 0);
+  const moved = !!object.home && !sameTransform(object.home, object.transform);
+  return (
+    <Section title="Assembly">
+      {cid && (
+        <div className="mb-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="instance-info">
+          {copies > 1 ? (
+            <>
+              Linked component: <strong className="font-semibold text-accent-2">{copies} copies</strong> change together. Position, name,
+              grounding and suppression are this copy's own.
+            </>
+          ) : (
+            <>Component (the only copy).</>
+          )}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {copies > 1 && (
+              <Button size="sm" disabled={locked} onClick={() => s.breakLink(object.id)} data-testid="break-link">
+                <Link2Off size={13} /> Make independent
+              </Button>
+            )}
+            {others.length > 0 && (
+              <select
+                aria-label="Replace with another component"
+                disabled={locked}
+                value=""
+                onChange={(e) => e.target.value && s.replaceComponent(object.id, e.target.value)}
+                className="h-8 rounded-lg border border-line bg-panel px-2 text-[12px] text-ink-2"
+                data-testid="replace-component"
+              >
+                <option value="">Replace with…</option>
+                {others.map(([id, c]) => (
+                  <option key={id} value={id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="space-y-1">
+        <Toggle
+          label="Grounded (fixed in place)"
+          icon={<Anchor size={15} className="text-muted" />}
+          checked={!!object.grounded}
+          disabled={locked}
+          onChange={(v) => s.setGrounded([object.id], v)}
+        />
+        <Toggle
+          label="Suppressed (left out of the model)"
+          icon={<CircleSlash size={15} className="text-muted" />}
+          checked={!!object.suppressed}
+          disabled={locked}
+          onChange={(v) => s.setSuppressed([object.id], v)}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <Button size="sm" disabled={locked} onClick={() => s.setHome([object.id])} data-testid="set-home">
+          <Home size={13} /> Set home
+        </Button>
+        <Button
+          size="sm"
+          disabled={locked || !moved || !!object.grounded}
+          onClick={() => s.resetToHome([object.id])}
+          data-testid="reset-home"
+          title={object.home ? 'Move back to the home position' : 'No home position set yet'}
+        >
+          <RotateCcw size={13} /> Reset to home
+        </Button>
+      </div>
+      {object.grounded && <p className="mt-2 text-[12px] text-muted">Grounded parts can't be moved. Unground it to move it.</p>}
     </Section>
   );
 }

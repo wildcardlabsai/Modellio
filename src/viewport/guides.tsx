@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { FastLine } from './FastLine';
 import type { SnapGuide } from '@/cad/snapping';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 /** Transient snap guides shown while dragging. */
 export const useGuides = create<{ guides: SnapGuide[] }>(() => ({ guides: [] }));
@@ -35,3 +36,6 @@ export function SnapGuides() {
     </group>
   );
 }
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('guides', () => useGuides.setState({ guides: [] }));

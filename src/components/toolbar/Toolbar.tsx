@@ -17,7 +17,6 @@ import {
   Download,
   Pencil,
   ChevronDown,
-  Menu,
 } from 'lucide-react';
 import {
   Share2,
@@ -97,15 +96,7 @@ export function Toolbar() {
 
   return (
     <div className="scrollbar-thin flex h-[52px] shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line bg-panel px-3">
-      <Popover
-        trigger={({ open, toggle }) => (
-          <IconButton label="File menu" active={open} onClick={toggle}>
-            <Menu size={19} />
-          </IconButton>
-        )}
-      >
-        {(close) => <FileMenu onDone={close} onVersions={() => setVersionsOpen(true)} />}
-      </Popover>
+      <FileMenu onVersions={() => setVersionsOpen(true)} />
       <label className="group flex shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-canvas">
         <input
           aria-label="Project name"
@@ -177,7 +168,12 @@ export function Toolbar() {
         </IconButton>
         <Popover
           trigger={({ open, toggle }) => (
-            <IconButton label="Features: fillet, chamfer, loft and sweep" active={open} onClick={toggle} data-testid="features-menu">
+            <IconButton
+              label="Features: fillet, chamfer, shell, draft, hole, loft and sweep"
+              active={open}
+              onClick={toggle}
+              data-testid="features-menu"
+            >
               <Sparkles size={17} />
               <span className="hidden 2xl:inline">Features</span>
               <ChevronDown size={13} />

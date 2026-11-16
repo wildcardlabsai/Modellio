@@ -12,7 +12,7 @@ export function MobilePaneTabs({ labels }: { labels: Record<MakerPane, string> }
   ];
   return (
     <nav
-      className="grid shrink-0 grid-cols-3 border-t border-line bg-white md:hidden"
+      className="grid shrink-0 grid-cols-3 border-t border-line bg-panel md:hidden"
       aria-label="Maker sections"
       data-testid="maker-mobile-tabs"
     >
@@ -22,7 +22,7 @@ export function MobilePaneTabs({ labels }: { labels: Record<MakerPane, string> }
           type="button"
           aria-pressed={pane === id}
           onClick={() => setPane(id)}
-          className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${pane === id ? 'text-brand' : 'text-[#475467]'}`}
+          className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${pane === id ? 'text-brand-ink' : 'text-ink-3'}`}
         >
           <Icon size={18} />
           {labels[id]}

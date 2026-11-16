@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
-import { Check, CircleHelp, Loader2, Redo2, Save, Undo2 } from 'lucide-react';
+import { Check, CircleDot, CircleHelp, Loader2, Menu as MenuIcon, Redo2, Save, Undo2 } from 'lucide-react';
+import { ProjectMenu, type ProjectActions } from '@/components/projects/ProjectMenu';
 import { Popover } from '@/components/ui/Popover';
-import { useEditor } from '@/store/editorStore';
 
 /**
  * The shared header for makers: name, the maker's own view controls, undo/redo, help and
@@ -17,7 +17,7 @@ export function MakerHeader({
   onUndo,
   onRedo,
   help,
-  save,
+  project,
 }: {
   title: string;
   testId: string;
@@ -27,12 +27,14 @@ export function MakerHeader({
   onUndo?: () => void;
   onRedo?: () => void;
   help: ReactNode;
-  /** Present when the maker can save its design as a project. */
-  save?: {
-    /** The saved project's name, if this design is already a project. */
-    project: { id: string; name: string } | null;
-    suggestedName: () => string;
-    run: (name: string) => Promise<void>;
+  /** The maker's project controls (from `useMakerProject`). */
+  project?: {
+    /** The saved project's name, or null for a design not saved yet. */
+    name: string | null;
+    dirty: boolean;
+    busy: boolean;
+    actions: ProjectActions;
+    save: () => Promise<boolean>;
   };
 }) {
   return (
@@ -40,7 +42,35 @@ export function MakerHeader({
       className="surface-night flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-night-line bg-night-900 px-3 py-1.5 text-fog sm:px-5"
       data-testid={`${testId}-header`}
     >
+      {project && (
+        <ProjectMenu
+          actions={project.actions}
+          trigger={({ open, toggle }) => (
+            <button
+              type="button"
+              aria-label="File menu"
+              aria-expanded={open}
+              onClick={toggle}
+              title="Project: new, open, save…"
+              className={iconBtn}
+            >
+              <MenuIcon size={18} />
+            </button>
+          )}
+        />
+      )}
       <h1 className="text-[14px] font-semibold text-white">{title}</h1>
+      {project && (
+        <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-haze" data-testid="maker-project">
+          <span className="max-w-[180px] truncate">{project.name ?? 'Not saved yet'}</span>
+          {project.dirty && (
+            <span className="flex items-center gap-1 text-amber-300" title="Unsaved changes" data-testid="maker-unsaved">
+              <CircleDot size={13} />
+              <span className="sr-only">Unsaved changes</span>
+            </span>
+          )}
+        </span>
+      )}
       {children}
       <div className="flex-1" />
       {onUndo && (
@@ -62,12 +92,12 @@ export function MakerHeader({
         )}
       >
         {() => (
-          <div className="w-72 text-[13px] leading-relaxed text-[#344054]" role="dialog" aria-label={`${title} help`}>
+          <div className="w-72 text-[13px] leading-relaxed text-ink-2" role="dialog" aria-label={`${title} help`}>
             {help}
           </div>
         )}
       </Popover>
-      {save && <SaveButton {...save} />}
+      {project && <SaveButton project={project} />}
     </div>
   );
 }
@@ -75,90 +105,26 @@ export function MakerHeader({
 const iconBtn =
   'flex h-9 w-9 items-center justify-center rounded-lg text-haze hover:bg-white/10 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent';
 
-function SaveButton({ project, suggestedName, run }: NonNullable<Parameters<typeof MakerHeader>[0]['save']>) {
-  const [busy, setBusy] = useState(false);
+function SaveButton({ project }: { project: NonNullable<Parameters<typeof MakerHeader>[0]['project']> }) {
   const [done, setDone] = useState(false);
-  const [name, setName] = useState('');
-  const go = async (n: string, close?: () => void) => {
-    setBusy(true);
-    try {
-      await run(n);
-      close?.();
-      setDone(true);
-      setTimeout(() => setDone(false), 1800);
-    } catch (e) {
-      useEditor.getState().notify(`Could not save: ${e instanceof Error ? e.message : e}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const label = busy ? 'Saving…' : done ? 'Saved' : 'Save project';
-  const icon = busy ? <Loader2 size={15} className="animate-spin" /> : done ? <Check size={15} /> : <Save size={15} />;
-  const cls =
-    'btn-gradient inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-[13px] font-semibold text-white disabled:opacity-60';
-  // Already a project: save straight over it.
-  if (project)
-    return (
-      <button
-        type="button"
-        className={cls}
-        disabled={busy}
-        onClick={() => void go(project.name)}
-        title={`Save “${project.name}”`}
-        data-testid="maker-save"
-      >
-        {icon} {label}
-      </button>
-    );
+  const label = project.busy ? 'Saving…' : done ? 'Saved' : 'Save';
+  const icon = project.busy ? <Loader2 size={15} className="animate-spin" /> : done ? <Check size={15} /> : <Save size={15} />;
   return (
-    <Popover
-      align="right"
-      trigger={({ open, toggle }) => (
-        <button
-          type="button"
-          className={cls}
-          aria-expanded={open}
-          onClick={() => {
-            if (!open) setName(suggestedName());
-            toggle();
-          }}
-          data-testid="maker-save"
-        >
-          {icon} {label}
-        </button>
-      )}
+    <button
+      type="button"
+      className="btn-gradient inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-[13px] font-semibold text-white disabled:opacity-60"
+      disabled={project.busy}
+      title={project.name ? `Save “${project.name}” (Ctrl+S)` : 'Save this design (Ctrl+S)'}
+      onClick={async () => {
+        if (await project.save()) {
+          setDone(true);
+          setTimeout(() => setDone(false), 1800);
+        }
+      }}
+      data-testid="maker-save"
     >
-      {(close) => (
-        <form
-          className="w-64"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void go(name, close);
-          }}
-        >
-          <label className="text-[12px] font-medium text-[#344054]">
-            Project name
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-              maxLength={80}
-              className="mt-1 h-9 w-full rounded-md border border-line px-2 text-[14px] text-ink outline-none focus:border-brand"
-            />
-          </label>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-            Saved on this device. Reopen it from the dashboard, here or in the Design Studio.
-          </p>
-          <button
-            type="submit"
-            disabled={busy || !name.trim()}
-            className="mt-2 h-9 w-full rounded-lg bg-brand text-[13px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-          >
-            Save project
-          </button>
-        </form>
-      )}
-    </Popover>
+      {icon} {label}
+    </button>
   );
 }
 

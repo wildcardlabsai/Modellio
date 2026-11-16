@@ -11,7 +11,10 @@ import {
 } from '../kernel/meshData';
 import { runBoolean, type BooleanJob, type BooleanOutcome } from '../kernel/booleanCore';
 import { buildGeometryForShape } from '../shapeRegistry';
-import { setCombinedBoundsResolver, siblingsOf, worldMatrix } from '../hierarchy';
+import { descendantShapes, setCombinedBoundsResolver, siblingsOf, worldMatrix } from '../hierarchy';
+import { getBrep, useBrepEngine } from '../brep/client';
+import { solidConversion } from '../brep/convert';
+import { featureKey, requestKey, type BooleanPart, type BrepBuild, type BrepRequest, type FeatureBase } from '../brep/types';
 import { addMeshAsset } from '../assets';
 import { matrixToTransform, transformToMatrix } from '../transforms/transform';
 import { createId } from '@/utils/id';
@@ -39,6 +42,8 @@ export interface CombineResult {
   triangles: number;
   /** The previous result, shown while a new one is computed in the background. */
   stale?: boolean;
+  /** Built by the exact engine from precise parts (not a mesh Boolean). */
+  exact?: boolean;
 }
 
 class PendingError extends Error {}
@@ -53,9 +58,22 @@ function geometryKey(doc: ModelDocument, groupId: ObjectId): string {
     const o = doc.objects[id];
     if (!o) return;
     if (o.kind === 'shape') {
-      parts.push([id, o.visible, o.transform, o.shape, o.size, o.params, o.mirror, o.text, o.meshId, o.isHole]);
+      parts.push([
+        id,
+        o.visible && !o.suppressed,
+        o.transform,
+        o.shape,
+        o.size,
+        o.params,
+        o.mirror,
+        o.text,
+        o.meshId,
+        o.isHole,
+        featureKey(o.feature),
+        o.sketch,
+      ]);
     } else {
-      parts.push([id, o.visible, o.transform, o.combine, o.children.length]);
+      parts.push([id, o.visible && !o.suppressed, o.transform, o.combine, o.children.length]);
       o.children.forEach(visit);
     }
   };
@@ -65,7 +83,7 @@ function geometryKey(doc: ModelDocument, groupId: ObjectId): string {
 
 function firstSolidColor(doc: ModelDocument, id: ObjectId): string | null {
   const o = doc.objects[id];
-  if (!o || !o.visible) return null;
+  if (!o || !o.visible || o.suppressed) return null;
   if (o.kind === 'shape') return o.isHole ? null : o.color;
   for (const c of o.children) {
     const col = firstSolidColor(doc, c);
@@ -98,6 +116,17 @@ export function computeCombined(doc: ModelDocument, groupId: ObjectId): CombineR
 
   const key = geometryKey(doc, groupId);
   const color = firstSolidColor(doc, groupId) ?? '#94A3B8';
+
+  // Exact first, when every part can be exact and the engine is (or is already needed) at hand.
+  const exact = exactCombineRequest(doc, groupId);
+  if ('req' in exact && wantsExact(doc, groupId)) {
+    const { entry } = getBrep(exact.req, { lane: `combine:${groupId}` });
+    if (entry.state === 'ready') {
+      const r = exactResult(exact.req, entry.build, color);
+      lastByGroup.set(groupId, r);
+      return r;
+    }
+  }
   const hit = cache.get(key);
   if (hit) {
     lastByGroup.set(groupId, hit);
@@ -130,13 +159,122 @@ export function computeCombined(doc: ModelDocument, groupId: ObjectId): CombineR
   return store(key, groupId, runBoolean(k, job), color);
 }
 
+// ---------- exact Booleans (precise solids) ----------
+
+type BooleanBase = Extract<FeatureBase, { kind: 'boolean' }>;
+
+/**
+ * The exact combination of a group: every visible part as a precise recipe placed in the group's
+ * frame (primitives are converted the same way "Make precise solid" would). Says why when a part
+ * cannot be exact (text, meshes, hollow shapes…).
+ */
+export function exactBooleanBase(doc: ModelDocument, groupId: ObjectId): { base: BooleanBase } | { why: string } {
+  const group = doc.objects[groupId];
+  if (group?.kind !== 'group' || !group.combine) return { why: 'Not a combination.' };
+  const frameInv = worldMatrix(doc, groupId).invert();
+  const parts: BooleanPart[] = [];
+  let why: string | null = null;
+  const collect = (id: ObjectId) => {
+    const o = doc.objects[id];
+    if (!o || !o.visible || o.suppressed || why) return;
+    const rel = frameInv.clone().multiply(worldMatrix(doc, id));
+    if (o.kind === 'shape') {
+      const conv = solidConversion(o);
+      if (!conv.ok) {
+        why = `${o.name}: ${conv.reason}`;
+        return;
+      }
+      const recipe = conv.recipe;
+      parts.push({
+        name: o.name,
+        recipe,
+        size: recipe.base.kind === 'primitive' ? ([...o.size] as Vec3) : [0, 0, 0],
+        fit: [...o.size] as Vec3,
+        ...(o.mirror ? { mirror: [...o.mirror] as Vec3 } : {}),
+        matrix: rel.toArray(),
+        hole: o.isHole,
+      });
+      return;
+    }
+    if (o.combine) {
+      const sub = exactBooleanBase(doc, id);
+      if ('why' in sub) {
+        why = sub.why;
+        return;
+      }
+      parts.push({ name: o.name, recipe: { base: sub.base, ops: [] }, size: [0, 0, 0], matrix: rel.toArray(), hole: false });
+      return;
+    }
+    o.children.forEach(collect);
+  };
+  group.children.forEach(collect);
+  if (why) return { why };
+  if (!parts.some((p) => !p.hole)) return { why: 'It has only holes.' };
+  return { base: { kind: 'boolean', mode: group.combine === 'intersect' ? 'intersect' : 'union', parts } };
+}
+
+export function exactCombineRequest(doc: ModelDocument, groupId: ObjectId): { req: BrepRequest } | { why: string } {
+  const b = exactBooleanBase(doc, groupId);
+  return 'why' in b ? b : { req: { recipe: { base: b.base, ops: [] }, size: [0, 0, 0] } };
+}
+
+/**
+ * Use the exact engine without being asked only when it is already loaded or a part is already
+ * a precise solid: a plain group of primitives should not download the 23 MB engine by itself.
+ */
+function wantsExact(doc: ModelDocument, groupId: ObjectId): boolean {
+  return useBrepEngine.getState().status === 'ready' || descendantShapes(doc, [groupId]).some((o) => o.shape === 'solid');
+}
+
+const exactCache = new Map<string, CombineResult>();
+
+/** An exact build as a combine result, in the group's frame (builds are centred on their base). */
+function exactResult(req: BrepRequest, build: BrepBuild, color: string): CombineResult {
+  const key = requestKey(req);
+  const hit = exactCache.get(key);
+  if (hit) return hit.color === color ? hit : { ...hit, color };
+  const positions = new Float32Array(build.positions.length);
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i] = build.positions[i] + build.centre[0];
+    positions[i + 1] = build.positions[i + 1] + build.centre[1];
+    positions[i + 2] = build.positions[i + 2] + build.centre[2];
+  }
+  const mesh = { positions, indices: build.indices };
+  const result: CombineResult = {
+    mesh,
+    error: null,
+    bounds: meshDataBounds(mesh),
+    color,
+    isHole: false,
+    triangles: build.indices.length / 3,
+    exact: true,
+  };
+  exactCache.set(key, result);
+  if (exactCache.size > CACHE_LIMIT) exactCache.delete(exactCache.keys().next().value!);
+  return result;
+}
+
+/** Whether a group is (or can be) combined exactly, for the Inspector. */
+export function exactStatus(
+  doc: ModelDocument,
+  groupId: ObjectId,
+): { state: 'exact' | 'building' | 'available' | 'mesh'; reason?: string; req?: BrepRequest } {
+  const x = exactCombineRequest(doc, groupId);
+  if ('why' in x) return { state: 'mesh', reason: x.why };
+  if (!wantsExact(doc, groupId)) return { state: 'available', req: x.req };
+  const { entry } = getBrep(x.req, { lane: `combine:${groupId}` });
+  if (entry.state === 'ready') return { state: 'exact', req: x.req };
+  if (entry.state === 'pending') return { state: 'building', req: x.req };
+  return { state: 'mesh', reason: entry.message, req: x.req };
+}
+
 function prepareJob(doc: ModelDocument, groupId: ObjectId): BooleanJob {
   const group = doc.objects[groupId] as Extract<SceneObject, { kind: 'group' }>;
   const frameInv = worldMatrix(doc, groupId).invert();
   const parts: BooleanJob['parts'] = [];
   const collect = (id: ObjectId) => {
     const o: SceneObject | undefined = doc.objects[id];
-    if (!o || !o.visible) return;
+    if (!o || !o.visible || o.suppressed) return;
     const rel = frameInv.clone().multiply(worldMatrix(doc, id));
     if (o.kind === 'shape') {
       const geo = buildGeometryForShape(o);
@@ -258,6 +396,38 @@ export function bakeGroupDraft(doc: ModelDocument, groupId: ObjectId, name: stri
     size: [roundTo(size.x), roundTo(size.y), roundTo(size.z)],
     color: r.color,
     isHole: r.isHole,
+    transform: matrixToTransform(local),
+    visible: g.visible,
+    locked: false,
+    parentId: g.parentId,
+  };
+  replaceInTreeDraft(doc, groupId, [shape]);
+  return id;
+}
+
+/**
+ * Replace a combined group by one precise solid whose base is the exact combination of its parts
+ * (built beforehand: `build`). Fillets, shells and holes can then follow it. The parts are kept
+ * inside its recipe; undo brings the editable group back.
+ */
+export function solidFromGroupDraft(doc: ModelDocument, groupId: ObjectId, base: BooleanBase, build: BrepBuild): ObjectId | null {
+  const g = doc.objects[groupId];
+  if (!g || g.kind !== 'group' || !g.combine) return null;
+  // The solid is displayed centred on its box: place it where the combination's box is.
+  const box = meshDataBounds({ positions: build.positions, indices: build.indices });
+  const c = box.getCenter(new THREE.Vector3()).add(new THREE.Vector3(...build.centre));
+  const local = transformToMatrix(g.transform).multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
+  const id = createId();
+  const shape: ShapeObject = {
+    id,
+    kind: 'shape',
+    name: g.name,
+    shape: 'solid',
+    feature: { base, ops: [] },
+    params: {},
+    size: build.size.map((v) => roundTo(v, 4)) as Vec3,
+    color: firstSolidColor(doc, groupId) ?? '#94A3B8',
+    isHole: false,
     transform: matrixToTransform(local),
     visible: g.visible,
     locked: false,

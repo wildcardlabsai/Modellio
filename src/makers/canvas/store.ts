@@ -31,7 +31,10 @@ export interface MakerState<P, R> {
   templateId: string | null;
   /** The saved project this design belongs to (set by Save, or when opened from the dashboard). */
   project: { id: string; name: string } | null;
+  /** Set the project this design belongs to; the design then matches it (not dirty). */
   setProject: (project: { id: string; name: string } | null) => void;
+  /** Changed since it was last saved, opened or started. */
+  dirty: boolean;
   result: R | null;
   error: string | null;
   building: boolean;
@@ -59,8 +62,13 @@ export function createMakerStore<P extends object, R>(opts: {
   defaults: P;
   build: (elements: DesignElement[], params: P) => Promise<R>;
 }): UseBoundStore<StoreApi<MakerState<P, R>>> {
-  let saved: Partial<{ elements: DesignElement[]; params: P; templateId: string | null; project: { id: string; name: string } | null }> =
-    {};
+  let saved: Partial<{
+    elements: DesignElement[];
+    params: P;
+    templateId: string | null;
+    project: { id: string; name: string } | null;
+    dirty: boolean;
+  }> = {};
   if (typeof window !== 'undefined')
     try {
       saved = JSON.parse(localStorage.getItem(opts.key) ?? '{}');
@@ -75,9 +83,10 @@ export function createMakerStore<P extends object, R>(opts: {
 
   return create<MakerState<P, R>>((set, get) => {
     const persist = () => {
-      const { elements, params, templateId, project } = get();
+      // The working design is kept on this device (it is the maker's recovery draft).
+      const { elements, params, templateId, project, dirty } = get();
       try {
-        localStorage.setItem(opts.key, JSON.stringify({ elements, params, templateId, project }));
+        localStorage.setItem(opts.key, JSON.stringify({ elements, params, templateId, project, dirty }));
       } catch {
         /* storage full or unavailable */
       }
@@ -85,7 +94,7 @@ export function createMakerStore<P extends object, R>(opts: {
     const snapshot = (): Snapshot<P> => ({ elements: get().elements, params: get().params });
     const commit = (patch: Partial<MakerState<P, R>>, transient = false) => {
       if (!transient) set({ past: [...get().past.slice(-99), snapshot()], future: [] });
-      set(patch);
+      set({ dirty: true, ...patch });
       persist();
       get().rebuild();
     };
@@ -94,8 +103,9 @@ export function createMakerStore<P extends object, R>(opts: {
       selected: null,
       tool: 'select',
       project: saved.project ?? null,
+      dirty: saved.dirty ?? false,
       setProject: (project) => {
-        set({ project });
+        set({ project, dirty: false });
         persist();
       },
       side: 'front',
@@ -144,21 +154,22 @@ export function createMakerStore<P extends object, R>(opts: {
           templateId,
           selected: null,
           side: 'front',
-          // A template or blank start is a new design, not the saved project.
+          // A template or blank start is a new design, not the saved project; nothing to save yet.
           project: null,
+          dirty: false,
         }),
       undo: () => {
         const { past } = get();
         if (!past.length) return;
         const prev = past[past.length - 1];
-        set({ ...prev, past: past.slice(0, -1), future: [snapshot(), ...get().future], selected: null });
+        set({ ...prev, past: past.slice(0, -1), future: [snapshot(), ...get().future], selected: null, dirty: true });
         persist();
         get().rebuild();
       },
       redo: () => {
         const { future } = get();
         if (!future.length) return;
-        set({ ...future[0], future: future.slice(1), past: [...get().past, snapshot()], selected: null });
+        set({ ...future[0], future: future.slice(1), past: [...get().past, snapshot()], selected: null, dirty: true });
         persist();
         get().rebuild();
       },

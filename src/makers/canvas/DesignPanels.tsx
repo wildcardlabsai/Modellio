@@ -47,7 +47,7 @@ export interface PanelConfig {
   backRoles?: string[];
 }
 
-const btn = 'flex h-8 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-[#344054] hover:bg-[#f9fafb]';
+const btn = 'flex h-8 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-ink-2 hover:bg-canvas';
 
 function ShapeThumb({ id }: { id: string }) {
   const d = useMemo(() => {
@@ -159,7 +159,7 @@ export function AddBar({
     <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Add to the design">
       <button
         type="button"
-        className={`${btn} ${tool === 'select' ? 'border-brand bg-brand-50 text-brand' : ''}`}
+        className={`${btn} ${tool === 'select' ? 'border-brand bg-brand-50 text-brand-ink' : ''}`}
         aria-pressed={tool === 'select'}
         onClick={() => setTool('select')}
       >
@@ -185,7 +185,7 @@ export function AddBar({
                   close();
                   addShape(s.id);
                 }}
-                className="flex aspect-square items-center justify-center rounded-md text-[#344054] hover:bg-brand-50 hover:text-brand"
+                className="flex aspect-square items-center justify-center rounded-md text-ink-2 hover:bg-brand-50 hover:text-brand-ink"
               >
                 <ShapeThumb id={s.id} />
               </button>
@@ -210,7 +210,7 @@ export function AddBar({
       </Popover>
       <button
         type="button"
-        className={`${btn} ${tool === 'draw' ? 'border-brand bg-brand-50 text-brand' : ''}`}
+        className={`${btn} ${tool === 'draw' ? 'border-brand bg-brand-50 text-brand-ink' : ''}`}
         aria-pressed={tool === 'draw'}
         onClick={() => setTool(tool === 'draw' ? 'select' : 'draw')}
       >
@@ -229,7 +229,7 @@ function AssetPicker({ onPick, onUpload }: { onPick: (a: AssetRecord) => void; o
   return (
     <div className="w-64" role="menu" aria-label="Assets" data-testid="maker-assets">
       <p className="px-1 pb-2 text-[12px] leading-relaxed text-muted">Your saved logos and artwork, shared with the Design Studio.</p>
-      {loaded && !assets.length && <p className="px-1 pb-2 text-[12px] text-[#475467]">No SVGs or pictures saved yet.</p>}
+      {loaded && !assets.length && <p className="px-1 pb-2 text-[12px] text-ink-3">No SVGs or pictures saved yet.</p>}
       <div className="grid max-h-64 grid-cols-3 gap-1.5 overflow-y-auto">
         {assets.map((a) => (
           <button
@@ -242,7 +242,7 @@ function AssetPicker({ onPick, onUpload }: { onPick: (a: AssetRecord) => void; o
             className="overflow-hidden rounded-md border border-line hover:border-brand"
             data-testid="maker-asset"
           >
-            <img src={a.thumb} alt="" className="aspect-square w-full bg-[#f5f7fb] object-contain" />
+            <img src={a.thumb} alt="" className="aspect-square w-full bg-canvas object-contain" />
           </button>
         ))}
       </div>
@@ -269,7 +269,7 @@ export function LayersPanel({ useStore, config }: { useStore: AnyMakerStore; con
               type="button"
               onClick={() => select(el.id)}
               aria-pressed={selected === el.id}
-              className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[12px] ${selected === el.id ? 'border-brand bg-brand-50' : 'border-transparent hover:bg-[#f9fafb]'}`}
+              className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[12px] ${selected === el.id ? 'border-brand bg-brand-50' : 'border-transparent hover:bg-canvas'}`}
               data-testid="layer"
             >
               <span
@@ -280,7 +280,7 @@ export function LayersPanel({ useStore, config }: { useStore: AnyMakerStore; con
               <span className="min-w-0 flex-1 truncate font-medium text-ink">
                 {el.kind === 'text' ? `“${el.text}”` : (el.name ?? el.kind)}
               </span>
-              <span className="shrink-0 text-[11px] text-[#475467]">
+              <span className="shrink-0 text-[11px] text-ink-3">
                 {el.side === 'back' ? 'Back · ' : ''}
                 {role?.label ?? el.role}
               </span>
@@ -357,7 +357,7 @@ export function Inspector({ useStore, config }: { useStore: AnyMakerStore; confi
                 const a = naturalAspect({ ...el, font } as DesignElement);
                 update(el.id, { font, ...(a ? { w: Math.round(el.h * a * 10) / 10 } : {}) } as Partial<DesignElement>);
               }}
-              className="mt-0.5 h-9 w-full rounded-md border border-line bg-white px-1.5 text-[13px] text-ink"
+              className="mt-0.5 h-9 w-full rounded-md border border-line bg-panel px-1.5 text-[13px] text-ink"
             >
               {FONTS.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -380,7 +380,7 @@ export function Inspector({ useStore, config }: { useStore: AnyMakerStore; confi
                 role="radio"
                 aria-checked={el.role === r.value}
                 onClick={() => update(el.id, { role: r.value })}
-                className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-medium ${el.role === r.value ? 'border-brand bg-brand-50 text-brand' : 'border-line text-[#344054] hover:bg-[#f9fafb]'}`}
+                className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-medium ${el.role === r.value ? 'border-brand bg-brand-50 text-brand-ink' : 'border-line text-ink-2 hover:bg-canvas'}`}
               >
                 <span className="h-2.5 w-2.5 rounded-sm" style={{ background: r.colour }} aria-hidden />
                 {r.label}

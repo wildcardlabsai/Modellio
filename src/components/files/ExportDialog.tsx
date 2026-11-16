@@ -217,8 +217,8 @@ function ExportDialogInner({ onClose }: { onClose: () => void }) {
         )}
         {collection.skippedHoles > 0 && (
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-muted">
-            <Info size={14} className="mt-px shrink-0" /> {collection.skippedHoles} hole{collection.skippedHoles > 1 ? 's' : ''} not inside
-            a combination
+            <Info size={14} className="mt-px shrink-0 text-accent-2" /> {collection.skippedHoles} hole
+            {collection.skippedHoles > 1 ? 's' : ''} not inside a combination
             {collection.skippedHoles > 1 ? ' were' : ' was'} skipped (holes only cut when combined).
           </p>
         )}

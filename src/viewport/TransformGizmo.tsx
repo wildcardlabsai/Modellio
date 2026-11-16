@@ -5,6 +5,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { useEditor } from '@/store/editorStore';
 import type { ModelDocument, ObjectId, Transform } from '@/types/document';
 import { matrixToTransform } from '@/cad/transforms/transform';
+import { placingRecord } from '@/cad/sketchPlacement';
 import { isEffectivelyLocked, isEffectivelyVisible, parentWorldMatrix, topLevel, worldBoundsOf, worldMatrix } from '@/cad/hierarchy';
 import { viewport } from './viewportBridge';
 import { DEG2RAD, roundTo } from '@/utils/math';
@@ -104,7 +105,8 @@ export function TransformGizmo() {
   }, [controls, orbit]);
 
   const items = gizmoItems(doc, selection);
-  const blocked = items.some((id) => isEffectivelyLocked(doc, id));
+  // Locked objects, and bodies that sit on their sketch's plane or face, don't get the gizmo.
+  const blocked = items.some((id) => isEffectivelyLocked(doc, id) || !!placingRecord(doc, id) || !!doc.objects[id]?.grounded);
   // Resizing uses the one-sided ResizeHandles instead of the gizmo's scale mode.
   const enabled = items.length > 0 && !blocked && mode !== 'scale';
 

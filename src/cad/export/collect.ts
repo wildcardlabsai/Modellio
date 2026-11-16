@@ -3,7 +3,7 @@ import type { ModelDocument, ObjectId, Vec3 } from '@/types/document';
 import { solidConversion } from '../brep/convert';
 import type { BrepRequest } from '../brep/types';
 import { buildGeometryForShape, solidRequest } from '../shapeRegistry';
-import { computeCombined } from '../operations/combine';
+import { computeCombined, exactCombineRequest } from '../operations/combine';
 import { worldMatrix } from '../hierarchy';
 import { geometryToMeshData, meshDataBounds, type MeshData } from '../kernel/meshData';
 import { analyzeMesh } from '../geometry/validate';
@@ -52,7 +52,7 @@ export function collectExportBodies(doc: ModelDocument, ids?: ObjectId[]): Expor
 
   const visit = (id: ObjectId) => {
     const o = doc.objects[id];
-    if (!o || !o.visible) return;
+    if (!o || !o.visible || o.suppressed) return;
     if (o.kind === 'shape') {
       if (o.isHole) {
         out.skippedHoles++;
@@ -99,7 +99,22 @@ export function collectExportBodies(doc: ModelDocument, ids?: ObjectId[]): Expor
         positions[i + 1] = v.y;
         positions[i + 2] = v.z;
       }
-      add(id, o.name, r.color, { positions, indices: r.mesh.indices });
+      // An exact combination is written to STEP exactly, placed at the centre of its box.
+      let exact: ExportBody['exact'];
+      const x = r.exact ? exactCombineRequest(doc, id) : null;
+      if (x && 'req' in x) {
+        const c = r.bounds.getCenter(new THREE.Vector3());
+        const size = r.bounds.getSize(new THREE.Vector3()).toArray() as Vec3;
+        exact = {
+          req: x.req,
+          size,
+          matrix: m
+            .clone()
+            .multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z))
+            .toArray(),
+        };
+      }
+      add(id, o.name, r.color, { positions, indices: r.mesh.indices }, exact);
       return;
     }
     o.children.forEach(visit);

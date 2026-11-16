@@ -263,7 +263,7 @@ export function DesignCanvas({
           x2={x}
           y1={-(view.minY + view.h)}
           y2={-view.minY}
-          stroke={x % (step * 2) === 0 ? '#E3DFD5' : '#EFEBE3'}
+          style={{ stroke: x % (step * 2) === 0 ? 'var(--color-line-strong)' : 'var(--color-line)' }}
           strokeWidth={px}
         />,
       );
@@ -275,7 +275,7 @@ export function DesignCanvas({
           y2={-y}
           x1={view.minX}
           x2={view.minX + view.w}
-          stroke={y % (step * 2) === 0 ? '#E3DFD5' : '#EFEBE3'}
+          style={{ stroke: y % (step * 2) === 0 ? 'var(--color-line-strong)' : 'var(--color-line)' }}
           strokeWidth={px}
         />,
       );
@@ -283,7 +283,8 @@ export function DesignCanvas({
   }, [view.minX, view.minY, view.w, view.h, px]);
 
   return (
-    <div className="relative h-full w-full bg-[#FAF9F6]" data-testid="design-canvas">
+    // The printable artboard stays light (colours read true); around it is the workspace's stage.
+    <div className="relative h-full w-full bg-stage" data-testid="design-canvas">
       <svg
         ref={svg}
         viewBox={`${view.minX} ${-(view.minY + view.h)} ${view.w} ${view.h}`}
@@ -297,7 +298,17 @@ export function DesignCanvas({
         onKeyDown={onKey}
       >
         <rect x={view.minX} y={-(view.minY + view.h)} width={view.w} height={view.h} fill="transparent" onPointerDown={onBackgroundDown} />
-        <g pointerEvents="none">{gridLines}</g>
+        <rect
+          x={-artboard.w / 2}
+          y={-artboard.h / 2}
+          width={artboard.w}
+          height={artboard.h}
+          style={{ fill: 'var(--color-artboard)' }}
+          pointerEvents="none"
+        />
+        <g pointerEvents="none" opacity={0.6}>
+          {gridLines}
+        </g>
         <rect
           x={-artboard.w / 2}
           y={-artboard.h / 2}
@@ -410,7 +421,7 @@ export function DesignCanvas({
         ))}
         {sel && tool === 'select' && <Selection el={sel} px={px} handle={handle} toWorld={toWorld} startDrag={startDrag} />}
       </svg>
-      <div className={`${MONO} pointer-events-none absolute bottom-2 left-3 text-[11px] text-[#5B6270]`}>
+      <div className={`${MONO} pointer-events-none absolute bottom-2 left-3 text-[11px] text-muted`}>
         {artboard.label ?? `${artboard.w} × ${artboard.h} mm`}
         {sel ? ` · ${sel.name ?? sel.kind}: ${sel.w.toFixed(1)} × ${sel.h.toFixed(1)} mm` : ''}
       </div>

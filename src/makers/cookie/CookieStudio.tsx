@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 're
 import { useMakerPane, paneClass } from '../shell/mobilePane';
 import { MobilePaneTabs } from '../shell/MobilePaneTabs';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
-import { capturePreview } from '../shell/capture';
-import { useProjects } from '@/store/projectStore';
-import { useMakerHandoff } from '@/platform/handoff';
+import { useMakerProject } from '../shell/makerProject';
 import { DEFAULT_COOKIE_PARAMS } from './geometry';
 import { CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, TriangleAlert } from 'lucide-react';
 import { useCookie, openCookieTemplate, startBlankCookie, resizeDesign } from './store';
@@ -21,8 +19,6 @@ import { Toggle } from '@/components/ui/Toggle';
 import { Segmented } from '@/components/ui/Modal';
 import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
-import { useEditor } from '@/store/editorStore';
-import { useStudio } from '@/app/studio';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 
 const MONO = "font-['Space_Mono',ui-monospace,monospace]";
@@ -66,14 +62,31 @@ export default function CookieStudio() {
   const pane = useMakerPane((s) => s.pane);
   const [view, setView] = useState<'design' | '3d'>('design');
   const [error, setError] = useState<string | null>(null);
+  // Saving, opening, new designs and Open in Design Studio: the shared project lifecycle.
+  const mp = useMakerProject({
+    studio: 'cookie',
+    label: 'Cookie Maker',
+    schema: 1,
+    project: () => useCookie.getState().project,
+    setProject: (p) => useCookie.getState().setProject(p),
+    dirty: () => useCookie.getState().dirty,
+    state: () => {
+      const st = useCookie.getState();
+      return { elements: st.elements, params: st.params, templateId: st.templateId };
+    },
+    parts: () => useCookie.getState().result?.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })) ?? null,
+    load: (state) => {
+      const st = state as { elements: never[]; params: typeof DEFAULT_COOKIE_PARAMS; templateId: string | null };
+      useCookie.getState().load(st.elements, st.params, st.templateId);
+    },
+    startBlank: startBlankCookie,
+    suggestedName: designName,
+  });
+  const project = useCookie((s) => s.project);
+  const dirty = useCookie((s) => s.dirty);
+  const controls = { name: project?.name ?? null, dirty, busy: mp.busy, actions: mp.actions, save: () => mp.save() };
   useEffect(() => {
     (window as unknown as { modellioCookie: unknown }).modellioCookie = { store: useCookie, openCookieTemplate, startBlankCookie };
-    const handed = useMakerHandoff.getState().take('cookie');
-    if (handed) {
-      const st = handed.state as { elements: never[]; params: typeof DEFAULT_COOKIE_PARAMS; templateId: string | null };
-      useCookie.getState().load(st.elements, st.params, st.templateId);
-      useCookie.getState().setProject({ id: handed.projectId, name: handed.name });
-    }
     useCookie.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -118,10 +131,11 @@ export default function CookieStudio() {
       }}
       onDrop={(e) => void onDrop(e)}
     >
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} project={controls} />
+      {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <aside
-          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
+          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-panel xl:w-[320px] ${paneClass(pane, 'tools')}`}
           aria-label="Cookie design"
           data-testid="cookie-left"
         >
@@ -146,22 +160,22 @@ export default function CookieStudio() {
             <button
               type="button"
               onClick={() => setView('3d')}
-              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-white shadow-panel"
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-panel shadow-panel"
               aria-label="Show the 3D preview larger"
               data-testid="cookie-mini-preview"
             >
-              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-[#344054]">3D preview</span>
+              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-ink-2">3D preview</span>
               <span className="pointer-events-none block h-full w-full">
                 <Preview3D />
               </span>
             </button>
           )}
         </main>
-        <RightPanel />
+        <RightPanel openInDesign={() => void mp.openInDesign()} />
       </div>
       <MobilePaneTabs labels={{ tools: 'Templates & tools', canvas: 'Design', settings: 'Settings & export' }} />
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand">
+        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand-ink">
           Drop an SVG or picture to add it to the cookie
         </div>
       )}
@@ -169,11 +183,18 @@ export default function CookieStudio() {
   );
 }
 
-function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design' | '3d') => void }) {
+function Header({
+  view,
+  setView,
+  project: controls,
+}: {
+  view: 'design' | '3d';
+  setView: (v: 'design' | '3d') => void;
+  project: NonNullable<Parameters<typeof MakerHeader>[0]['project']>;
+}) {
   const make = useCookie((s) => s.params.make);
   const canUndo = useCookie((s) => s.past.length > 0);
   const canRedo = useCookie((s) => s.future.length > 0);
-  const project = useCookie((s) => s.project);
   const { undo, redo, setParams } = useCookie.getState();
   return (
     <MakerHeader
@@ -193,24 +214,7 @@ function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design
           </ol>
         </>
       }
-      save={{
-        project,
-        suggestedName: designName,
-        run: async (name) => {
-          const st = useCookie.getState();
-          if (!st.result) throw new Error('The cookie has not finished building.');
-          const id = await useProjects.getState().saveMakerProject({
-            id: st.project?.id,
-            name,
-            studio: 'cookie',
-            schema: 1,
-            state: { elements: st.elements, params: st.params, templateId: st.templateId },
-            parts: st.result.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
-            thumbnail: capturePreview(),
-          });
-          st.setProject({ id, name });
-        },
-      }}
+      project={controls}
     >
       <HeaderTabs
         label="What to make"
@@ -456,29 +460,21 @@ function designName() {
   return `${COOKIE_TEMPLATES.find((t) => t.id === templateId)?.name ?? 'My'} cookie`;
 }
 
-function RightPanel() {
+function RightPanel({ openInDesign }: { openInDesign: () => void }) {
   const pane = useMakerPane((s) => s.pane);
   const result = useCookie((s) => s.result);
   const error = useCookie((s) => s.error);
   const building = useCookie((s) => s.building);
   const body = (p: CookiePart) => ({ id: p.id, name: p.name, color: PART_COLOURS[p.id], mesh: p.mesh, watertight: p.watertight });
-  const customise = () => {
-    if (!result) return;
-    useEditor.getState().importMeshes(
-      result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
-      { groupName: designName() },
-    );
-    useStudio.getState().openInDesign({ studio: 'cookie', label: 'Cookie Maker' });
-  };
   return (
     <aside
-      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-panel xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Cookie settings and result"
       data-testid="cookie-right"
     >
       <section className={section} aria-labelledby="cookie-result-heading">
         <h2 id="cookie-result-heading" className={`${heading} flex items-center gap-2`}>
-          Your cookie {building && <Loader2 size={14} className="animate-spin text-brand" aria-label="updating" />}
+          Your cookie {building && <Loader2 size={14} className="animate-spin text-brand-ink" aria-label="updating" />}
         </h2>
         {error && (
           <p role="alert" className="flex gap-2 rounded-lg bg-red-50 p-2 text-[12px] text-red-800" data-testid="cookie-error">
@@ -494,7 +490,7 @@ function RightPanel() {
               {result.parts.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center gap-2 rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]"
+                  className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-[12px]"
                   data-testid="cookie-part"
                   data-part={p.id}
                 >
@@ -504,13 +500,13 @@ function RightPanel() {
                     <span className="text-muted">{p.size.map((v) => v.toFixed(1)).join(' × ')} mm</span>
                   </span>
                   {p.watertight ? (
-                    <CircleCheck size={14} className="shrink-0 text-[#067647]" aria-label="closed solid" />
+                    <CircleCheck size={14} className="shrink-0 text-emerald-700" aria-label="closed solid" />
                   ) : (
                     <CircleAlert size={14} className="text-red-600" aria-label="not a closed solid" />
                   )}
                   <button
                     type="button"
-                    className="rounded-md px-1.5 py-1 font-medium text-brand hover:bg-brand-50"
+                    className="rounded-md px-1.5 py-1 font-medium text-brand-ink hover:bg-brand-50"
                     aria-label={`Download ${p.name} as STL`}
                     onClick={() =>
                       downloadBytes(new Uint8Array(writeBinaryStl([body(p)])), `${slugify(designName())}-${p.id}.stl`, 'model/stl')
@@ -532,7 +528,7 @@ function RightPanel() {
             ))}
             {result.notes.map((n) => (
               <p key={n} className="mt-2 flex gap-2 text-[12px] leading-relaxed text-muted">
-                <Info size={14} className="mt-0.5 shrink-0 text-brand" /> {n}
+                <Info size={14} className="mt-0.5 shrink-0 text-accent-2" /> {n}
               </p>
             ))}
           </>
@@ -549,10 +545,10 @@ function RightPanel() {
             </button>
             <button
               type="button"
-              onClick={customise}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+              onClick={openInDesign}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
             >
-              <PencilRuler size={16} /> Open a copy in Design Studio
+              <PencilRuler size={16} /> Open in Design Studio
             </button>
             <p className="text-[11px] leading-relaxed text-muted">
               Print the cutter flange-down and the stamp face-up; no supports needed. Printed layers can trap dough: use a filament rated

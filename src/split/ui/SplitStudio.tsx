@@ -1,11 +1,24 @@
-import { useEffect, useState, type DragEvent } from 'react';
-import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert, Undo2, Redo2 } from 'lucide-react';
-import { STEPS, useSplit } from '../store';
+import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
+import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert, Undo2, Redo2, Menu as MenuIcon } from 'lucide-react';
+import { ProjectMenu } from '@/components/projects/ProjectMenu';
+import { useMakerProject } from '@/makers/shell/makerProject';
+import { STEPS, currentParts, useSplit } from '../store';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { SplitViewport, splitView } from './SplitViewport';
 import { openSample, openSplitPicker } from './intake';
+import { base64ToBytes, bytesToBase64 } from '@/utils/base64';
+
+/** Largest source file kept inside a saved split project (bigger ones save their parts only). */
+export const MAX_KEPT_SOURCE = 40 * 1024 * 1024;
+
+/** What a saved split project holds (maker state). */
+export interface SavedSplit {
+  settings?: Record<string, unknown>;
+  fileName?: string | null;
+  source?: { name: string; data: string };
+}
 
 /**
  * Split Studio shell: guided stepper (Import → Split → Connect → Export), step panel,
@@ -14,6 +27,51 @@ import { openSample, openSplitPicker } from './intake';
 export default function SplitStudio() {
   const doc = useSplit((s) => s.doc);
   const [dragging, setDragging] = useState(false);
+  // The shared project lifecycle: New, Open, Recent, Save (the split parts as a project that opens
+  // in the Design Studio), Return to dashboard.
+  const mp = useMakerProject({
+    studio: 'split',
+    label: 'Split Studio',
+    schema: 1,
+    project: () => useSplit.getState().project,
+    setProject: (p) => useSplit.getState().setProject(p),
+    dirty: () => useSplit.getState().dirty,
+    state: () => {
+      const st = useSplit.getState();
+      // The source file is kept (up to a size limit) so the project can be reopened here and carried on.
+      const src = st.source && st.source.bytes.length <= MAX_KEPT_SOURCE ? st.source : null;
+      return {
+        settings: { splitOptions: st.splitOptions, connectorSettings: st.connectorSettings, plateSettings: st.plateSettings },
+        fileName: st.doc?.fileName ?? null,
+        ...(src ? { source: { name: src.name, data: bytesToBase64(src.bytes) } } : {}),
+      };
+    },
+    parts: async () => {
+      // Saving at the Import step splits the model first (the project holds its parts).
+      const st = useSplit.getState();
+      if (st.doc && !currentParts(st).length) {
+        if (st.step === 'import') st.setStep('split');
+        await useSplit.getState().ensure();
+      }
+      const parts = currentParts(useSplit.getState());
+      return parts.length ? parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })) : null;
+    },
+    load: (state) => {
+      const saved = state as SavedSplit | undefined;
+      if (!saved?.source) return;
+      void useSplit
+        .getState()
+        .resume({ name: saved.source.name, bytes: base64ToBytes(saved.source.data), settings: saved.settings })
+        .then((ok) => {
+          if (!ok) useSplit.setState({ error: `“${saved.source!.name}” could not be reopened from this project.` });
+        });
+    },
+    startBlank: () => useSplit.getState().closeDocument(),
+    suggestedName: () => {
+      const d = useSplit.getState().doc;
+      return `${(d?.metadata.Title || d?.fileName || 'Model').replace(/\.3mf$/i, '')} (split)`;
+    },
+  });
 
   useEffect(() => {
     (window as unknown as { modellioSplit: unknown }).modellioSplit = { store: useSplit, view: splitView };
@@ -54,7 +112,8 @@ export default function SplitStudio() {
       }}
       onDrop={onDrop}
     >
-      <Stepper />
+      <Stepper projectMenu={<ProjectMenu actions={mp.actions} trigger={splitMenuTrigger} />} />
+      {mp.dialog}
       <ErrorBanner />
       <div className="relative flex min-h-0 flex-1">
         <LeftPanel />
@@ -67,7 +126,7 @@ export default function SplitStudio() {
       </div>
       <ImportProgress />
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand">
+        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand-ink">
           Drop the 3MF file to import it
         </div>
       )}
@@ -77,7 +136,13 @@ export default function SplitStudio() {
 
 const darkIcon = 'flex h-9 w-9 items-center justify-center rounded-lg text-haze hover:bg-white/10 hover:text-white disabled:opacity-35';
 
-function Stepper() {
+const splitMenuTrigger = ({ open, toggle }: { open: boolean; toggle: () => void }) => (
+  <button type="button" aria-label="File menu" aria-expanded={open} onClick={toggle} title="Project: new, open, save…" className={darkIcon}>
+    <MenuIcon size={18} />
+  </button>
+);
+
+function Stepper({ projectMenu }: { projectMenu: ReactNode }) {
   const step = useSplit((s) => s.step);
   const doc = useSplit((s) => s.doc);
   const split = useSplit((s) => s.split);
@@ -93,6 +158,7 @@ function Stepper() {
       className="surface-night flex h-12 shrink-0 items-center gap-1 border-b border-night-line bg-night-900 px-3 text-fog sm:px-5"
       aria-label="Split Studio steps"
     >
+      {projectMenu}
       <span className="mr-3 hidden text-[14px] font-semibold text-white md:block">Split Studio</span>
       <ol className="flex items-center gap-1">
         {STEPS.map((s, i) => {
@@ -160,17 +226,17 @@ function JobProgress() {
   const pct = Math.round(job.fraction * 100);
   return (
     <div
-      className="absolute left-1/2 top-4 z-20 flex w-[min(92%,360px)] -translate-x-1/2 items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-float"
+      className="absolute left-1/2 top-4 z-20 flex w-[min(92%,360px)] -translate-x-1/2 items-center gap-3 rounded-xl bg-panel px-4 py-3 shadow-float"
       role="status"
       data-testid="split-job"
     >
-      <Loader2 size={16} className="shrink-0 animate-spin text-brand" />
+      <Loader2 size={16} className="shrink-0 animate-spin text-brand-ink" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-ink">
           {job.stage} · {pct}%
         </p>
         <div
-          className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#eef1f6]"
+          className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stage"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -183,7 +249,7 @@ function JobProgress() {
       <button
         type="button"
         onClick={() => useSplit.getState().cancelJob()}
-        className="rounded-md px-2 py-1 text-[12px] font-medium text-[#344054] hover:bg-[#f2f4f7]"
+        className="rounded-md px-2 py-1 text-[12px] font-medium text-ink-2 hover:bg-canvas"
       >
         Cancel
       </button>
@@ -214,10 +280,10 @@ function EmptyState() {
   return (
     <div className="absolute inset-0 flex items-center justify-center p-6">
       <div
-        className="w-full max-w-md rounded-2xl border-2 border-dashed border-[#c9d1de] bg-white/90 p-8 text-center shadow-panel"
+        className="w-full max-w-md rounded-2xl border-2 border-dashed border-line-strong bg-panel/90 p-8 text-center shadow-panel"
         data-testid="split-empty"
       >
-        <FileUp size={32} className="mx-auto mb-3 text-brand" />
+        <FileUp size={32} className="mx-auto mb-3 text-brand-ink" />
         <h2 className="mb-1 text-[16px] font-semibold text-ink">Import a multi-colour 3MF</h2>
         <p className="mb-5 text-[13px] leading-relaxed text-muted">
           Drop a .3mf file here, or choose one. Files stay on this device — nothing is uploaded.
@@ -233,7 +299,7 @@ function EmptyState() {
           <button
             type="button"
             onClick={openSample}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line px-4 text-[14px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line px-4 text-[14px] font-medium text-ink-2 hover:bg-canvas"
           >
             <Sparkles size={16} /> Try a sample
           </button>
@@ -250,15 +316,15 @@ function ImportProgress() {
   const pct = Math.round(importing.fraction * 100);
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-navy/30" data-testid="split-progress">
-      <div role="status" aria-live="polite" className="w-[min(92vw,380px)] rounded-2xl bg-white p-5 shadow-float">
+      <div role="status" aria-live="polite" className="w-[min(92vw,380px)] rounded-2xl bg-panel p-5 shadow-float">
         <div className="mb-1 flex items-center gap-2 text-[14px] font-semibold text-ink">
-          <Loader2 size={16} className="animate-spin text-brand" /> Importing {importing.fileName}
+          <Loader2 size={16} className="animate-spin text-brand-ink" /> Importing {importing.fileName}
         </div>
         <p className="mb-3 text-[12px] text-muted">
           {importing.stage} · {pct}%
         </p>
         <div
-          className="mb-4 h-2 overflow-hidden rounded-full bg-[#eef1f6]"
+          className="mb-4 h-2 overflow-hidden rounded-full bg-stage"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -270,7 +336,7 @@ function ImportProgress() {
         <button
           type="button"
           onClick={cancel}
-          className="h-9 w-full rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+          className="h-9 w-full rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
         >
           Cancel import
         </button>

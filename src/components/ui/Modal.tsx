@@ -20,8 +20,14 @@ export function Modal({ title, onClose, children, footer, width = 520 }: Props) 
       [
         ...(panel.current?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ?? []),
       ].filter((el) => !el.hasAttribute('disabled'));
-    const first = panel.current?.querySelector<HTMLElement>('[autofocus]') ?? focusables()[0];
-    first?.focus();
+    // Focus after the event that opened the dialog has finished: an Enter that opened it (say,
+    // committing a field) must not go on to press the dialog's first button.
+    const focusTimer = setTimeout(() => {
+      // A field that focused itself (autoFocus) keeps the focus.
+      if (panel.current?.contains(document.activeElement)) return;
+      const first = panel.current?.querySelector<HTMLElement>('[data-autofocus]') ?? focusables()[0];
+      first?.focus();
+    }, 0);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -41,6 +47,7 @@ export function Modal({ title, onClose, children, footer, width = 520 }: Props) 
     };
     window.addEventListener('keydown', onKey, true);
     return () => {
+      clearTimeout(focusTimer);
       window.removeEventListener('keydown', onKey, true);
       previouslyFocused?.focus?.();
     };

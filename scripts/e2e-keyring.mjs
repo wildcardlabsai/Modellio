@@ -320,14 +320,33 @@ const stlBytes = fs.readFileSync(await stl.path());
 const tris = stlBytes.readUInt32LE(80);
 check('38. Each part downloads as a binary STL', stlBytes.length === 84 + tris * 50 && tris > 0, `${tris} triangles`);
 
-// 7. A copy in the Design Studio, and back
-const rootsBefore = await S(() => window.modellio.store.getState().doc.rootIds.length);
+// 7. The same project in the Design Studio, and back (one project, two views)
 const designBefore = JSON.stringify((await state()).elements);
-await page.getByRole('button', { name: 'Open a copy in Design Studio' }).click();
+await page.getByRole('button', { name: 'Open in Design Studio' }).click();
+// Not saved yet: it is saved first (under a name), then opened as that project.
+await page.getByTestId('project-name-input').fill('Studio tag');
+await page.getByTestId('project-name-save').click();
 await page.getByTestId('left-panel').waitFor();
+// The Design Studio shows at once; the project itself finishes loading a moment later.
+await page
+  .waitForFunction(() => window.modellio.projects.getState().current?.id === window.modellioKeyring.store.getState().project?.id, null, {
+    timeout: 15000,
+  })
+  .catch(() => {});
+const opened = await S(() => {
+  const p = window.modellio.projects.getState();
+  return {
+    current: p.current?.id,
+    maker: p.currentMaker?.studio,
+    keyringProject: window.modellioKeyring.store.getState().project?.id,
+    copies: p.projects.filter((x) => x.name === 'Studio tag').length,
+    roots: window.modellio.store.getState().doc.rootIds.length,
+  };
+});
 check(
-  '39. "Open a copy in Design Studio" adds the tag to the editor',
-  (await S(() => window.modellio.store.getState().doc.rootIds.length)) === rootsBefore + 1,
+  '39. "Open in Design Studio" opens the same project (saved first), not a copy merged into another design',
+  opened.current === opened.keyringProject && opened.maker === 'keyring' && opened.copies === 1 && opened.roots === 1,
+  JSON.stringify(opened),
 );
 check('40. The Design Studio shows a bar to go back to the maker', await page.getByTestId('return-bar').isVisible());
 await page.getByRole('button', { name: 'Back to Keyring Maker' }).click();

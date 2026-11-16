@@ -1,5 +1,5 @@
 import type { Sketch } from '@/cad/sketch/types';
-import type { FeatureRecipe } from '@/cad/brep/types';
+import type { FaceRef, FeatureRecipe } from '@/cad/brep/types';
 /**
  * MODELLIO document model.
  *
@@ -73,6 +73,17 @@ interface BaseObject {
   visible: boolean;
   locked: boolean;
   parentId: ObjectId | null;
+  /**
+   * Schema 4: inside a component instance, which part of the component this is. The same in every
+   * instance, so linked instances can be kept identical part by part.
+   */
+  defNode?: string;
+  /** Schema 4: fixed in place in the assembly (it can't be moved until ungrounded). */
+  grounded?: boolean;
+  /** Schema 4: where "Reset position" puts it back to. */
+  home?: Transform;
+  /** Schema 4: left out of the design (not shown, combined, exported or checked) but kept. */
+  suppressed?: boolean;
 }
 
 /** On-screen surface finish. Appearance only: it does not change geometry or exports. */
@@ -126,6 +137,11 @@ export interface GroupObject extends BaseObject {
   combine?: CombineMode;
   /** A component (schema 2+): a named, reusable part listed under Components. Plain groups are assemblies. */
   component?: boolean;
+  /**
+   * Schema 4: the component this group is an instance of. Instances of the same component are
+   * linked: editing the parts of one changes them in every other.
+   */
+  componentId?: ComponentId;
   /** Child ids in display order. Children's transforms are relative to this group. */
   children: ObjectId[];
 }
@@ -139,19 +155,135 @@ export interface DocumentSettings {
 }
 
 export type SketchId = string;
+export type ComponentId = string;
+
+/** A component definition (schema 4): its instances are the groups whose `componentId` is this. */
+export interface ComponentDef {
+  id: ComponentId;
+  name: string;
+  createdAt: number;
+}
+
+export type JointKind = 'rigid' | 'revolute' | 'slider' | 'cylindrical' | 'planar';
+export type JointValue = 'angle' | 'offset' | 'u' | 'v';
+
+/**
+ * A joint (schema 4) connecting part A to part B. Each has a frame (a 4×4 matrix, column-major,
+ * in the part's own coordinates); the joint's axis is the frame's Z. B's placement follows from
+ * A's and the values (angle in degrees about the axis; offset along it; u, v across the plane).
+ */
+export interface Joint {
+  id: string;
+  name: string;
+  kind: JointKind;
+  a: ObjectId;
+  b: ObjectId;
+  frameA: number[];
+  frameB: number[];
+  values: Partial<Record<JointValue, number>>;
+  /** Allowed range per value, [min, max]. */
+  limits?: Partial<Record<JointValue, [number, number]>>;
+  suppressed?: boolean;
+  /**
+   * How the joint was placed from geometry (Stage 4H): the face or edge picked on each part (the
+   * body, and its face or edge found again by reference), and the mate options. Absent for joints
+   * placed with axis presets.
+   */
+  placement?: JointPlacement;
+}
+
+/** A picked face or edge of a body (see `FaceRef` / `EdgeRef` in the exact-geometry types). */
+export interface JointRefData {
+  objectId: ObjectId;
+  face?: { kind: string; centre: Vec3; normal: Vec3; area: number };
+  edge?: { kind: string; mid: Vec3; dir: Vec3; radius: number; faces?: [Vec3, Vec3] };
+  /** What it was, in words ("a flat face of Base"). */
+  label: string;
+}
+
+export interface JointPlacement {
+  a: JointRefData;
+  b: JointRefData;
+  flip: boolean;
+  offset: number;
+  angle: number;
+}
+
+/** One step of an exploded view: these objects move by `offset` (world mm). */
+export interface ExplodeStep {
+  id: string;
+  name?: string;
+  objectIds: ObjectId[];
+  offset: Vec3;
+}
+
+/** An exploded view (schema 4): display only, it never moves the design itself. */
+export interface ExplodeView {
+  id: string;
+  name: string;
+  steps: ExplodeStep[];
+}
+
+/**
+ * A sketch's plane in the world (schema 3+): `origin` is the sketch's (0, 0), `x` and `y` its
+ * axes (unit, at right angles). The sketch's normal, x × y, is the way extrusions grow.
+ */
+export interface Frame {
+  origin: Vec3;
+  x: Vec3;
+  y: Vec3;
+}
+
+export type PlaneId = string;
+
+/**
+ * A reference plane (schema 3+): one of the three main planes, moved along its normal by
+ * `offset` mm and optionally tilted by `tilt` degrees about its own x axis.
+ */
+export interface RefPlane {
+  id: PlaneId;
+  name: string;
+  base: 'XY' | 'XZ' | 'YZ';
+  offset: number;
+  tilt: number;
+  visible: boolean;
+}
+
+/**
+ * Where a standalone sketch sits (schema 3+): on a reference plane, or attached to a flat face
+ * of a body (found again by its reference after the body changes).
+ */
+export type SketchPlacement = { kind: 'plane'; planeId: PlaneId } | { kind: 'face'; objectId: ObjectId; face: FaceRef };
 
 /** A standalone sketch (schema 2+): exists on its own and can drive several bodies. */
 export interface SketchRecord {
   id: SketchId;
   name: string;
   sketch: Sketch;
+  /** Schema 3+: where the sketch sits. Without one, its bodies are placed freely (as in schema 2). */
+  placement?: SketchPlacement;
+  /** The placement's last resolved frame: bodies built from the sketch sit on it. */
+  frame?: Frame;
+  /** Why the placement can no longer be resolved (its face is gone, …). Nothing is moved while broken. */
+  broken?: string;
 }
 
 export interface ModelDocument {
-  /** 2 adds standalone sketches and components. Version 1 documents are migrated on load. */
-  schemaVersion: 1 | 2;
+  /**
+   * 2 adds standalone sketches and components; 3 adds reference planes and sketch placements.
+   * Older documents are migrated on load.
+   */
+  schemaVersion: 1 | 2 | 3 | 4;
   /** Standalone sketches by id (schema 2+; absent in version 1 documents). */
   sketches?: Record<SketchId, SketchRecord>;
+  /** Reference planes by id (schema 3+). */
+  planes?: Record<PlaneId, RefPlane>;
+  /** Component definitions (schema 4+). */
+  components?: Record<ComponentId, ComponentDef>;
+  /** Assembly joints (schema 4+). */
+  joints?: Record<string, Joint>;
+  /** Exploded views (schema 4+). */
+  explodeViews?: Record<string, ExplodeView>;
   objects: Record<ObjectId, SceneObject>;
   /** Top-level draw / hierarchy order. */
   rootIds: ObjectId[];

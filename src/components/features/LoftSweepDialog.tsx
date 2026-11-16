@@ -14,7 +14,7 @@ const oneOutline = (s: Sketch) => {
   return n === 1
     ? null
     : n === 0
-      ? 'Draw one closed outline (lines and arcs that join up, or a circle).'
+      ? 'Draw one closed outline (lines, arcs and splines that join up, or a circle).'
       : `Use a single outline (this sketch has ${n}).`;
 };
 const onePath = (s: Sketch) => {
@@ -71,7 +71,7 @@ export function LoftSweepDialog() {
         description={
           isLoft
             ? 'A solid that blends from one cross-section to the next, bottom to top. Each section is a sketch with one closed outline.'
-            : 'A profile (one closed outline) moved along a path (lines and arcs, open or closed). The profile’s origin sits on the path.'
+            : 'A profile (one closed outline) moved along a path (lines, arcs and splines, open or closed). The profile’s origin sits on the path.'
         }
         footer={<Footer session={session} onCancel={b.cancel} onApply={b.apply} />}
       >
@@ -313,7 +313,7 @@ function SketchFor({ session }: { session: BuilderSession }) {
     use = {
       title: 'Sweep path',
       initial: base.path,
-      hint: 'Draw one connected chain of lines and arcs (open or closed), or a single circle. The sweep starts at its first end.',
+      hint: 'Draw one connected chain of lines, arcs and splines (open or closed), or a single circle. The sweep starts at its first end.',
       check: onePath,
       onDone: b.finishSketch,
     };

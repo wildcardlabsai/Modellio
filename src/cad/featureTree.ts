@@ -12,10 +12,10 @@ import type { Sketch } from '@/cad/sketch/types';
 export type FeatureEdit =
   | { kind: 'sketch'; objectId: ObjectId } // a sketched solid: the sketch editor
   | { kind: 'loft' | 'sweep'; objectId: ObjectId } // the loft / sweep panel
-  | { kind: 'op'; objectId: ObjectId; opId: string; op: 'fillet' | 'chamfer' } // the fillet / chamfer panel
+  | { kind: 'op'; objectId: ObjectId; opId: string; op: FeatureOp['kind'] } // the feature panel for that operation
   | { kind: 'settings'; objectId: ObjectId }; // the Inspector's settings for the shape
 
-export type FeatureNodeKind = 'component' | 'boolean' | 'body' | 'cutter' | 'base' | 'op';
+export type FeatureNodeKind = 'component' | 'boolean' | 'body' | 'cutter' | 'base' | 'op' | 'rollback';
 
 export interface FeatureNode {
   key: string;
@@ -28,6 +28,9 @@ export interface FeatureNode {
   edit?: FeatureEdit;
   /** Ops only: turned off, and can be turned back on. */
   suppressed?: boolean;
+  /** Ops only: their position in the recipe, and whether they are after the rollback marker. */
+  index?: number;
+  rolledBack?: boolean;
   children: FeatureNode[];
 }
 
@@ -67,19 +70,61 @@ const PRIMITIVE_LABEL: Record<string, string> = {
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-function opNode(o: ShapeObject, op: FeatureOp): FeatureNode {
-  const size = op.kind === 'fillet' ? `R ${op.radius} mm` : `${op.distance} mm`;
+const HOLE_STYLE = { simple: 'Hole', counterbore: 'Counterbore hole', countersink: 'Countersink hole' } as const;
+
+/** A short name and description of an operation (shared by the Features view and the Inspector). */
+export function describeOp(op: FeatureOp): { label: string; detail: string } {
+  switch (op.kind) {
+    case 'fillet':
+      return { label: 'Fillet', detail: `R ${op.radius} mm · ${plural(op.edges.length, 'edge')}` };
+    case 'chamfer':
+      return { label: 'Chamfer', detail: `${op.distance} mm · ${plural(op.edges.length, 'edge')}` };
+    case 'shell':
+      return { label: 'Shell', detail: `${op.thickness} mm walls · ${plural(op.faces.length, 'open face')}` };
+    case 'draft':
+      return { label: 'Draft', detail: `${op.angle}° · ${plural(op.faces.length, 'face')}` };
+    case 'hole': {
+      const n = op.pattern?.count ?? 1;
+      const depth = op.hole.depth > 0 ? `${op.hole.depth} mm deep` : 'through';
+      const copies = n > 1 ? ` · ${n} in a ${op.pattern!.kind === 'linear' ? 'row' : 'circle'}` : '';
+      return { label: HOLE_STYLE[op.hole.style], detail: `Ø${op.hole.diameter} mm ${depth}${copies}` };
+    }
+  }
+}
+
+function opNode(o: ShapeObject, op: FeatureOp, index: number, rolledBack: boolean): FeatureNode {
+  const d = describeOp(op);
   return {
     key: `${o.id}:op:${op.id}`,
     kind: 'op',
-    label: op.kind === 'fillet' ? 'Fillet' : 'Chamfer',
-    detail: `${size} · ${plural(op.edges.length, 'edge')}${op.suppressed ? ' · off' : ''}`,
+    label: d.label,
+    detail: `${d.detail}${op.suppressed ? ' · off' : ''}${rolledBack ? ' · rolled back' : ''}`,
     objectId: o.id,
     opId: op.id,
-    edit: { kind: 'op', objectId: o.id, opId: op.id, op: op.kind },
+    // Rolled-back operations are not built, so they cannot be previewed: roll forward to edit them.
+    edit: rolledBack ? undefined : { kind: 'op', objectId: o.id, opId: op.id, op: op.kind },
     suppressed: !!op.suppressed,
+    index,
+    rolledBack,
     children: [],
   };
+}
+
+/** A solid's operations in order, with the rollback marker where it is. */
+function opNodes(o: ShapeObject): FeatureNode[] {
+  const f = o.feature!;
+  const rb = f.rollback;
+  const nodes = f.ops.map((op, i) => opNode(o, op, i, rb !== undefined && i >= rb));
+  if (rb !== undefined)
+    nodes.splice(rb, 0, {
+      key: `${o.id}:rollback`,
+      kind: 'rollback',
+      label: 'Rolled back here',
+      detail: `${plural(f.ops.length - rb, 'later operation')} not built`,
+      objectId: o.id,
+      children: [],
+    });
+  return nodes;
 }
 
 /** The node(s) a shape is built from: its base feature, then its operations in order. */
@@ -111,16 +156,25 @@ function shapeFeatures(o: ShapeObject): FeatureNode[] {
                   edit: { kind: 'loft', objectId: o.id },
                   children: [],
                 }
-              : {
-                  key,
-                  kind: 'base',
-                  label: 'Sweep',
-                  detail: `${b.corners} corners · ${b.pathPlane === 'XY' ? 'flat' : 'upright'} path`,
-                  objectId: o.id,
-                  edit: { kind: 'sweep', objectId: o.id },
-                  children: [],
-                };
-    return [base, ...o.feature.ops.map((op) => opNode(o, op))];
+              : b.kind === 'boolean'
+                ? {
+                    key,
+                    kind: 'base',
+                    label: b.mode === 'intersect' ? 'Exact intersection' : 'Exact combination',
+                    detail: `${plural(b.parts.filter((p) => !p.hole).length, 'body')}${b.parts.some((p) => p.hole) ? ` − ${plural(b.parts.filter((p) => p.hole).length, 'cutter')}` : ''} · frozen into one solid`,
+                    objectId: o.id,
+                    children: [],
+                  }
+                : {
+                    key,
+                    kind: 'base',
+                    label: 'Sweep',
+                    detail: `${b.corners} corners · ${b.pathPlane === 'XY' ? 'flat' : 'upright'} path`,
+                    objectId: o.id,
+                    edit: { kind: 'sweep', objectId: o.id },
+                    children: [],
+                  };
+    return [base, ...opNodes(o)];
   }
   if (o.shape === 'profile' && o.sketch) {
     const revolve = (o.params.op ?? 0) >= 1;
