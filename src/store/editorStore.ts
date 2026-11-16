@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { produce, type Draft } from 'immer';
+import { current, isDraft, produce, type Draft } from 'immer';
 import * as THREE from 'three';
 import type {
   AlignMode,
   Axis,
+  GroupObject,
   ModelDocument,
   ObjectId,
   PrimitiveType,
@@ -15,6 +16,7 @@ import type {
 import {
   addObjectDraft,
   clampSize,
+  collectSubtree,
   copySubtrees,
   createEmptyDocument,
   createShape,
@@ -62,6 +64,8 @@ import { onProjectSwitch } from '@/platform/projectScope';
 import type { CombineMode, Frame, PlaneId, RefPlane, SketchId, SketchPlacement, SurfaceFinish, TextContent } from '@/types/document';
 import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
 import { guardSketchBodies, sketchControlled, type BlockedResize } from '@/cad/sketchBodies';
+import { instancesOf, linkInstanceDraft, replaceContentDraft, syncLinks, unlinkDraft } from '@/cad/assembly/links';
+import { guardGrounded } from '@/cad/assembly/fixed';
 import { scaleSketch } from '@/cad/sketch/edit';
 import { splineIssues } from '@/cad/sketch/splineCheck';
 import { planeFrame } from '@/cad/placement';
@@ -261,10 +265,23 @@ export interface EditorState {
   unlinkSketch: (objectId: ObjectId) => void;
   /** Mark a group as a component (or back to a plain assembly). */
   setComponent: (groupId: ObjectId, on: boolean) => void;
+  /** Give a linked instance its own copy of the component: it stops following the others. */
+  breakLink: (instanceId: ObjectId) => void;
+  /** Swap an instance's content for another component's (it keeps its place). */
+  replaceComponent: (instanceId: ObjectId, componentId: string) => void;
+  /** Fix parts in place in the assembly (or free them). */
+  setGrounded: (ids: ObjectId[], on: boolean) => void;
+  /** Remember the parts' current positions as where Reset position puts them. */
+  setHome: (ids: ObjectId[]) => void;
+  /** Put parts back where they were placed (their home positions). */
+  resetToHome: (ids: ObjectId[]) => void;
+  /** Leave parts out of the design (not shown, combined, exported or checked), or bring them back. */
+  setSuppressed: (ids: ObjectId[], on: boolean) => void;
   /** Make the selection a component (grouping it first when needed). */
   makeComponent: () => void;
   /** Add another copy of a component to the design. */
-  insertComponent: (groupId: ObjectId) => void;
+  /** Place another instance of a component: linked (it follows edits to the component) unless `linked` is false. */
+  insertComponent: (groupId: ObjectId, linked?: boolean) => ObjectId | null;
   /**
    * Turn a box, cylinder, cone, sphere, torus, wedge, tube or sketch into a precise solid (exact
    * OpenCascade geometry that can take fillets and chamfers). Checks the build first; resolves
@@ -311,6 +328,8 @@ export interface EditorState {
 }
 
 const DUPLICATE_OFFSET: Vec3 = [10, 10, 0];
+/** A plain copy of a value that may or may not be an Immer draft. */
+const plainOf = <T>(v: T): T => (isDraft(v) ? (current(v as Draft<T>) as T) : v);
 const AXIS_NAMES = ['X', 'Y', 'Z'];
 
 const validSelection = (doc: ModelDocument, ids: ObjectId[]) => ids.filter((id) => !!doc.objects[id]);
@@ -359,7 +378,23 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (!get().blockedResize) set({ blockedResize: s.blocked });
       return prev;
     }
-    return guardPlaced(prev, s.doc);
+    // Linked component instances follow the one that was edited (same undo step).
+    const l = syncLinks(prev, s.doc);
+    if (l.cycle) {
+      get().notify(`${l.cycle} can’t contain an instance of itself, so that change was not made.`);
+      return prev;
+    }
+    const placed = guardPlaced(prev, l.doc);
+    if (placing) return placed;
+    // Grounded parts stay where they are.
+    const g = guardGrounded(prev, placed);
+    if (g.blocked.length && Date.now() - lastBlockedNote > 1500) {
+      lastBlockedNote = Date.now();
+      get().notify(
+        `${g.blocked.join(', ')} ${g.blocked.length === 1 ? 'is' : 'are'} grounded. Unground ${g.blocked.length === 1 ? 'it' : 'them'} to move.`,
+      );
+    }
+    return g.doc;
   };
   /** An undo step that is allowed to move placed bodies (it is what places them). */
   const applyPlacing = (label: string, recipe: Recipe) => {
@@ -741,7 +776,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       const ids = editableSelection();
       if (!ids.length) return;
       const center = worldBoundsOf(doc, ids).getCenter(new THREE.Vector3());
-      get().apply(`Mirror ${AXIS_NAMES[axis]}`, (d) => mirrorDraft(d, ids, axis, center));
+      // A mirror image is a different part: mirrored component instances become independent.
+      const linked = ids.filter((id) => doc.objects[id]?.kind === 'group' && (doc.objects[id] as GroupObject).componentId);
+      get().apply(`Mirror ${AXIS_NAMES[axis]}`, (d) => {
+        for (const id of linked) {
+          unlinkDraft(d, id, createId('cmp'), `${d.objects[id].name} (mirrored)`);
+          forkSketchLinksDraft(d as ModelDocument, [id], { keepLinked: false });
+        }
+        mirrorDraft(d, ids, axis, center);
+      });
+      if (linked.length) get().notify('Mirrored component instances are now independent: a mirror image is a different part.');
     },
 
     mirrorCopySelected: (axis) => {
@@ -754,7 +798,11 @@ export const useEditor = create<EditorState>()((set, get) => {
       const gid = createId('grp');
       get().apply(`Mirror copy ${AXIS_NAMES[axis]}`, (d) => {
         const copies = duplicateObjectsDraft(d, ids, [0, 0, 0]);
-        forkSketchLinksDraft(d, copies);
+        // A mirror image is a different part: copied component instances become independent.
+        for (const id of copies)
+          if (d.objects[id]?.kind === 'group' && (d.objects[id] as GroupObject).componentId)
+            unlinkDraft(d, id, createId('cmp'), `${d.objects[id].name} (mirrored)`);
+        forkSketchLinksDraft(d, copies, { keepLinked: false });
         // Mirror in place, then move across so the copy touches the original on the + side.
         mirrorDraft(d, copies, axis, centre);
         const shift = new THREE.Vector3();
@@ -1182,8 +1230,66 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply(on ? 'Make component' : 'Make assembly', (d) => {
         const g = d.objects[groupId];
         if (g?.kind !== 'group') return;
-        if (on) g.component = true;
-        else delete g.component;
+        if (on) {
+          linkInstanceDraft(d, groupId, g.componentId ?? createId('cmp'), g.name);
+          g.home ??= structuredClone(plainOf(g).transform);
+        } else {
+          delete g.component;
+          delete g.componentId;
+          for (const id of collectSubtree(d as ModelDocument, [groupId]).slice(1)) delete d.objects[id].defNode;
+        }
+      }),
+
+    breakLink: (instanceId) => {
+      const g = get().doc.objects[instanceId];
+      if (g?.kind !== 'group' || !g.componentId) return;
+      get().apply('Make independent', (d) => {
+        unlinkDraft(d, instanceId, createId('cmp'), `${g.name}`);
+        forkSketchLinksDraft(d as ModelDocument, [instanceId], { keepLinked: false });
+      });
+    },
+
+    replaceComponent: (instanceId, componentId) => {
+      const doc = get().doc;
+      const g = doc.objects[instanceId];
+      const src = instancesOf(doc, componentId).find((i) => i.id !== instanceId);
+      if (g?.kind !== 'group' || !src) return;
+      get().apply(`Replace with ${doc.components?.[componentId]?.name ?? src.name}`, (d) => replaceContentDraft(d, src.id, instanceId));
+    },
+
+    setGrounded: (ids, on) =>
+      get().apply(on ? 'Ground' : 'Unground', (d) => {
+        for (const id of ids) {
+          const o = d.objects[id];
+          if (!o) continue;
+          if (on) {
+            o.grounded = true;
+            o.home ??= structuredClone(plainOf(o).transform);
+          } else delete o.grounded;
+        }
+      }),
+
+    setHome: (ids) =>
+      get().apply('Set home position', (d) => {
+        for (const id of ids) if (d.objects[id]) d.objects[id].home = structuredClone(plainOf(d.objects[id]).transform);
+      }),
+
+    resetToHome: (ids) =>
+      applyPlacing('Reset position', (d) => {
+        for (const id of ids) {
+          const o = d.objects[id];
+          if (o?.home) o.transform = structuredClone(plainOf(o).home!);
+        }
+      }),
+
+    setSuppressed: (ids, on) =>
+      get().apply(on ? 'Suppress' : 'Unsuppress', (d) => {
+        for (const id of ids) {
+          const o = d.objects[id];
+          if (!o) continue;
+          if (on) o.suppressed = true;
+          else delete o.suppressed;
+        }
       }),
 
     makeComponent: () => {
@@ -1198,22 +1304,32 @@ export const useEditor = create<EditorState>()((set, get) => {
       }
       const gid = createId('grp');
       get().apply('Make component', (d) => {
-        if (!groupDraft(d, ids, { id: gid, name: uniqueName(d, 'Component') })) return;
+        const name = uniqueName(d, 'Component');
+        if (!groupDraft(d, ids, { id: gid, name })) return;
+        linkInstanceDraft(d, gid, createId('cmp'), name);
         const g = d.objects[gid];
-        if (g?.kind === 'group') g.component = true;
+        g.home = structuredClone(plainOf(g).transform);
       });
       if (get().doc.objects[gid]) set({ selection: [gid] });
     },
 
-    insertComponent: (groupId) => {
+    insertComponent: (groupId, linked = true) => {
       const g = get().doc.objects[groupId];
-      if (g?.kind !== 'group' || !g.component) return;
+      if (g?.kind !== 'group' || !g.component) return null;
       let created: ObjectId[] = [];
-      get().apply(`Insert ${g.name}`, (d) => {
+      get().apply(`Insert ${g.name}${linked ? '' : ' (independent)'}`, (d) => {
         created = duplicateObjectsDraft(d, [groupId], DUPLICATE_OFFSET);
-        forkSketchLinksDraft(d, created);
+        const copy = d.objects[created[0]];
+        // A new instance is not grounded, and comes home to where it was placed.
+        delete copy.grounded;
+        copy.home = structuredClone(plainOf(copy).transform);
+        if (!linked) {
+          unlinkDraft(d, created[0], createId('cmp'), copy.name);
+          forkSketchLinksDraft(d as ModelDocument, created, { keepLinked: false });
+        }
       });
       set({ selection: created });
+      return created[0] ?? null;
     },
 
     makeGroupPrecise: async (groupId) => {

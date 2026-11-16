@@ -31,7 +31,14 @@ import {
   FlipHorizontal2,
   Crosshair,
   PencilLine,
+  Anchor,
+  CircleSlash,
+  Home,
+  RotateCcw,
 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { instancesOf } from '@/cad/assembly/links';
+import { sameTransform } from '@/cad/placement';
 import { placementLabel, placingRecord } from '@/cad/sketchPlacement';
 import { useFacePick } from '@/components/sketch/facePick';
 import { useInspectorTab, type InspectorTab } from './inspectorTab';
@@ -272,7 +279,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
   const inheritedLock = locked && !object.locked;
   // A body built from a placed sketch sits on its plane or face: it can't be moved on its own.
   const placedBy = placingRecord(doc, object.id);
-  const fixedPlace = locked || !!placedBy;
+  const fixedPlace = locked || !!placedBy || !!object.grounded;
   const parent = object.parentId ? doc.objects[object.parentId] : null;
   const isGroup = object.kind === 'group';
 
@@ -417,6 +424,7 @@ function ObjectInspector({ object, onOpenPanel }: { object: SceneObject; onOpenP
                 onCommit={(axis, v) => s.setRotation(object.id, object.transform.rotation.map((c, i) => (i === axis ? v : c)) as Vec3)}
               />
             </Section>
+            <AssemblySection object={object} locked={locked} />
             {object.kind === 'shape' && <ShapeParams object={object} locked={locked} />}
             <CopiesSection locked={locked} />
             {object.kind === 'group' && <GroupActions group={object} locked={locked} />}
@@ -1646,6 +1654,87 @@ function ExactCombine({ group, locked }: { group: GroupObject; locked: boolean }
         </button>
       )}
     </div>
+  );
+}
+
+/** Assembly controls: grounding, home position, suppression and, for a linked instance, its link. */
+function AssemblySection({ object, locked }: { object: SceneObject; locked: boolean }) {
+  const s = useEditor.getState();
+  const doc = useEditor((st) => st.doc);
+  const cid = object.kind === 'group' ? object.componentId : undefined;
+  const copies = cid ? instancesOf(doc, cid).length : 0;
+  const others = Object.entries(doc.components ?? {}).filter(([id]) => id !== cid && instancesOf(doc, id).length > 0);
+  const moved = !!object.home && !sameTransform(object.home, object.transform);
+  return (
+    <Section title="Assembly">
+      {cid && (
+        <div className="mb-2 rounded-lg bg-canvas px-3 py-2 text-[12px] text-ink-2" data-testid="instance-info">
+          {copies > 1 ? (
+            <>
+              Linked component: <strong className="font-semibold text-ink">{copies} copies</strong> change together. Position, name,
+              grounding and suppression are this copy's own.
+            </>
+          ) : (
+            <>Component (the only copy).</>
+          )}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {copies > 1 && (
+              <Button size="sm" disabled={locked} onClick={() => s.breakLink(object.id)} data-testid="break-link">
+                <Link2Off size={13} /> Make independent
+              </Button>
+            )}
+            {others.length > 0 && (
+              <select
+                aria-label="Replace with another component"
+                disabled={locked}
+                value=""
+                onChange={(e) => e.target.value && s.replaceComponent(object.id, e.target.value)}
+                className="h-8 rounded-lg border border-line bg-panel px-2 text-[12px] text-ink-2"
+                data-testid="replace-component"
+              >
+                <option value="">Replace with…</option>
+                {others.map(([id, c]) => (
+                  <option key={id} value={id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="space-y-1">
+        <Toggle
+          label="Grounded (fixed in place)"
+          icon={<Anchor size={15} className="text-muted" />}
+          checked={!!object.grounded}
+          disabled={locked}
+          onChange={(v) => s.setGrounded([object.id], v)}
+        />
+        <Toggle
+          label="Suppressed (left out of the model)"
+          icon={<CircleSlash size={15} className="text-muted" />}
+          checked={!!object.suppressed}
+          disabled={locked}
+          onChange={(v) => s.setSuppressed([object.id], v)}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <Button size="sm" disabled={locked} onClick={() => s.setHome([object.id])} data-testid="set-home">
+          <Home size={13} /> Set home
+        </Button>
+        <Button
+          size="sm"
+          disabled={locked || !moved || !!object.grounded}
+          onClick={() => s.resetToHome([object.id])}
+          data-testid="reset-home"
+          title={object.home ? 'Move back to the home position' : 'No home position set yet'}
+        >
+          <RotateCcw size={13} /> Reset to home
+        </Button>
+      </div>
+      {object.grounded && <p className="mt-2 text-[12px] text-muted">Grounded parts can't be moved. Unground it to move it.</p>}
+    </Section>
   );
 }
 

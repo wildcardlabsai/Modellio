@@ -14,6 +14,9 @@ import {
   Gem,
   PencilRuler,
   Shapes,
+  Anchor,
+  Link2,
+  CircleSlash,
 } from 'lucide-react';
 import { useEditor } from '@/store/editorStore';
 import { useHover } from '@/viewport/hover';
@@ -51,6 +54,12 @@ export function ObjectTree() {
   const selection = useEditor((s) => s.selection);
   const collapsed = useEditor((s) => s.collapsed);
   const rows = useMemo(() => flatten(doc, collapsed), [doc, collapsed]);
+  const linkCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of Object.values(doc.objects))
+      if (o.kind === 'group' && o.componentId) m.set(o.componentId, (m.get(o.componentId) ?? 0) + 1);
+    return m;
+  }, [doc.objects]);
   const anchor = useRef<ObjectId | null>(null);
   const [renaming, setRenaming] = useState<ObjectId | null>(null);
   const [drop, setDrop] = useState<{ id: ObjectId | null; zone: DropZone } | null>(null);
@@ -184,6 +193,7 @@ export function ObjectTree() {
         const isGroup = o.kind === 'group';
         const inheritedLock = !o.locked && isEffectivelyLocked(doc, id);
         const dropHere = drop?.id === id ? drop.zone : null;
+        const linked = isGroup && o.componentId ? (linkCounts.get(o.componentId) ?? 1) : 0;
         return (
           <li
             onMouseEnter={() => useHover.getState().set([id])}
@@ -193,7 +203,7 @@ export function ObjectTree() {
             aria-selected={active}
             aria-expanded={isGroup ? !collapsed[id] : undefined}
             aria-level={depth + 1}
-            aria-label={`${o.name}${isGroup ? (o.combine ? ', combination' : ', group') : o.isHole ? ', hole' : ''}${o.visible ? '' : ', hidden'}${o.locked ? ', locked' : ''}`}
+            aria-label={`${o.name}${isGroup ? (o.combine ? ', combination' : ', group') : o.isHole ? ', hole' : ''}${linked > 1 ? `, linked component (${linked} copies)` : linked ? ', component' : ''}${o.grounded ? ', grounded' : ''}${o.suppressed ? ', suppressed' : ''}${o.visible ? '' : ', hidden'}${o.locked ? ', locked' : ''}`}
             data-row-id={id}
             tabIndex={currentFocus === id ? 0 : -1}
             onFocus={(e) => e.target === e.currentTarget && setFocusId(id)}
@@ -281,11 +291,23 @@ export function ObjectTree() {
                   className="min-w-0 flex-1 rounded border border-brand bg-panel px-1 py-0.5 text-[13px] text-ink outline-none"
                 />
               ) : (
-                <span className="min-w-0 flex-1 truncate" title="Double-click to rename">
+                <span className={`min-w-0 flex-1 truncate ${o.suppressed ? 'line-through' : ''}`} title="Double-click to rename">
                   {o.name}
                   {isGroup && <span className="ml-1 text-[11px] font-normal text-muted">({o.children.length})</span>}
                 </span>
               )}
+              {linked > 1 && (
+                <span
+                  className="flex shrink-0 items-center gap-0.5 text-[11px] text-ink-3"
+                  title={`Linked: ${linked} copies of this component change together`}
+                  data-testid="tree-linked"
+                >
+                  <Link2 size={12} />
+                  {linked}
+                </span>
+              )}
+              {o.grounded && <Anchor size={13} className="shrink-0 text-ink-3" aria-hidden data-testid="tree-grounded" />}
+              {o.suppressed && <CircleSlash size={13} className="shrink-0 text-ink-3" aria-hidden data-testid="tree-suppressed" />}
               <button
                 type="button"
                 tabIndex={-1}

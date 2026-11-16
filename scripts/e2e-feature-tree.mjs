@@ -314,11 +314,18 @@ check(
 );
 check('13b. It is listed under Components', (await panelC.getByTestId('component-item').count()) === 1);
 const before13 = await S(() => Object.keys(window.modellio.store.getState().doc.objects).length);
-await panelC.getByRole('button', { name: /^Insert another/ }).click();
+await panelC.getByRole('button', { name: /^Insert another .*\(linked\)/ }).click();
 check(
-  '13c. "Insert another" adds an independent copy (3 new objects: the group and its 2 parts)',
-  (await panelC.getByTestId('component-item').count()) === 2 &&
+  '13c. "Insert another" adds a linked copy (3 new objects: the group and its 2 parts), listed under the same component',
+  (await panelC.getByTestId('component-item').count()) === 1 &&
+    (await panelC.getByTestId('component-item').getAttribute('data-instances')) === '2' &&
     (await S(() => Object.keys(window.modellio.store.getState().doc.objects).length)) === before13 + 3,
+);
+await panelC.getByRole('button', { name: /^Insert independent copy/ }).click();
+check(
+  '13c2. "Insert independent copy" adds an unlinked copy, listed as a component of its own',
+  (await panelC.getByTestId('component-item').count()) === 2 &&
+    (await S(() => Object.keys(window.modellio.store.getState().doc.objects).length)) === before13 + 6,
 );
 await view('Features');
 check('13d. The feature tree labels it a component', /Component · 2 parts/.test(await tree.textContent()));
@@ -336,7 +343,7 @@ check(
 );
 check(
   '14b. …and so do components',
-  (await S(() => Object.values(window.modellio.store.getState().doc.objects).filter((o) => o.component).length)) === 2,
+  (await S(() => Object.values(window.modellio.store.getState().doc.objects).filter((o) => o.component).length)) === 3,
 );
 // ---- Stage 4: workflow ----
 // 15. Measure: a marker shows where the next click lands, snapped to the grid on the workplane.

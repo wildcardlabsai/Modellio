@@ -52,7 +52,7 @@ export function collectExportBodies(doc: ModelDocument, ids?: ObjectId[]): Expor
 
   const visit = (id: ObjectId) => {
     const o = doc.objects[id];
-    if (!o || !o.visible) return;
+    if (!o || !o.visible || o.suppressed) return;
     if (o.kind === 'shape') {
       if (o.isHole) {
         out.skippedHoles++;

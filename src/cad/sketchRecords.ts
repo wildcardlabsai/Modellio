@@ -51,13 +51,26 @@ export function addSketchRecordDraft(d: ModelDocument, sketch: Sketch, name: str
  * one never changes the other. A body whose record is missing (pasted from elsewhere) gets one
  * made from its own copy.
  */
-export function forkSketchLinksDraft(d: ModelDocument, ids: ObjectId[]) {
+export function forkSketchLinksDraft(d: ModelDocument, ids: ObjectId[], opts: { keepLinked?: boolean } = {}) {
+  const keepLinked = opts.keepLinked ?? true;
   for (const id of collectSubtree(d, ids)) {
     const o = d.objects[id];
     if (o?.kind !== 'shape' || o.shape !== 'profile' || !o.sketch) continue;
+    // Parts of linked component instances share their sketch (schema 4): editing it updates them all.
+    if (keepLinked && o.defNode && insideInstance(d, id)) continue;
     const from = o.sketchId ? sketchRecords(d)[o.sketchId] : undefined;
     o.sketchId = addSketchRecordDraft(d, o.sketch, from?.name ?? `${o.name} sketch`);
   }
+}
+
+/** Whether an object is part of a component instance (a group with a componentId above it). */
+function insideInstance(d: ModelDocument, id: ObjectId) {
+  for (let o = d.objects[id]; o?.parentId;) {
+    const p = d.objects[o.parentId];
+    if (p?.kind === 'group' && p.componentId) return true;
+    o = p;
+  }
+  return false;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

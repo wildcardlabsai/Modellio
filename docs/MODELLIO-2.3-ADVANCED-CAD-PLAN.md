@@ -550,6 +550,46 @@ Built in five increments (3a–3e), each tested, committed and pushed.
 - The Makers' internal layouts are kept as they were (by design). This stage unified their look, not their structure.
 - Shared `Button`/`Swatches` components are used by the new dialogs; the Makers' existing controls were restyled through tokens rather than rewritten.
 
+### Stage 4E: linked components and assemblies (done)
+
+| Item | Result |
+| --- | --- |
+| Model (schema 4, file version 6) | The existing component group is extended, not replaced. `doc.components` holds definitions. An instance is a group with `componentId`. Every part inside an instance carries a `defNode` link id that is the same in every instance of that component. Instances stay real objects, so rendering, picking, Booleans, export, print checks and sketches work on them unchanged. |
+| Link sync | `syncLinks` (`src/cad/assembly/links.ts`) runs after every change in the store's change pipeline, in the same undo step. An edit inside one instance is copied to every other instance of that component: parts added, removed, resized, recoloured, re-sketched or moved inside it. Parts are matched by `defNode`; nested components are synced innermost first. Each instance keeps its own position, rotation, name, visibility, lock, grounding, suppression and home. A component that would contain itself is refused, with a notice. |
+| Actions | Make component; Insert (linked, the default) or Insert independent copy; Make independent (break link); Replace with another component (keeps the placement); Ground / Unground; Set home / Reset to home; Suppress / Unsuppress. Mirrored copies are always independent (a mirror image is not the same part). |
+| Grounding | `guardGrounded` (`src/cad/assembly/fixed.ts`) puts back any change that would move a grounded part in the world: a drag, nudge, align, typed position, or a move of its group. The gizmo and the position and rotation fields are disabled for grounded parts. |
+| Suppression | Suppressed parts are hidden and left out of picking, bounds, Booleans, export and print checks. They stay in the browser, struck through. |
+| Assembly browser | The Components panel lists each component with its number of linked copies, inserts linked or independent copies, expands to the copies, and makes a copy independent. The object tree marks linked copies (with a count), grounded and suppressed parts. The Inspector has an Assembly section: link status, Make independent, Replace with…, Grounded, Suppressed, Set home, Reset to home. |
+| Migration | Schema 3 documents open as schema 4. Each existing component group gets its own definition, so copies made before this stage stay independent. Nothing is linked retroactively. |
+
+**Tests added:**
+- Unit (`src/cad/assembly/links.test.ts`, 11):
+  - make and insert
+  - edit one → all, as one undo step
+  - per-instance placement; add or remove parts
+  - break link; independent insert; nested sync
+  - cycle refusal; grounding and reset; suppression left out of export
+  - migration
+  - performance: 50 instances of a 20-part component, one edit in under 300 ms
+- New `e2e-assemblies` suite, 28 checks:
+  - make component; insert 4 linked copies
+  - edit → all 5 update, one undo step
+  - a copy moves on its own; a recolour inside a copy reaches the original
+  - Inspector link info; Make independent; Insert independent copy
+  - nested subassembly; cycle refusal
+  - ground, typed position, home and reset; suppress
+  - tree badges
+  - save, reload and duplicate keep everything
+
+**Existing tests changed:**
+- `e2e-feature-tree` 13c: "Insert another" now adds a *linked* copy (listed under the same component). A new check, 13c2, covers the independent copy that 13c used to check, so coverage is kept.
+- `placement.test.ts`: now expects schema 4 and file version 6.
+
+**Limitations:**
+- Instances are stored in full: each copy's parts are saved. Simple and robust, but files grow with the number of copies.
+- Matching geometry is not yet shared on the GPU between instances, so very large assemblies draw each copy separately.
+- A sketch-based body inside a linked component keeps one sketch for all copies; editing the sketch updates every copy.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.

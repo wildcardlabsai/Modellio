@@ -60,7 +60,7 @@ function geometryKey(doc: ModelDocument, groupId: ObjectId): string {
     if (o.kind === 'shape') {
       parts.push([
         id,
-        o.visible,
+        o.visible && !o.suppressed,
         o.transform,
         o.shape,
         o.size,
@@ -73,7 +73,7 @@ function geometryKey(doc: ModelDocument, groupId: ObjectId): string {
         o.sketch,
       ]);
     } else {
-      parts.push([id, o.visible, o.transform, o.combine, o.children.length]);
+      parts.push([id, o.visible && !o.suppressed, o.transform, o.combine, o.children.length]);
       o.children.forEach(visit);
     }
   };
@@ -83,7 +83,7 @@ function geometryKey(doc: ModelDocument, groupId: ObjectId): string {
 
 function firstSolidColor(doc: ModelDocument, id: ObjectId): string | null {
   const o = doc.objects[id];
-  if (!o || !o.visible) return null;
+  if (!o || !o.visible || o.suppressed) return null;
   if (o.kind === 'shape') return o.isHole ? null : o.color;
   for (const c of o.children) {
     const col = firstSolidColor(doc, c);
@@ -176,7 +176,7 @@ export function exactBooleanBase(doc: ModelDocument, groupId: ObjectId): { base:
   let why: string | null = null;
   const collect = (id: ObjectId) => {
     const o = doc.objects[id];
-    if (!o || !o.visible || why) return;
+    if (!o || !o.visible || o.suppressed || why) return;
     const rel = frameInv.clone().multiply(worldMatrix(doc, id));
     if (o.kind === 'shape') {
       const conv = solidConversion(o);
@@ -274,7 +274,7 @@ function prepareJob(doc: ModelDocument, groupId: ObjectId): BooleanJob {
   const parts: BooleanJob['parts'] = [];
   const collect = (id: ObjectId) => {
     const o: SceneObject | undefined = doc.objects[id];
-    if (!o || !o.visible) return;
+    if (!o || !o.visible || o.suppressed) return;
     const rel = frameInv.clone().multiply(worldMatrix(doc, id));
     if (o.kind === 'shape') {
       const geo = buildGeometryForShape(o);

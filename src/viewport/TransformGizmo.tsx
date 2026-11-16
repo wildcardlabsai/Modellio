@@ -106,7 +106,7 @@ export function TransformGizmo() {
 
   const items = gizmoItems(doc, selection);
   // Locked objects, and bodies that sit on their sketch's plane or face, don't get the gizmo.
-  const blocked = items.some((id) => isEffectivelyLocked(doc, id) || !!placingRecord(doc, id));
+  const blocked = items.some((id) => isEffectivelyLocked(doc, id) || !!placingRecord(doc, id) || !!doc.objects[id]?.grounded);
   // Resizing uses the one-sided ResizeHandles instead of the gizmo's scale mode.
   const enabled = items.length > 0 && !blocked && mode !== 'scale';
 

@@ -188,10 +188,10 @@ describe('sketches attached to faces', () => {
   });
 });
 
-describe('schema 3 files', () => {
+describe('schema 3+ files (current schema 4)', () => {
   it('keeps planes, placements and frames through save and reopen', () => {
-    expect(CURRENT_SCHEMA).toBe(3);
-    expect(PROJECT_FILE_VERSION).toBe(5);
+    expect(CURRENT_SCHEMA).toBe(4);
+    expect(PROJECT_FILE_VERSION).toBe(6);
     const { doc, recId } = attachedDesign();
     const withPlane = produce(doc, (d) => {
       d.planes = { p1: { id: 'p1', name: 'Mid', base: 'XZ', offset: 4, tilt: 10, visible: true } };
@@ -214,7 +214,7 @@ describe('schema 3 files', () => {
       delete r.frame;
     }
     const up = migrateDocument(v2);
-    expect(up.schemaVersion).toBe(3);
+    expect(up.schemaVersion).toBe(CURRENT_SCHEMA);
     expect(up.planes).toEqual({});
     expect(up.sketches![recId].placement).toBeUndefined();
     raw.sketches[recId].placement = { kind: 'plane', planeId: 'missing' };

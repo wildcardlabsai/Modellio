@@ -126,7 +126,7 @@ export function Viewport() {
       const { doc, select } = useEditor.getState();
       // An object is boxed when the centre of its bounds is inside the rectangle.
       const hits = doc.rootIds.filter((id) => {
-        if (!doc.objects[id]?.visible) return false;
+        if (!doc.objects[id]?.visible || doc.objects[id]?.suppressed) return false;
         const c = worldBoundsOf(doc, [id]).getCenter(new THREE.Vector3());
         const p = worldToScreen(c.x, c.y, c.z);
         return !!p && p.x >= xa && p.x <= xb && p.y >= ya && p.y <= yb;

@@ -12,7 +12,17 @@ import { roundTo } from '@/utils/math';
  */
 
 export function createEmptyDocument(): ModelDocument {
-  return { schemaVersion: 3, objects: {}, sketches: {}, planes: {}, rootIds: [], settings: { units: 'mm', workplane: [200, 200] } };
+  return {
+    schemaVersion: 4,
+    objects: {},
+    sketches: {},
+    planes: {},
+    components: {},
+    joints: {},
+    explodeViews: {},
+    rootIds: [],
+    settings: { units: 'mm', workplane: [200, 200] },
+  };
 }
 
 export function uniqueName(doc: ModelDocument, base: string): string {

@@ -20,7 +20,8 @@ interface Props {
 export const SceneNode = memo(function SceneNode({ id, highlighted = false, ghost = false }: Props) {
   const o = useEditor((s) => s.doc.objects[id]);
   const selected = useEditor((s) => s.selection.includes(id));
-  if (!o || !o.visible) return null;
+  // Hidden and suppressed parts are not drawn (or picked).
+  if (!o || !o.visible || o.suppressed) return null;
   if (o.kind === 'shape') return <ShapeMesh object={o} selected={selected} highlighted={highlighted} ghost={ghost} />;
   const r = o.transform.rotation;
   return (

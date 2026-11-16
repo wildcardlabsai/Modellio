@@ -45,7 +45,9 @@ export function isEffectivelyLocked(doc: ModelDocument, id: ObjectId): boolean {
 
 /** True if the object and all ancestors are visible. */
 export function isEffectivelyVisible(doc: ModelDocument, id: ObjectId): boolean {
-  return !!doc.objects[id]?.visible && ancestors(doc, id).every((a) => doc.objects[a]?.visible);
+  // Suppressed parts (schema 4) are out of the design as well as out of sight.
+  const shown = (x: ObjectId) => !!doc.objects[x]?.visible && !doc.objects[x]?.suppressed;
+  return shown(id) && ancestors(doc, id).every(shown);
 }
 
 /** Remove ids whose ancestor is also in the list (keeps the input order). */

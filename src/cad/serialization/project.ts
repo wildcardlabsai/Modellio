@@ -1,4 +1,5 @@
 import { migratePlanes, migrateSketchesDraft } from '@/cad/sketchRecords';
+import { migrateAssemblyDraft } from '@/cad/assembly/migrate';
 import { validateRecipe } from '@/cad/brep/types';
 import type { ModelDocument, SceneObject } from '@/types/document';
 import type { MeshData } from '../kernel/meshData';
@@ -63,9 +64,14 @@ export const PROJECT_FILE_FORMAT = 'modellio-project';
 /** 3: precise solids (`solid` shapes with a feature recipe). */
 /** 4: carries schema-2 documents (standalone sketches, components). */
 /** 5: carries schema-3 documents (reference planes, sketch placements). */
-export const PROJECT_FILE_VERSION = 5;
-/** 2: standalone sketches and components; 3: reference planes and sketch placements (older documents are upgraded on load). */
-export const CURRENT_SCHEMA = 3;
+/** 6: carries schema-4 documents (linked components, joints, exploded views). */
+export const PROJECT_FILE_VERSION = 6;
+/**
+ * 2: standalone sketches and components; 3: reference planes and sketch placements; 4: linked
+ * component instances, grounding, suppression, joints and exploded views (older documents are
+ * upgraded on load).
+ */
+export const CURRENT_SCHEMA = 4;
 
 export class ProjectFormatError extends Error {}
 
@@ -118,6 +124,16 @@ export function migrateDocument(raw: unknown): ModelDocument {
     o.locked = o.locked === true;
     o.parentId = typeof o.parentId === 'string' ? o.parentId : null;
     if (o.kind === 'group' && o.component !== undefined && o.component !== true) delete o.component;
+    // Schema 4 fields: kept only when well formed.
+    if (o.kind === 'group' && (typeof o.componentId !== 'string' || !o.component)) delete o.componentId;
+    if (typeof o.defNode !== 'string') delete o.defNode;
+    if (o.grounded !== true) delete o.grounded;
+    if (o.suppressed !== true) delete o.suppressed;
+    if (
+      o.home !== undefined &&
+      !(isObj(o.home) && isVec3((o.home as { position?: unknown }).position) && isVec3((o.home as { rotation?: unknown }).rotation))
+    )
+      delete o.home;
     if (o.kind === 'shape') {
       o.params = isObj(o.params) ? o.params : {};
       o.color = typeof o.color === 'string' ? o.color : '#2463EB';
@@ -133,6 +149,8 @@ export function migrateDocument(raw: unknown): ModelDocument {
   // Reference planes (schema 3), then standalone sketches (schema 2) and their placements.
   doc.planes = migratePlanes(raw.planes);
   migrateSketchesDraft(doc, raw.sketches);
+  // Components (schema 4): definitions, and links for every component group.
+  migrateAssemblyDraft(doc, raw);
   // Repair references.
   for (const o of Object.values(doc.objects)) {
     if (o.kind === 'group') o.children = o.children.filter((c) => doc.objects[c]?.parentId === o.id);
