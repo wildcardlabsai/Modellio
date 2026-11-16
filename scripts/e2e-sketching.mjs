@@ -620,7 +620,7 @@ check(
     reopened.sketches[planeRec]?.placement?.planeId === planeId &&
     pb2 &&
     closeTo(pb2.transform.position, [10, -12.5, 5]) &&
-    reopened.schemaVersion === 3,
+    reopened.schemaVersion === 4,
 );
 
 // 9. Safeguards (Stage 4B): a spline can't be dragged into a loop; a sketched body can't be stretched.
