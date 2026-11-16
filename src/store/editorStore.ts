@@ -61,11 +61,25 @@ import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
 import { onProjectSwitch } from '@/platform/projectScope';
-import type { CombineMode, Frame, PlaneId, RefPlane, SketchId, SketchPlacement, SurfaceFinish, TextContent } from '@/types/document';
+import type {
+  CombineMode,
+  Frame,
+  PlaneId,
+  RefPlane,
+  SketchId,
+  SketchPlacement,
+  SurfaceFinish,
+  TextContent,
+  Joint,
+  JointKind,
+  ExplodeStep,
+} from '@/types/document';
 import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
 import { guardSketchBodies, sketchControlled, type BlockedResize } from '@/cad/sketchBodies';
 import { instancesOf, linkInstanceDraft, replaceContentDraft, syncLinks, unlinkDraft } from '@/cad/assembly/links';
 import { guardGrounded } from '@/cad/assembly/fixed';
+import { JOINT_DOF, JOINT_NAME, clampValues, frameFrom, jointProblem, solveJoints } from '@/cad/assembly/joints';
+import { autoExplodeSteps, pruneExplodeViews } from '@/cad/assembly/explode';
 import { scaleSketch } from '@/cad/sketch/edit';
 import { splineIssues } from '@/cad/sketch/splineCheck';
 import { planeFrame } from '@/cad/placement';
@@ -127,6 +141,8 @@ export interface EditorState {
   notice: { text: string; seq: number } | null;
   /** A resize refused because it would stretch a body away from the sketch that controls it (shown as a dialog). */
   blockedResize: BlockedResize | null;
+  /** The exploded view being shown, and how far through its steps (display only; null = assembled). */
+  explode: { viewId: string; progress: number } | null;
   clearBlockedResize: () => void;
   /**
    * Resize a sketch-controlled body anyway by giving it its own copy of the sketch, scaled to the
@@ -277,6 +293,35 @@ export interface EditorState {
   resetToHome: (ids: ObjectId[]) => void;
   /** Leave parts out of the design (not shown, combined, exported or checked), or bring them back. */
   setSuppressed: (ids: ObjectId[], on: boolean) => void;
+  /**
+   * Connect two parts with a joint. The joint's axis goes through `origin` (world mm; default the
+   * centre of B) along world `axis`; it is made at the parts' current positions, so nothing moves.
+   * Returns the joint id, or null (with a notice) when it can't be made.
+   */
+  addJoint: (opts: {
+    kind: JointKind;
+    a: ObjectId;
+    b: ObjectId;
+    axis?: 'x' | 'y' | 'z';
+    origin?: Vec3;
+    limits?: Joint['limits'];
+    name?: string;
+  }) => string | null;
+  /** Change a joint's name, kind, limits or suppression. */
+  updateJoint: (id: string, patch: Partial<Pick<Joint, 'name' | 'kind' | 'limits' | 'suppressed'>>) => void;
+  /** Drive a joint: set its angle / offset (kept within its limits); the moving part follows. */
+  setJointValues: (id: string, values: Joint['values']) => void;
+  removeJoint: (id: string) => void;
+  /** A new exploded view. With `ids`, its steps spread those parts apart automatically. */
+  addExplodeView: (ids?: ObjectId[], name?: string) => string;
+  removeExplodeView: (viewId: string) => void;
+  addExplodeStep: (viewId: string, ids: ObjectId[], offset: Vec3) => string | null;
+  updateExplodeStep: (viewId: string, stepId: string, patch: Partial<Pick<ExplodeStep, 'name' | 'offset' | 'objectIds'>>) => void;
+  /** Move a step earlier (-1) or later (+1). */
+  moveExplodeStep: (viewId: string, stepId: string, dir: -1 | 1) => void;
+  removeExplodeStep: (viewId: string, stepId: string) => void;
+  /** Show an exploded view at `progress` (0 = assembled … number of steps = fully exploded), or null to show the assembled design. */
+  setExplode: (viewId: string | null, progress?: number) => void;
   /** Make the selection a component (grouping it first when needed). */
   makeComponent: () => void;
   /** Add another copy of a component to the design. */
@@ -384,7 +429,15 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().notify(`${l.cycle} can’t contain an instance of itself, so that change was not made.`);
       return prev;
     }
-    const placed = guardPlaced(prev, l.doc);
+    // Jointed parts follow their joints (a drag of one is kept to its joint's freedoms and limits).
+    const jn = solveJoints(prev, l.doc);
+    if (jn.limited.length && Date.now() - lastBlockedNote > 1500) {
+      lastBlockedNote = Date.now();
+      get().notify(
+        `${jn.limited.join(', ')} ${jn.limited.length === 1 ? 'is' : 'are'} at ${jn.limited.length === 1 ? 'its' : 'their'} limit.`,
+      );
+    }
+    const placed = guardPlaced(prev, pruneExplodeViews(jn.doc));
     if (placing) return placed;
     // Grounded parts stay where they are.
     const g = guardGrounded(prev, placed);
@@ -488,6 +541,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     actionSeq: 0,
     notice: null,
     blockedResize: null,
+    explode: null,
     clearBlockedResize: () => set({ blockedResize: null }),
     readOnly: false,
     units: (() => {
@@ -1257,7 +1311,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply(`Replace with ${doc.components?.[componentId]?.name ?? src.name}`, (d) => replaceContentDraft(d, src.id, instanceId));
     },
 
-    setGrounded: (ids, on) =>
+    setGrounded: (ids, on) => {
+      const driven = on ? ids.filter((id) => Object.values(get().doc.joints ?? {}).some((j) => j.b === id && !j.suppressed)) : [];
+      if (driven.length) {
+        get().notify(`${driven.map((id) => get().doc.objects[id]?.name).join(', ')} moves with a joint, so it can't be grounded.`);
+        ids = ids.filter((id) => !driven.includes(id));
+        if (!ids.length) return;
+      }
       get().apply(on ? 'Ground' : 'Unground', (d) => {
         for (const id of ids) {
           const o = d.objects[id];
@@ -1267,7 +1327,8 @@ export const useEditor = create<EditorState>()((set, get) => {
             o.home ??= structuredClone(plainOf(o).transform);
           } else delete o.grounded;
         }
-      }),
+      });
+    },
 
     setHome: (ids) =>
       get().apply('Set home position', (d) => {
@@ -1291,6 +1352,130 @@ export const useEditor = create<EditorState>()((set, get) => {
           else delete o.suppressed;
         }
       }),
+
+    addJoint: ({ kind, a, b, axis = 'z', origin, limits, name }) => {
+      const doc = get().doc;
+      const id = createId('jt');
+      const n = name ?? `${JOINT_NAME[kind]} ${Object.keys(doc.joints ?? {}).length + 1}`;
+      const why = jointProblem(doc, { id, name: n, a, b });
+      if (why) {
+        get().notify(why);
+        return null;
+      }
+      const o = origin ? new THREE.Vector3(...origin) : worldBoundsOf(doc, [b]).getCenter(new THREE.Vector3());
+      const dir = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }[axis];
+      const ref = axis === 'x' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const world = new THREE.Matrix4().fromArray(frameFrom(o, dir, ref));
+      const frameA = worldMatrix(doc, a).invert().multiply(world).toArray();
+      const frameB = worldMatrix(doc, b).invert().multiply(world).toArray();
+      const values = clampValues({ kind, values: {}, limits }, {});
+      get().apply(`Add ${kind} joint`, (d) => {
+        d.joints ??= {};
+        d.joints[id] = { id, name: n, kind, a, b, frameA, frameB, values, ...(limits ? { limits } : {}) };
+      });
+      return get().doc.joints?.[id] ? id : null;
+    },
+
+    updateJoint: (id, patch) => {
+      const j = get().doc.joints?.[id];
+      if (!j) return;
+      get().apply(`Edit ${j.name}`, (d) => {
+        const t = d.joints![id];
+        Object.assign(t, patch);
+        if (patch.kind) t.values = clampValues({ kind: patch.kind, values: {}, limits: t.limits }, plainOf(t).values);
+        if (patch.limits) t.values = clampValues({ kind: t.kind, values: {}, limits: patch.limits }, plainOf(t).values);
+        if (patch.suppressed === false) delete t.suppressed;
+      });
+    },
+
+    setJointValues: (id, values) => {
+      const j = get().doc.joints?.[id];
+      if (!j) return;
+      const next = clampValues(j, { ...j.values, ...values });
+      if (JOINT_DOF[j.kind].some((k) => (values[k] ?? next[k]) !== next[k])) get().notify(`${j.name} is at its limit.`);
+      get().apply(`Move ${j.name}`, (d) => {
+        d.joints![id].values = next;
+      });
+    },
+
+    removeJoint: (id) => {
+      const j = get().doc.joints?.[id];
+      if (!j) return;
+      get().apply(`Delete ${j.name}`, (d) => {
+        delete d.joints![id];
+      });
+    },
+
+    addExplodeView: (ids, name) => {
+      const id = createId('ex');
+      const doc = get().doc;
+      get().apply('New exploded view', (d) => {
+        d.explodeViews ??= {};
+        d.explodeViews[id] = {
+          id,
+          name: name ?? `Exploded view ${Object.keys(doc.explodeViews ?? {}).length + 1}`,
+          steps: ids?.length ? autoExplodeSteps(doc, ids, () => createId('st')) : [],
+        };
+      });
+      set({ explode: { viewId: id, progress: get().doc.explodeViews![id].steps.length } });
+      return id;
+    },
+
+    removeExplodeView: (viewId) => {
+      if (!get().doc.explodeViews?.[viewId]) return;
+      get().apply('Delete exploded view', (d) => {
+        delete d.explodeViews![viewId];
+      });
+      if (get().explode?.viewId === viewId) set({ explode: null });
+    },
+
+    addExplodeStep: (viewId, ids, offset) => {
+      if (!get().doc.explodeViews?.[viewId] || !ids.length) return null;
+      const id = createId('st');
+      get().apply('Add explode step', (d) => {
+        d.explodeViews![viewId].steps.push({ id, objectIds: [...ids], offset });
+      });
+      set({ explode: { viewId, progress: get().doc.explodeViews![viewId].steps.length } });
+      return id;
+    },
+
+    updateExplodeStep: (viewId, stepId, patch) => {
+      if (!get().doc.explodeViews?.[viewId]?.steps.some((st) => st.id === stepId)) return;
+      get().apply('Edit explode step', (d) => {
+        Object.assign(
+          d.explodeViews![viewId].steps.find((st) => st.id === stepId)!,
+          patch,
+        );
+      });
+    },
+
+    moveExplodeStep: (viewId, stepId, dir) => {
+      const steps = get().doc.explodeViews?.[viewId]?.steps;
+      const i = steps?.findIndex((st) => st.id === stepId) ?? -1;
+      if (!steps || i < 0 || i + dir < 0 || i + dir >= steps.length) return;
+      get().apply('Reorder explode steps', (d) => {
+        const list = d.explodeViews![viewId].steps;
+        const [m] = list.splice(i, 1);
+        list.splice(i + dir, 0, m);
+      });
+    },
+
+    removeExplodeStep: (viewId, stepId) => {
+      if (!get().doc.explodeViews?.[viewId]) return;
+      get().apply('Delete explode step', (d) => {
+        const v = d.explodeViews![viewId];
+        v.steps = v.steps.filter((st) => st.id !== stepId);
+      });
+      const ex = get().explode;
+      if (ex?.viewId === viewId)
+        set({ explode: { viewId, progress: Math.min(ex.progress, get().doc.explodeViews![viewId].steps.length) } });
+    },
+
+    setExplode: (viewId, progress) => {
+      const v = viewId ? get().doc.explodeViews?.[viewId] : null;
+      if (!v) return set({ explode: null });
+      set({ explode: { viewId: v.id, progress: Math.max(0, Math.min(v.steps.length, progress ?? v.steps.length)) } });
+    },
 
     makeComponent: () => {
       const ids = editableSelection();
@@ -1715,5 +1900,13 @@ export const selectPrimaryId = (s: EditorState) => s.selection[s.selection.lengt
 
 // A newly opened design starts clean (see platform/projectScope).
 onProjectSwitch('editor', () =>
-  useEditor.setState({ tool: 'select', measurePoints: [], notice: null, blockedResize: null, transaction: null, readOnly: false }),
+  useEditor.setState({
+    tool: 'select',
+    measurePoints: [],
+    notice: null,
+    blockedResize: null,
+    explode: null,
+    transaction: null,
+    readOnly: false,
+  }),
 );

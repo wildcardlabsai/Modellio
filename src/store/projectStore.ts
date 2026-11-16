@@ -242,7 +242,13 @@ async function initOnce() {
     // Never saved: a new design, keeping the id of unsaved work so its draft can be recovered.
     const draft = last ? await drafts.load(last).catch(() => null) : null;
     const p = draft ? blank(draft.meta.name, draft.meta.id) : blank(untitled(projects));
-    switchTo(p, null);
+    const early = useEditor.getState();
+    if (!draft && early.history.past.length > 0 && !early.readOnly) {
+      // The user started designing before storage was ready: keep their work (unsaved), don't wipe it.
+      remember(p.meta.id);
+      set({ current: p.meta, currentMaker: null, status: 'unsaved', view: 'editor', error: null, recovery: null });
+      void flushDraft();
+    } else switchTo(p, null);
   }
   if (repo.kind === 'memory')
     set({ error: 'Browser storage is unavailable (private mode?). Projects are kept only until you close this tab.' });

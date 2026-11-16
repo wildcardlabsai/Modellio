@@ -6,6 +6,7 @@ import { useProjects } from '@/store/projectStore';
 import { openMeshPicker, useFileUi } from '@/components/files/fileIntake';
 import { useStudio } from '@/app/studio';
 import { useSketchSession } from '@/components/sketch/sketchSession';
+import { useAssemblyUi } from '@/components/assembly/assemblyUi';
 import { isEffectivelyLocked, topLevel, translateWorldDraft } from '@/cad/hierarchy';
 
 export function isTypingTarget(target: EventTarget | null): boolean {
@@ -148,6 +149,16 @@ export function useKeyboardShortcuts() {
         case 'l':
           s.setTool(s.tool === 'layflat' ? 'select' : 'layflat');
           break;
+        case 'j':
+          // New joint between the two selected parts.
+          if (!s.readOnly && topLevel(s.doc, s.selection).length === 2) useAssemblyUi.getState().setJointDialog(true);
+          break;
+        case 'g': {
+          // Ground / unground the selection.
+          const ids = topLevel(s.doc, s.selection);
+          if (ids.length && !s.readOnly) s.setGrounded(ids, !ids.every((id) => s.doc.objects[id]?.grounded));
+          break;
+        }
         case 'k':
           // New sketch (the sketch editor is modal, so this never fires while one is open).
           if (!s.readOnly) useSketchSession.getState().open(null);

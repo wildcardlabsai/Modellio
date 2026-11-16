@@ -22,6 +22,8 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Measure tool', 'M'],
       ['Lay flat on a face', 'L'],
       ['New sketch', 'K'],
+      ['New joint (two parts selected)', 'J'],
+      ['Ground / unground', 'G'],
     ],
   },
   {

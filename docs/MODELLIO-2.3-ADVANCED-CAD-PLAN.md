@@ -590,6 +590,42 @@ Built in five increments (3a–3e), each tested, committed and pushed.
 - Matching geometry is not yet shared on the GPU between instances, so very large assemblies draw each copy separately.
 - A sketch-based body inside a linked component keeps one sketch for all copies; editing the sketch updates every copy.
 
+### Stage 4F: joints, limits and exploded views (done)
+
+| Item | Result |
+| --- | --- |
+| Joints | `doc.joints` (schema 4): rigid, hinge (revolute), slider, cylindrical and planar. Each joint has a frame on the fixed part A and on the moving part B. B is placed exactly: world(B) = world(A) · frameA · motion(kind, values) · frameB⁻¹. `solveJoints` (`src/cad/assembly/joints.ts`) runs in the store's change pipeline after link sync, so moving A carries B in the same undo step. Chains are solved parents first. |
+| Driving | Each value (angle, slide, across/along) can be typed or set with a slider in the Assembly panel. A drag or typed position of B is projected onto the joint's freedoms: a hinge only turns, a slider only slides, a rigid joint doesn't move. A value the drag didn't change keeps its exact value. |
+| Limits | Optional min/max per value. Typed values, sliders and drags stop at the limit, with an "is at its limit" notice. |
+| Refused, never approximated | A part moved by two joints; a loop of joints; a joint between nested parts or on a part inside a component (connect the component itself); a grounded moving part; grounding a part a joint moves. Each gives the reason. Deleting a part removes its joints. |
+| Creating | Select two parts (fixed first) and press **J** or "+ Joint". The New joint dialog has kind, axis (X/Y/Z), origin (between the parts / centre of either part), and limits (default 0–90° or 0–30 mm). The joint is made at the parts' current places, so nothing jumps. |
+| Display | `JointGlyphs`: the axis, a ring for turning joints, an arrow for sliding ones, limit arcs and bars, a square for planar and a cross for rigid. The active joint is highlighted. There is a show/hide toggle. |
+| Exploded views | `doc.explodeViews`: named views of ordered steps, each step moving some parts by a world offset. **Display only:** offsets are added when drawing (`SceneNode`), so positions, joints, Booleans, export and print checks always use the assembled design. **Auto** spreads the selection (or everything) outwards, furthest parts first. Steps can be added from the selection, have their offsets typed, be moved earlier or later, and be deleted. A progress slider plays the steps, and "Assembled" resets. The gizmo, resize handles, selection outlines and joint symbols are hidden while exploded. The active view and its progress are interface state, reset when switching projects. |
+| Keys | **J** new joint; **G** ground / unground (both in the shortcuts list). |
+| Fix found on the way | On a first visit, a design started before project storage was ready was wiped when storage opened. It is now kept, as an unsaved new design. Unit test: `projectInit.test.ts`. |
+
+**Tests added:**
+- Unit (`src/cad/assembly/joints.test.ts`, 10):
+  - each joint kind's exact pose; limits on typed values and drags; drag projection
+  - rigid carry and chains; one undo step
+  - refusals: loop, double driver, grounded, self
+  - persistence; removal with the part
+  - exploded views: offsets add up with progress; display only (positions and export unchanged); reorder and delete; auto; pruning
+- `e2e-assemblies` part 2 (26 more checks, 54 in all):
+  - hinge 0–90° made with J and the dialog: no jump; typed 45°; 120° stops at 90° with a notice
+  - a drag keeps the lid on the hinge; turning past the limit stops it
+  - moving the base carries the lid in one undo step
+  - slider 0–30 mm (limit, sideways drag projected)
+  - rigid follows; cylindrical; planar stays in its plane
+  - a double driver is refused
+  - auto explode; display only; reorder; typed offset; reset
+  - save, reload, duplicate, and switching projects leaves nothing behind
+
+**Limitations:**
+- Joint frames come from axis and origin presets (an X/Y/Z axis through a part's centre or between parts). Picking a face to place the frame, and "snap B onto A" mating, are not built yet.
+- Explode steps are edited by typing offsets (or Auto), not by dragging with the gizmo in an explode mode.
+- Joints are a tree, by design: closed loops (e.g. four-bar linkages) are refused rather than solved.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.
