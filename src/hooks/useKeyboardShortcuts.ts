@@ -150,8 +150,11 @@ export function useKeyboardShortcuts() {
           s.setTool(s.tool === 'layflat' ? 'select' : 'layflat');
           break;
         case 'j':
-          // New joint between the two selected parts.
-          if (!s.readOnly && topLevel(s.doc, s.selection).length === 2) useAssemblyUi.getState().setJointDialog(true);
+          // New joint: pick a face or edge on each part (or use the two selected parts).
+          if (!s.readOnly) {
+            const two = topLevel(s.doc, s.selection);
+            useAssemblyUi.getState().setJointDialog(true, two.length === 2 ? [two[0], two[1]] : null);
+          }
           break;
         case 'g': {
           // Ground / unground the selection.

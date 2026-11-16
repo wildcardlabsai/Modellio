@@ -15,6 +15,7 @@ import { produce } from 'immer';
 import type { Joint, JointKind, ModelDocument, ObjectId } from '@/types/document';
 import { worldMatrix } from '../hierarchy';
 import { instanceRootOf } from './links';
+import { placingRecord } from '../sketchPlacement';
 import { matrixToTransform, transformToMatrix } from '../transforms/transform';
 
 const DEG = Math.PI / 180;
@@ -114,7 +115,7 @@ export function frameFrom(origin: THREE.Vector3, axis: THREE.Vector3, ref: THREE
 }
 
 /** Why a joint between A and B can't be made (or null). */
-export function jointProblem(doc: ModelDocument, j: Pick<Joint, 'id' | 'name' | 'a' | 'b'>): string | null {
+export function jointProblem(doc: ModelDocument, j: Pick<Joint, 'id' | 'name' | 'a' | 'b'>, opts: { moves?: boolean } = {}): string | null {
   const a = doc.objects[j.a];
   const b = doc.objects[j.b];
   if (!a || !b) return 'Pick two parts to connect.';
@@ -128,6 +129,8 @@ export function jointProblem(doc: ModelDocument, j: Pick<Joint, 'id' | 'name' | 
     if (root && root !== id)
       return `${doc.objects[id].name} is a part inside the component ${doc.objects[root].name}. Connect the component itself.`;
   }
+  if (opts.moves && placingRecord(doc, j.b))
+    return `${b.name} sits on its sketch's plane or face, so it can't be moved onto ${a.name}. Detach its sketch first, or choose “Keep it where it is”.`;
   if (b.grounded) return `${b.name} is grounded, so a joint can't move it. Pick it first (as the fixed part) or unground it.`;
   const others = Object.values(doc.joints ?? {}).filter((x) => x.id !== j.id);
   const ord = jointOrder([...others, { ...(j as Joint), kind: 'rigid', frameA: [], frameB: [], values: {} }]);

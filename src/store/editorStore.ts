@@ -73,6 +73,7 @@ import type {
   Joint,
   JointKind,
   ExplodeStep,
+  JointPlacement,
 } from '@/types/document';
 import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
 import { guardSketchBodies, sketchControlled, type BlockedResize } from '@/cad/sketchBodies';
@@ -306,6 +307,12 @@ export interface EditorState {
     origin?: Vec3;
     limits?: Joint['limits'];
     name?: string;
+    /**
+     * Frames read from picked faces or edges (see `cad/assembly/references`), used instead of the
+     * axis presets; `worldB` moves the moving part onto its mate in the same undo step.
+     */
+    frames?: { frameA: number[]; frameB: number[]; worldB?: number[] };
+    placement?: JointPlacement;
   }) => string | null;
   /** Change a joint's name, kind, limits or suppression. */
   updateJoint: (id: string, patch: Partial<Pick<Joint, 'name' | 'kind' | 'limits' | 'suppressed'>>) => void;
@@ -1353,14 +1360,40 @@ export const useEditor = create<EditorState>()((set, get) => {
         }
       }),
 
-    addJoint: ({ kind, a, b, axis = 'z', origin, limits, name }) => {
+    addJoint: ({ kind, a, b, axis = 'z', origin, limits, name, frames, placement }) => {
       const doc = get().doc;
       const id = createId('jt');
       const n = name ?? `${JOINT_NAME[kind]} ${Object.keys(doc.joints ?? {}).length + 1}`;
-      const why = jointProblem(doc, { id, name: n, a, b });
+      const why = jointProblem(doc, { id, name: n, a, b }, { moves: !!frames?.worldB });
       if (why) {
         get().notify(why);
         return null;
+      }
+      if (frames) {
+        const values = clampValues({ kind, values: {}, limits }, {});
+        get().apply(`Add ${JOINT_NAME[kind].toLowerCase()} joint`, (d) => {
+          if (frames.worldB) {
+            // Mate the moving part onto the fixed one (its new place is the joint's rest pose).
+            const ob = d.objects[b];
+            const parent = ob.parentId ? worldMatrix(d as ModelDocument, ob.parentId) : null;
+            const w = new THREE.Matrix4().fromArray(frames.worldB);
+            ob.transform = matrixToTransform(parent ? parent.invert().multiply(w) : w);
+          }
+          d.joints ??= {};
+          d.joints[id] = {
+            id,
+            name: n,
+            kind,
+            a,
+            b,
+            frameA: frames.frameA,
+            frameB: frames.frameB,
+            values,
+            ...(limits ? { limits } : {}),
+            ...(placement ? { placement } : {}),
+          };
+        });
+        return get().doc.joints?.[id] ? id : null;
       }
       const o = origin ? new THREE.Vector3(...origin) : worldBoundsOf(doc, [b]).getCenter(new THREE.Vector3());
       const dir = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }[axis];

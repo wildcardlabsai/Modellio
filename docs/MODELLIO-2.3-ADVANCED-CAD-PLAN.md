@@ -626,6 +626,91 @@ Built in five increments (3a–3e), each tested, committed and pushed.
 - Explode steps are edited by typing offsets (or Auto), not by dragging with the gizmo in an explode mode.
 - Joints are a tree, by design: closed loops (e.g. four-bar linkages) are refused rather than solved.
 
+### Stage 4 status audit (after the review)
+
+Each item was checked against the code and its tests, not the plan. **Complete** means implemented and covered by a passing test. The 4G fixes are included.
+
+**Project lifecycle**
+
+| Item | Status | Tests |
+| --- | --- | --- |
+| New design (blank, Maker, template) | Complete | e2e-projects 1, 9, 21; projectStore.test |
+| Save (asks a name the first time) | Complete | e2e-projects 3–5 |
+| Save As (a separate project; the original is unchanged) | Complete | e2e-projects 6; projectStore.test |
+| Open design (list with type badges, search) | Complete | e2e-projects 11–13 |
+| Recent designs (by last activity, each listed once) | Complete | e2e-projects 14; projectStore.test |
+| Rename and duplicate | Complete | e2e-projects 15–16; e2e-platform |
+| Delete safely (confirmed; the open design becomes a new one) | Complete | e2e-projects 17; e2e-platform 12b |
+| Unsaved-change warnings (Save / Discard / Cancel) | Complete | e2e-projects 7–10, 29 |
+| Switching projects leaves no geometry, selection, tool, history or previews behind | Complete | e2e-projects 9; projectStore.test (scope registry); e2e-assemblies 20c |
+| Maker project opens in Design Studio as the same project, with its Maker settings | Complete | e2e-projects 23–25; Keyring, Cookie and Vase suites |
+| Back to the Maker, continuing the same project (warns before rebuilding over Studio edits) | Complete | e2e-projects 26–28, 30 |
+| A new Maker project starts blank | Complete | e2e-projects 29 |
+| Recovery of unsaved work after a reload (drafts; projects change only on Save) | Complete | e2e-projects 18–20; projectStore.test |
+| First visit keeps work started before storage opened | Complete (4F) | projectInit.test |
+| Split Studio projects: saved with their source model, reopened in Split Studio to carry on | Complete (4G; it was partial before) | e2e-projects 32–33; base64.test |
+
+**One visual system**
+
+| Item | Status | Tests |
+| --- | --- | --- |
+| Keyring, Key Tag, Sign, Cookie, Vase & Planter Makers and Split Studio on the shared navy/purple theme (these are all the Makers) | Complete | e2e-visual (112 checks × 4 screen sizes), designSystem.test |
+| Electric-blue accent | Complete (4G): used for info notes, linked-copy markers and joint references | visual review |
+| Template thumbnails on the dark workspace | Complete (4G): Vase and Design Studio templates re-rendered dark. The Cookie and Keyring thumbnails show the light artboard, matching the Makers' printable area. | visual review |
+| Each Maker keeps its own workflow | Complete | All Maker suites |
+
+**Stage 3 safeguards**
+
+| Item | Status | Tests |
+| --- | --- | --- |
+| Sketch-controlled bodies can't be stretched away from their sketch: refused with a reason, or made independent with a scaled sketch; extrude height becomes depth | Complete | safeguards.test (6); e2e-sketching 61–63 |
+| Spline handles can't create a loop, cusp or fold: the drag is held back, Finish is disabled, and building is refused | Complete | safeguards.test (7); e2e-sketching 59–60 |
+| Loft and sweep refuse sketches with spline problems (e.g. from older files) | Complete (4G) | safeguards.test |
+
+### Stage 4G: gaps found in the audit (done)
+
+- Split Studio projects keep the source 3MF (up to 40 MB) and their settings, and reopen in Split Studio. Saving at the Import step splits the model first. Older Split projects, or bigger files, open their parts in the Design Studio as before.
+- The assembly browser marks independent components (the tree's ⛓̸ marker; "independent" in the Components list) as well as linked ones (the blue ⛓ count).
+- Breaking a link leaves the original and the other copies linked. New check: e2e-assemblies 5b2.
+- The loft/sweep spline check, the electric-blue accent and the dark template thumbnails are described in the audit above. The template render script now answers the unsaved-changes question it meets.
+
+**Split Studio check 17 (intermittent failure).** Reproduced: 1 failure in 3 runs under triple load. The cause was the test, not the app. The check clicks the "model pixel nearest the centre" of a 200-pixel-wide downsample of the view. Since 4D's dark background, that pixel is often a blended edge of the white disc, and clicking it can land just outside the model. The test now clicks a point whose whole neighbourhood is model, and fails clearly if there is none. The assertion is unchanged. It then passed 6/6 under the same load.
+
+A second check, 37 (accessibility), failed once under that load. It measured the "Design" nav button mid colour-transition. It now waits for transitions to finish; the contrast rules are unchanged.
+
+### Stage 4H: joints placed from faces and edges (done)
+
+| Item | Result |
+| --- | --- |
+| Audit | Joints already store exact frames on each part (`frameA`, `frameB`), and the solver, limits, drag projection and persistence work on any frames. So placement from geometry only had to produce those frames: the five joint kinds and their behaviour are unchanged. Bodies are read exactly the same way as the face, edge and hole tools read them. `FaceRef` has no axis for round faces, so axes are fitted from the face itself. |
+| References (`src/cad/assembly/references.ts`) | A flat face gives a plane: its centre and outward normal. A cylindrical or conical face gives an axis, fitted from the face's own triangles (eigen-analysis of the normals; least-squares circle for the centre and diameter). A circular edge gives an axis through its centre. A straight edge gives an axis along it. A spherical face gives a point. Torus and free-form faces, and free-form edges, are refused with the reason. |
+| Mating | The moving part is placed so its reference meets the fixed part's: two flat faces meet face to face; axes line up. Options: **Reverse direction**, **Gap** along the axis, **Turn** about it, and **Move the moving part onto the fixed part** (on by default; off keeps it where it is). The joint's axis is the fixed part's reference. The rest pose (values 0) is the mated place, so limits are measured from there. |
+| Suitability | Planar needs two flat faces. Hinge, slider and cylindrical need an axis (not a sphere). Unsuitable picks say why, and another reference can be picked. Also refused: picks on the same part; moving a part that sits on its sketch's plane; and everything refused before (grounded moving part, loops, double drivers). |
+| Panel | New joint is now docked beside the 3D view, so the view can be clicked. **J** (or "+ Joint") opens it. Click a face or edge of the fixed part, then of the moving part. Parts come from the picks, or from the two selected parts. The face or edge under the cursor is highlighted, and picked references are drawn (cyan for the fixed part, pink for the moving part). A see-through preview of the moving part shows where it will go, with the joint axis, before **Create joint**. "Quick axis" keeps the X/Y/Z presets. Esc stops picking, then closes the panel. The gizmo is hidden while picking, and picking never changes the selection. |
+| Record | The joint stores the faces or edges it was placed from (`placement`; saved, validated on load, and shown in the joints list). |
+
+**Tests:**
+- Unit (`references.test.ts`, 7), on real exact builds:
+  - flat face centre and normal
+  - a cylinder's axis and diameter (lying on its side)
+  - circular-edge and straight-edge axes
+  - face-to-face mate, gap and reverse
+  - rest pose equals the mated place
+  - coaxial pin mate, and "keep where it is"
+  - suitability messages
+  - eigen solver
+- `e2e-assemblies` part 3 (15 checks, 70 in all), all by clicking in the 3D view:
+  - plate face + pin side → cylindrical joint (diameter read); preview before change; picking doesn't select
+  - pin upright on the face's axis; the joint remembers its faces; driving it turns and slides on that axis
+  - face-to-face (turned over), Reverse plus a 4 mm gap
+  - planar on a round face refused with the reason, then the rim (circular edge) picked instead as a slider
+  - saved and reloaded
+
+**Limitations:**
+- The joint's origin is the centre of the picked face (or the fitted centre of an axis), not the exact point clicked.
+- If a referenced part is later resized, the joint keeps its frames. The face references are stored, so they can be re-read in a later stage.
+- The docked panel covers the left of the view: parts behind it are reached by panning or orbiting.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.

@@ -55,6 +55,7 @@ export function migrateAssemblyDraft(doc: ModelDocument, raw: Record<string, unk
         values,
         ...(Object.keys(limits).length ? { limits } : {}),
         ...(j.suppressed === true ? { suppressed: true } : {}),
+        ...(validPlacement(j.placement) ? { placement: j.placement as Joint['placement'] } : {}),
       };
     }
   doc.joints = joints;
@@ -82,3 +83,10 @@ export function migrateAssemblyDraft(doc: ModelDocument, raw: Record<string, unk
 /** Instance groups of a document, by component. */
 export const componentGroups = (doc: ModelDocument) =>
   Object.values(doc.objects).filter((o): o is GroupObject => o.kind === 'group' && !!o.componentId);
+
+/** A joint's face / edge placement record, if well formed (otherwise it is dropped; the joint stays). */
+function validPlacement(p: unknown): boolean {
+  if (!isObj(p) || typeof p.flip !== 'boolean' || !isNum(p.offset) || !isNum(p.angle)) return false;
+  const ref = (r: unknown) => isObj(r) && typeof r.objectId === 'string' && typeof r.label === 'string' && (isObj(r.face) || isObj(r.edge));
+  return ref(p.a) && ref(p.b);
+}

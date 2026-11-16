@@ -34,6 +34,7 @@ import { SnapGuides } from './guides';
 import { LabelLayer, LabelProjector } from './labels';
 import { ResizeHandles } from './ResizeHandles';
 import { JointGlyphs } from './JointGlyphs';
+import { JointPickTool } from './JointPickTool';
 import { JointDialog } from '@/components/assembly/JointDialog';
 import { useAssemblyUi } from '@/components/assembly/assemblyUi';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -101,8 +102,11 @@ export function Viewport() {
   const colors = WORKSPACE_COLORS[useWorkspaceTheme((s) => s.theme)];
   const [dragOver, setDragOver] = useState(false);
   const [sceneError, setSceneError] = useState<Error | null>(null);
+  // While an exploded view shows, or faces are being picked for a joint, parts can't be moved or resized.
   const exploded = useEditor((s) => !!s.explode && s.explode.progress > 0);
   const jointDialog = useAssemblyUi((s) => s.jointDialog);
+  const jointPicking = useAssemblyUi((s) => s.jointDialog && s.draft.mode === 'faces' && s.draft.target !== null);
+  const noHandles = exploded || jointPicking;
   const [sceneKey, setSceneKey] = useState(0);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
@@ -240,10 +244,11 @@ export function Viewport() {
           <Suspense fallback={null}>
             <SceneObjects />
           </Suspense>
-          {/* An exploded view is display only: parts can't be moved or resized while it is shown. */}
-          {!exploded && <TransformGizmo />}
-          {!exploded && <ResizeHandles />}
+          {/* Exploded views are display only, and joint picking needs clicks: no handles meanwhile. */}
+          {!noHandles && <TransformGizmo />}
+          {!noHandles && <ResizeHandles />}
           <JointGlyphs />
+          <JointPickTool />
           <ViewCube />
           <MeasureTool />
           <LayFlatTool />

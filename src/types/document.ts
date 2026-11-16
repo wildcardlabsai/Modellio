@@ -184,6 +184,29 @@ export interface Joint {
   /** Allowed range per value, [min, max]. */
   limits?: Partial<Record<JointValue, [number, number]>>;
   suppressed?: boolean;
+  /**
+   * How the joint was placed from geometry (Stage 4H): the face or edge picked on each part (the
+   * body, and its face or edge found again by reference), and the mate options. Absent for joints
+   * placed with axis presets.
+   */
+  placement?: JointPlacement;
+}
+
+/** A picked face or edge of a body (see `FaceRef` / `EdgeRef` in the exact-geometry types). */
+export interface JointRefData {
+  objectId: ObjectId;
+  face?: { kind: string; centre: Vec3; normal: Vec3; area: number };
+  edge?: { kind: string; mid: Vec3; dir: Vec3; radius: number; faces?: [Vec3, Vec3] };
+  /** What it was, in words ("a flat face of Base"). */
+  label: string;
+}
+
+export interface JointPlacement {
+  a: JointRefData;
+  b: JointRefData;
+  flip: boolean;
+  offset: number;
+  angle: number;
 }
 
 /** One step of an exploded view: these objects move by `offset` (world mm). */

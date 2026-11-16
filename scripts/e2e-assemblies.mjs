@@ -278,6 +278,8 @@ await S(([a, b]) => window.modellio.store.getState().select([a, b]), [hb, lid]);
 await page.keyboard.press('j');
 const dlg = page.getByTestId('joint-dialog');
 await dlg.waitFor();
+// The quick axis placement (the default is placing from faces, covered in part 3).
+await dlg.getByRole('radio', { name: 'Quick axis', exact: true }).click();
 check(
   '13. J opens the New joint dialog with the two parts (fixed, then moving)',
   /Box/.test(await page.getByTestId('joint-a').textContent()),
@@ -448,6 +450,197 @@ check(
   (await S(() => Object.keys(window.modellio.store.getState().doc.joints ?? {}).length)) === 0 &&
     (await S(() => window.modellio.store.getState().explode)) === null,
 );
+
+// ── Part 3 (Stage 4H): placing joints from faces and edges ──
+await S(() => window.modellio.projects.getState().newProject('Face joints'));
+await until(async () => (await S(() => Object.keys(window.modellio.store.getState().doc.objects).length)) === 0);
+const f3 = await S(() => {
+  const s = window.modellio.store.getState();
+  const mk = (shape, size, pos) => {
+    const id = s.addShape(shape);
+    s.setSize(id, size);
+    s.setPosition(id, pos);
+    return id;
+  };
+  const plate = mk('box', [40, 40, 6], [0, 0, 3]);
+  const pin = mk('cylinder', [8, 8, 24], [45, -10, 12]);
+  const block = mk('box', [16, 16, 10], [30, -42, 5]);
+  const pin2 = mk('cylinder', [6, 6, 16], [30, 50, 8]);
+  s.select([]);
+  return { plate, pin, block, pin2 };
+});
+// Room for the docked joint panel (it covers the left of the view): frame the parts, then pan the
+// view so they sit in its right half, as a user would.
+await S(() => window.modellio.store.getState().requestFrame());
+await page.waitForTimeout(800);
+await S(() => {
+  const { camera, orbitControls } = window.modellio.viewport;
+  const right = camera.position.clone().sub(orbitControls.target).cross(camera.up).normalize().negate();
+  const dist = camera.position.distanceTo(orbitControls.target);
+  const shift = right.multiplyScalar(-dist * 0.2);
+  camera.position.add(shift);
+  orbitControls.target.add(shift);
+  orbitControls.update();
+});
+await page.waitForTimeout(800);
+const ws = (p) => S((q) => window.modellio.worldToScreen(...q), p);
+/** A point on a vertical cylinder's side, facing the camera (away from its seam), at height z. */
+const sidePoint = (c, r, z) =>
+  S(
+    ([c, r, z]) => {
+      const cam = window.modellio.viewport.camera.position;
+      const a = Math.atan2(cam.y - c[1], cam.x - c[0]) + 0.35;
+      return [c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r, z];
+    },
+    [c, r, z],
+  );
+/** Click a world point until the panel records the pick (the first click may still be reading the body's faces). */
+const pickAt = async (which, world) => {
+  for (let i = 0; i < 20; i++) {
+    const p = await ws(world);
+    const box = await page.getByTestId('joint-dialog').locator('> div').boundingBox();
+    if (box && p.x < box.x + box.width + 4) throw new Error(`pick point ${world} is under the joint panel (${p.x}, ${p.y})`);
+    await page.mouse.move(p.x, p.y);
+    await page.waitForTimeout(150);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(150);
+    if ((await page.getByTestId(`joint-ref-${which}`).getAttribute('data-picked')) === 'true') return true;
+    await page.waitForTimeout(300);
+  }
+  await page.screenshot({ path: `${OUT}/assemblies-pick-failed-${which}.png` });
+  return false;
+};
+const worldOf = (id) =>
+  S((i) => {
+    const m = window.modellio.hierarchy.worldMatrix(window.modellio.store.getState().doc, i).elements;
+    return { pos: [m[12], m[13], m[14]], z: [m[8], m[9], m[10]] };
+  }, id);
+const panel3 = page.getByTestId('joint-dialog');
+
+// 21. Plate's top face + pin's round face → a cylindrical joint: the pin stands on the plate's axis.
+await page.keyboard.press('Escape');
+await page.keyboard.press('j');
+await panel3.waitFor();
+check(
+  '21. With nothing selected, J opens the joint panel ready to pick the fixed part’s face',
+  (await page.getByTestId('joint-ref-a').getAttribute('data-picked')) === 'false',
+);
+await panel3.getByRole('radio', { name: 'Cylinder', exact: true }).click();
+const gotA = await pickAt('a', [6, 5, 6]);
+check(
+  '21b. Clicking the plate’s top face picks it as a flat face',
+  gotA && /flat face of Box/.test(await page.getByTestId('joint-ref-a-label').textContent()),
+  await page.getByTestId('joint-ref-a-label').textContent(),
+);
+const gotB = await pickAt('b', await sidePoint([45, -10], 4, 14));
+const labelB = await page.getByTestId('joint-ref-b-label').textContent();
+check(
+  '21c. Clicking the pin’s side picks its round face, with its diameter read from the geometry',
+  gotB && /round face of .*Ø8\.0 mm/.test(labelB),
+  labelB,
+);
+await until(async () => /Ready/.test(await page.getByTestId('joint-why').textContent()));
+check(
+  '21d. The panel previews the result before anything changes',
+  /Ready: .* moves onto/.test(await page.getByTestId('joint-why').textContent()) && (await worldOf(f3.pin)).pos[0] === 45,
+);
+await page.waitForTimeout(200);
+check('21d2. Picking faces does not select the parts', (await S(() => window.modellio.store.getState().selection.length)) === 0);
+await page.screenshot({ path: `${OUT}/assemblies-face-preview.png` });
+await page.getByTestId('joint-create').click();
+await until(async () => (await S(() => Object.keys(window.modellio.store.getState().doc.joints ?? {}).length)) === 1);
+const pinAt = await worldOf(f3.pin);
+check(
+  '21e. Created: the pin is moved onto the plate face’s axis (its centre line), upright',
+  near(pinAt.pos.slice(0, 2), [0, 0], 0.01) && Math.abs(Math.abs(pinAt.z[2]) - 1) < 1e-3,
+  JSON.stringify(pinAt),
+);
+const cj3 = await S(() => Object.values(window.modellio.store.getState().doc.joints)[0]);
+check(
+  '21f. The joint remembers the faces it was placed from',
+  /flat face/.test(cj3.placement?.a.label) && /round face/.test(cj3.placement?.b.label),
+);
+await S((id) => window.modellio.store.getState().setJointValues(id, { angle: 90, offset: 10 }), cj3.id);
+const pinMoved = await worldOf(f3.pin);
+check(
+  '21g. Driving it turns the pin on that axis and slides it along it',
+  near(pinMoved.pos.slice(0, 2), pinAt.pos.slice(0, 2), 0.01) && Math.abs(pinMoved.pos[2] - pinAt.pos[2] - 10) < 0.01,
+);
+
+// 22. Flat face to flat face: the block is turned over onto the plate; Reverse keeps it upright; a gap lifts it.
+await S(([a, b]) => window.modellio.store.getState().select([a, b]), [f3.plate, f3.block]);
+await page.keyboard.press('j');
+await panel3.waitFor();
+await panel3.getByRole('radio', { name: 'Rigid', exact: true }).click();
+await pickAt('a', [12, -12, 6]);
+await pickAt('b', [33, -39, 10]);
+await until(async () => /Ready/.test(await page.getByTestId('joint-why').textContent()));
+await page.getByTestId('joint-create').click();
+await until(async () => (await S(() => Object.keys(window.modellio.store.getState().doc.joints ?? {}).length)) === 2);
+let blk = await worldOf(f3.block);
+check(
+  '22. Two flat faces meet face to face (the block’s top lands on the plate’s top, so it is turned over)',
+  Math.abs(blk.pos[2] - 11) < 0.01 && blk.z[2] < -0.999,
+  JSON.stringify(blk),
+);
+await S(() => window.modellio.store.getState().undo());
+await S(([a, b]) => window.modellio.store.getState().select([a, b]), [f3.plate, f3.block]);
+await page.keyboard.press('j');
+await panel3.waitFor();
+await panel3.getByRole('radio', { name: 'Rigid', exact: true }).click();
+await pickAt('a', [12, -12, 6]);
+await pickAt('b', [33, -39, 10]);
+await panel3.getByRole('switch', { name: 'Reverse direction' }).click();
+await panel3.getByLabel('Joint gap').fill('4');
+await panel3.getByLabel('Joint gap').press('Enter');
+await until(async () => /Ready/.test(await page.getByTestId('joint-why').textContent()));
+await page.getByTestId('joint-create').click();
+await until(async () => (await S(() => Object.keys(window.modellio.store.getState().doc.joints ?? {}).length)) === 2);
+blk = await worldOf(f3.block);
+check(
+  '22b. Reverse keeps it the same way up, and the gap moves it 4 mm along the axis',
+  blk.z[2] > 0.999 && Math.abs(blk.pos[2] - (6 + 4 - 5)) < 0.01,
+  JSON.stringify(blk),
+);
+
+// 23. An unsuitable reference is explained, and another can be chosen.
+await page.keyboard.press('Escape');
+await S(() => window.modellio.store.getState().select([]));
+await page.keyboard.press('j');
+await panel3.waitFor();
+await panel3.getByRole('radio', { name: 'Planar', exact: true }).click();
+await pickAt('a', [14, -10, 6]);
+await pickAt('b', await sidePoint([30, 50], 3, 9));
+check(
+  '23. A planar joint on a round face is refused with the reason, and Create stays off',
+  /not flat/.test(await page.getByTestId('joint-why').textContent()) && (await page.getByTestId('joint-create').isDisabled()),
+  await page.getByTestId('joint-why').textContent(),
+);
+// 24. …choose another reference: the pin's top circular edge, as a slider.
+await panel3.getByRole('radio', { name: 'Slider', exact: true }).click();
+await page.getByRole('button', { name: /Pick the moving part/ }).click();
+await pickAt('b', await sidePoint([30, 50], 3, 16));
+const edgeLabel = await page.getByTestId('joint-ref-b-label').textContent();
+check(
+  '24. Picking the pin’s rim instead reads a circular edge (centre and axis)',
+  /circular edge of .*Ø6\.0 mm/.test(edgeLabel),
+  edgeLabel,
+);
+await until(async () => /Ready/.test(await page.getByTestId('joint-why').textContent()));
+await page.getByTestId('joint-create').click();
+await until(async () => (await S(() => Object.keys(window.modellio.store.getState().doc.joints ?? {}).length)) === 3);
+const p2 = await worldOf(f3.pin2);
+check('24b. The slider is made: the pin is lined up on the plate face’s axis', Math.abs(Math.abs(p2.z[2]) - 1) < 1e-3, JSON.stringify(p2));
+
+// 25. Saved and reloaded, the joints and their face references stay.
+const sig3 = () =>
+  S(() => JSON.stringify(Object.values(window.modellio.store.getState().doc.joints).map((j) => [j.kind, j.frameA, j.frameB, j.placement])));
+const before25 = await sig3();
+await S(() => window.modellio.projects.getState().saveNow());
+await page.reload({ waitUntil: 'networkidle' });
+await page.getByTestId('viewport').waitFor();
+await until(async () => (await S(() => Object.keys(window.modellio.store.getState().doc.joints ?? {}).length)) === 3);
+check('25. Face-placed joints (frames and the faces they came from) survive saving and reloading', (await sig3()) === before25);
 
 check('No page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

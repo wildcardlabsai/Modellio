@@ -37,6 +37,15 @@ function JointRow({ joint }: { joint: Joint }) {
           <span className="block truncate text-[11px] text-muted">
             {kind.label} · {doc.objects[joint.a]?.name} → {doc.objects[joint.b]?.name}
           </span>
+          {joint.placement && (
+            <span
+              className="block truncate text-[11px] text-accent-2"
+              title={`${joint.placement.a.label} → ${joint.placement.b.label}`}
+              data-testid="joint-placed-from"
+            >
+              From {joint.placement.a.label} → {joint.placement.b.label}
+            </span>
+          )}
         </button>
         <button
           type="button"
@@ -113,16 +122,18 @@ export function JointsSection() {
         )}
         <Button
           size="sm"
-          disabled={topLevel(doc, selection).length !== 2}
-          title="Select two parts: the fixed one, then the one that moves (J)"
-          onClick={() => useAssemblyUi.getState().setJointDialog(true)}
+          title="Connect two parts: pick a face or edge on each (J)"
+          onClick={() => {
+            const two = topLevel(doc, selection);
+            useAssemblyUi.getState().setJointDialog(true, two.length === 2 ? [two[0], two[1]] : null);
+          }}
           data-testid="add-joint"
         >
           <Plus size={13} /> Joint
         </Button>
       </div>
       {list.length === 0 ? (
-        <p className="px-1 text-[12px] text-muted">Select two parts to connect them with a hinge, slider or other joint.</p>
+        <p className="px-1 text-[12px] text-muted">Connect two parts with a hinge, slider or other joint: pick a face or edge on each.</p>
       ) : (
         <ul className="space-y-1.5" aria-label="Joints in this design">
           {list.map((j) => (
