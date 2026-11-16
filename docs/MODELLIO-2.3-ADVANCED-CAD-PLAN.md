@@ -711,6 +711,10 @@ A second check, 37 (accessibility), failed once under that load. It measured the
 - If a referenced part is later resized, the joint keeps its frames. The face references are stored, so they can be re-read in a later stage.
 - The docked panel covers the left of the view: parts behind it are reached by panning or orbiting.
 
+### Stage 4 final regression
+
+Fresh production build (`dist` removed, `npm run build`, `vite preview`). Full `run-e2e`: **23/23 suites, 957/957 checks, no failures**. That includes Split Studio 58/58 and e2e-assemblies 70/70. Unit tests: 56 files, 536 tests. Format, type-check and lint are clean. Nothing is merged or deployed.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.
