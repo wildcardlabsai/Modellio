@@ -54,6 +54,11 @@ interface SplitState extends Settings {
   explode: number;
   past: Settings[];
   future: Settings[];
+  /** The saved project for this split (its parts, opened in the Design Studio), if saved. */
+  project: { id: string; name: string } | null;
+  /** Changed since it was imported or last saved. */
+  dirty: boolean;
+  setProject: (p: { id: string; name: string } | null) => void;
 
   importFile: (file: Blob & { name?: string }) => Promise<void>;
   cancelImport: () => void;
@@ -135,7 +140,7 @@ export const useSplit = create<SplitState>((set, get) => {
   });
   const change = (patch: Partial<Settings>) => {
     const before = settings();
-    set({ ...patch, past: [...get().past.slice(-49), before], future: [] });
+    set({ ...patch, past: [...get().past.slice(-49), before], future: [], dirty: !!get().doc });
     saveSettings(settings());
     void get().ensure();
   };
@@ -206,6 +211,9 @@ export const useSplit = create<SplitState>((set, get) => {
 
   return {
     doc: null,
+    project: null,
+    dirty: false,
+    setProject: (project) => set({ project, dirty: false }),
     components: [],
     importing: null,
     error: null,
@@ -252,6 +260,9 @@ export const useSplit = create<SplitState>((set, get) => {
         jobController = null;
         set({
           doc,
+          // A newly imported model is new work: not saved yet.
+          project: null,
+          dirty: true,
           components: computeColourComponents(doc),
           importing: null,
           selectedMaterial: null,
@@ -283,6 +294,8 @@ export const useSplit = create<SplitState>((set, get) => {
       jobController = null;
       set({
         doc: null,
+        project: null,
+        dirty: false,
         components: [],
         selectedMaterial: null,
         hidden: [],

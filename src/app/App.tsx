@@ -17,7 +17,7 @@ import { Viewport } from '@/viewport/Viewport';
 const ShortcutsDialog = lazy(() => import('@/components/layout/ShortcutsDialog').then((m) => ({ default: m.ShortcutsDialog })));
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { CadResources } from '@/viewport/cadReady';
-import { useProjects } from '@/store/projectStore';
+import { flushDraft, useProjects } from '@/store/projectStore';
 const TemplatesPage = lazy(() => import('@/components/projects/TemplatesPage').then((m) => ({ default: m.TemplatesPage })));
 const ProjectsPage = lazy(() => import('@/components/projects/ProjectsPage').then((m) => ({ default: m.ProjectsPage })));
 const ImportDialog = lazy(() => import('@/components/files/ImportDialog').then((m) => ({ default: m.ImportDialog })));
@@ -35,6 +35,10 @@ import { TEMPLATES } from '@/templates/templates';
 import { Tour, useFirstRunTour } from '@/components/onboarding/Tour';
 import { useGuides } from '@/viewport/guides';
 import { SketchResizeDialog } from '@/components/sketch/SketchResizeDialog';
+import { ProjectPrompts } from '@/components/projects/ProjectPrompts';
+import { NewDesignDialog } from '@/components/projects/NewDesignDialog';
+import { OpenDesignDialog } from '@/components/projects/OpenDesignDialog';
+import { RecoveryBanner } from '@/components/projects/RecoveryBanner';
 import { FacePickBanner } from '@/components/sketch/FacePickBanner';
 import { watchAttachments } from '@/cad/sketch/attachments';
 import { useEditor } from '@/store/editorStore';
@@ -130,13 +134,14 @@ export function App() {
   // Open the last project (or start a new one), and protect unsaved work.
   useEffect(() => {
     void useProjects.getState().init();
+    // Unsaved work is kept as a recovery draft (never written into the project without Save).
     const onHide = () => {
-      if (document.visibilityState === 'hidden' && useProjects.getState().status === 'unsaved') void useProjects.getState().saveNow();
+      if (document.visibilityState === 'hidden' && useProjects.getState().status === 'unsaved') void flushDraft();
     };
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       const status = useProjects.getState().status;
       if (status === 'unsaved' || status === 'saving') {
-        void useProjects.getState().saveNow();
+        void flushDraft();
         e.preventDefault();
       }
     };
@@ -166,6 +171,10 @@ export function App() {
     <div className="flex h-full flex-col" data-ui={Workspace ? undefined : 'studio-dark'}>
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <ReturnBar />
+      {/* Project questions and dialogs work in every workspace. */}
+      <ProjectPrompts />
+      <NewDesignDialog />
+      <OpenDesignDialog />
       {Workspace ? (
         <Suspense
           fallback={
@@ -224,6 +233,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
     <>
       <Toolbar />
       <SharedBanner />
+      <RecoveryBanner />
       <SmallScreenNotice />
       <div className="relative flex min-h-0 flex-1">
         <LeftRail panel={panel} onChange={choosePanel} />

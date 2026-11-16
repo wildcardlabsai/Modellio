@@ -1,6 +1,8 @@
-import { useEffect, useState, type DragEvent } from 'react';
-import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert, Undo2, Redo2 } from 'lucide-react';
-import { STEPS, useSplit } from '../store';
+import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
+import { Check, FileUp, Loader2, Lock, Sparkles, X, CircleAlert, Undo2, Redo2, Menu as MenuIcon } from 'lucide-react';
+import { ProjectMenu } from '@/components/projects/ProjectMenu';
+import { useMakerProject } from '@/makers/shell/makerProject';
+import { STEPS, currentParts, useSplit } from '../store';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
@@ -14,6 +16,33 @@ import { openSample, openSplitPicker } from './intake';
 export default function SplitStudio() {
   const doc = useSplit((s) => s.doc);
   const [dragging, setDragging] = useState(false);
+  // The shared project lifecycle: New, Open, Recent, Save (the split parts as a project that opens
+  // in the Design Studio), Return to dashboard.
+  const mp = useMakerProject({
+    studio: 'split',
+    label: 'Split Studio',
+    schema: 1,
+    project: () => useSplit.getState().project,
+    setProject: (p) => useSplit.getState().setProject(p),
+    dirty: () => useSplit.getState().dirty,
+    state: () => {
+      const st = useSplit.getState();
+      return {
+        settings: { splitOptions: st.splitOptions, connectorSettings: st.connectorSettings, plateSettings: st.plateSettings },
+        fileName: st.doc?.fileName ?? null,
+      };
+    },
+    parts: () => {
+      const parts = currentParts(useSplit.getState());
+      return parts.length ? parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })) : null;
+    },
+    load: () => undefined,
+    startBlank: () => useSplit.getState().closeDocument(),
+    suggestedName: () => {
+      const d = useSplit.getState().doc;
+      return `${(d?.metadata.Title || d?.fileName || 'Model').replace(/\.3mf$/i, '')} (split)`;
+    },
+  });
 
   useEffect(() => {
     (window as unknown as { modellioSplit: unknown }).modellioSplit = { store: useSplit, view: splitView };
@@ -54,7 +83,8 @@ export default function SplitStudio() {
       }}
       onDrop={onDrop}
     >
-      <Stepper />
+      <Stepper projectMenu={<ProjectMenu actions={mp.actions} trigger={splitMenuTrigger} />} />
+      {mp.dialog}
       <ErrorBanner />
       <div className="relative flex min-h-0 flex-1">
         <LeftPanel />
@@ -77,7 +107,13 @@ export default function SplitStudio() {
 
 const darkIcon = 'flex h-9 w-9 items-center justify-center rounded-lg text-haze hover:bg-white/10 hover:text-white disabled:opacity-35';
 
-function Stepper() {
+const splitMenuTrigger = ({ open, toggle }: { open: boolean; toggle: () => void }) => (
+  <button type="button" aria-label="File menu" aria-expanded={open} onClick={toggle} title="Project: new, open, save…" className={darkIcon}>
+    <MenuIcon size={18} />
+  </button>
+);
+
+function Stepper({ projectMenu }: { projectMenu: ReactNode }) {
   const step = useSplit((s) => s.step);
   const doc = useSplit((s) => s.doc);
   const split = useSplit((s) => s.split);
@@ -93,6 +129,7 @@ function Stepper() {
       className="surface-night flex h-12 shrink-0 items-center gap-1 border-b border-night-line bg-night-900 px-3 text-fog sm:px-5"
       aria-label="Split Studio steps"
     >
+      {projectMenu}
       <span className="mr-3 hidden text-[14px] font-semibold text-white md:block">Split Studio</span>
       <ol className="flex items-center gap-1">
         {STEPS.map((s, i) => {

@@ -8,6 +8,7 @@ import { faceFrame } from '@/cad/placement';
 import { solidRequest } from '@/cad/shapeRegistry';
 import type { ObjectId, SketchId } from '@/types/document';
 import { useSketchSession } from './sketchSession';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 /** Why a face is being picked: to start a new sketch on it, or to re-attach an existing sketch. */
 export type FacePickPurpose = { kind: 'new' } | { kind: 'reattach'; sketchId: SketchId };
@@ -77,3 +78,8 @@ export const useFacePick = create<{
     if (useEditor.getState().tool === 'edges') useEditor.getState().setTool('select');
   },
 }));
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('face-pick', () => {
+  if (useFacePick.getState().pick) useFacePick.getState().cancel();
+});

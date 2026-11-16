@@ -78,7 +78,13 @@ const home = async () => {
 /** The Inspector shows one tab at a time (Properties, Appearance, Features, Print). */
 const inspectorTab = (name) => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 await page.goto(URL + '/?studio=design', { waitUntil: 'networkidle' });
-await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
+await waitFor(async () => /Saved|Not saved yet/.test((await page.getByTestId('save-status').textContent()) ?? ''));
+/** Ctrl+S; a design never saved before asks for its name first. */
+const pressSave = async () => {
+  await page.keyboard.press('Control+s');
+  const name = page.getByTestId('project-name-save');
+  if (await name.isVisible({ timeout: 800 }).catch(() => false)) await name.click();
+};
 
 // ===================== Reliability =====================
 {
@@ -117,13 +123,14 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
     };
   });
   await S(() => window.modellio.store.getState().addShape('sphere'));
+  await pressSave();
   check(
     'R3. A full disk is reported clearly instead of failing silently',
     await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Not saved'), 5000),
   );
   check('R3b. …with advice to back up', ((await S(() => window.modellio.projects.getState().error)) ?? '').includes('storage is full'));
   await S(() => window.__restorePut());
-  await page.keyboard.press('Control+s');
+  await pressSave();
   check(
     'R3c. Saving works again once space is available',
     await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved')),
@@ -591,6 +598,9 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   await page.getByRole('heading', { name: 'Templates' }).waitFor();
   check('T1. Templates page lists the starter designs with previews', (await page.getByTestId('template-card').count()) === 6);
   await page.getByRole('button', { name: 'Use hex coaster' }).click();
+  // The design open before has unsaved changes: they are asked about first (here, discarded).
+  const asked = page.getByTestId('unsaved-discard');
+  if (await asked.isVisible({ timeout: 1500 }).catch(() => false)) await asked.click();
   await waitFor(async () => (await page.getByLabel('Project name').inputValue()) === 'Hex coaster', 10000);
   const tpl = await state();
   const combined = Object.values(tpl.doc.objects).find((o) => o.kind === 'group' && o.combine);
@@ -667,10 +677,10 @@ await waitFor(async () => (await page.getByTestId('save-status').textContent())?
   // V: version history
   await page.locator('body').click({ position: { x: 900, y: 860 } });
   await S(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
-  await page.keyboard.press('Control+s');
+  await pressSave();
   await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
   await S(() => window.modellio.store.getState().addShape('sphere'));
-  await page.keyboard.press('Control+s');
+  await pressSave();
   await waitFor(async () => (await page.getByTestId('save-status').textContent())?.includes('Saved'));
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: 'File menu' }).click();

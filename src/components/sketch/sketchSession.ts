@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Frame, SketchPlacement } from '@/types/document';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 /** Where a new sketch sits: a reference plane or a flat face, its frame, and words for it. */
 export interface SketchPlace {
@@ -28,3 +29,6 @@ export const useSketchSession = create<{
   openOn: (place) => set({ editing: { id: null, place } }),
   close: () => set({ editing: null }),
 }));
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('sketch-session', () => useSketchSession.getState().close());

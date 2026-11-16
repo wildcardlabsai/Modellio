@@ -495,6 +495,36 @@ Built in five increments (3a–3e), each tested, committed and pushed.
 - A group that contains sketched bodies cannot be scaled (refused and explained). Resize those bodies one at a time or through their sketches.
 - Non-uniform scaling turns a circle into a circle of the mean radius; sketches have no ellipses.
 
+### Stage 4C: project lifecycle (done)
+
+| Item | Result |
+| --- | --- |
+| Saving | Projects change only when the user saves. Edits go continuously to a **recovery draft**, stored in a separate local database so the project database is untouched. The first Save of a new design asks for its name. Save As makes an independent project, which becomes the open one; the original stays as it was saved. Ctrl+S saves in every workspace. The save status shows Saved / Unsaved changes / Not saved yet, with the last-saved time. |
+| Leaving unsaved work | New design, Open, opening a template or a project file, and switching Maker designs all ask **Save / Discard / Cancel** first. Discard keeps the design as last saved. |
+| New design | A blank Design Studio design, any Maker (a new design in it), or a template. Each is a new project with its own id; nothing saved is touched. |
+| Open design | Every saved project with its preview, type (Design Studio or the Maker that made it), last-saved time and object count. Search and filter by type. Maker projects open in their Maker, or **in the Design Studio as the same project**. |
+| Recent designs | In the project menu and on the dashboard: projects ordered by last activity (opened or saved), each once. |
+| Rename, duplicate, delete | From the project menu in every workspace. Deleting the open design (after confirmation) starts a new one; nothing else is opened behind the user's back. |
+| Recovery | After a refresh or a closed tab, unsaved work for the reopened design is offered back: **Restore** (still unsaved) or **Discard**. A draft never overwrites a project unless restored and then saved. A draft older than the last save is dropped. |
+| Clean switching | One registry (`platform/projectScope.ts`) resets every per-project store when the open design changes:<br>• editor history, selection, tool, measure points, notices<br>• sketch session, solid-feature tool, face pick, loft/sweep builder<br>• hover, guides, inspector tab, pending imports, print check<br>Application preferences are kept. The camera re-frames the new design. |
+| Makers: one project, two views | One hook (`makers/shell/makerProject.tsx`) gives every Maker the same lifecycle: project menu, Save / Save as, unsaved marker, the Save / Discard / Cancel question when a design is handed in, and Ctrl+S. **Open in Design Studio** saves first, then opens that same project (same id and name, Maker settings kept). It replaces "Open a copy in Design Studio", which merged parts into whatever design was open. Saving in the Design Studio marks the project as changed there. Saving again from the Maker warns, keeps the edited version in history, and rebuilds. The return bar reopens the same project in its Maker. |
+| Split Studio | The same project menu. Save stores the split (or connected) parts as a project that opens in the Design Studio. |
+| Shared components | `Button`, `ConfirmChoice`, `ProjectMenu`, `ProjectPrompts` (the unsaved-changes question and the name dialog, in every workspace), `NewDesignDialog`, `OpenDesignDialog`, `RecoveryBanner`. |
+
+**Tests added:**
+- **Unit:** 11 tests (`src/store/projectStore.test.ts`).
+- **Browser:** new `e2e-projects` suite, 34 checks.
+
+**Existing tests changed to the new behaviour, with the same coverage:**
+- `e2e-phase4` and `e2e-phase5`: saves are explicit and the first save asks for a name. Template use answers the unsaved-changes question.
+- `e2e-platform`: the Maker's first save uses the shared name dialog.
+- `e2e-keyring`, `e2e-cookie` and `e2e-vase`: "Open in Design Studio" must open the same project, saved first, rather than add a copy to whatever design is open.
+
+**Limitations:**
+- A Maker's working design (its recovery draft) stays in that Maker's local storage on this device, as before. It is not part of the cloud drafts.
+- Split Studio projects keep the split parts and settings, not the source 3MF file, so they reopen in the Design Studio rather than as an editable split session.
+- Cloud projects get local recovery drafts only.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.

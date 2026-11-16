@@ -2,9 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMakerPane, paneClass } from '../shell/mobilePane';
 import { MobilePaneTabs } from '../shell/MobilePaneTabs';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
-import { capturePreview } from '../shell/capture';
-import { useProjects } from '@/store/projectStore';
-import { useMakerHandoff } from '@/platform/handoff';
+import { useMakerProject } from '../shell/makerProject';
 import { clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
@@ -34,8 +32,6 @@ import { Segmented } from '@/components/ui/Modal';
 import { IconButton } from '@/components/ui/IconButton';
 import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
-import { useEditor } from '@/store/editorStore';
-import { useStudio } from '@/app/studio';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 
 const MONO = "font-['Space_Mono',ui-monospace,monospace]";
@@ -51,12 +47,6 @@ const TYPE_LABEL: Record<BodyType, string> = { vase: 'Vase', pot: 'Plant pot', l
 export default function VaseStudio() {
   useEffect(() => {
     (window as unknown as { modellioVase: unknown }).modellioVase = { store: useVase };
-    const handed = useMakerHandoff.getState().take('vase');
-    if (handed) {
-      const st = handed.state as { params: VaseParams; templateId: string | null };
-      useVase.getState().loadSaved(st.params, st.templateId);
-      useVase.getState().setProject({ id: handed.projectId, name: handed.name });
-    }
     useVase.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -72,28 +62,52 @@ export default function VaseStudio() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // Saving, opening, new designs and Open in Design Studio: the shared project lifecycle.
+  const mp = useMakerProject({
+    studio: 'vase',
+    label: 'Vase Maker',
+    schema: 1,
+    project: () => useVase.getState().project,
+    setProject: (p) => useVase.getState().setProject(p),
+    dirty: () => useVase.getState().dirty,
+    state: () => ({ params: useVase.getState().params, templateId: useVase.getState().templateId }),
+    // Saved at export quality.
+    parts: async () => (await buildFine()).parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
+    load: (state) => {
+      const st = state as { params: VaseParams; templateId: string | null };
+      useVase.getState().loadSaved(st.params, st.templateId);
+    },
+    startBlank: () => useVase.getState().startBlank(),
+    suggestedName: () => {
+      const st = useVase.getState();
+      return VASE_TEMPLATES.find((t) => t.id === st.templateId)?.name ?? `My ${TYPE_LABEL[st.params.type].toLowerCase()}`;
+    },
+  });
+  const project = useVase((s) => s.project);
+  const dirty = useVase((s) => s.dirty);
+  const controls = { name: project?.name ?? null, dirty, busy: mp.busy, actions: mp.actions, save: () => mp.save() };
   const pane = useMakerPane((s) => s.pane);
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid="vase-studio">
-      <Header />
+      <Header project={controls} />
+      {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <LeftPanel />
         <main className={`relative min-w-0 flex-1 ${paneClass(pane, 'canvas')}`} aria-label="Preview">
           <Preview />
         </main>
-        <RightPanel />
+        <RightPanel openInDesign={() => void mp.openInDesign()} />
       </div>
       <MobilePaneTabs labels={{ tools: 'Shape', canvas: 'Preview', settings: 'Export' }} />
     </div>
   );
 }
 
-function Header() {
+function Header({ project: controls }: { project: NonNullable<Parameters<typeof MakerHeader>[0]['project']> }) {
   const type = useVase((s) => s.params.type);
   const setParams = useVase((s) => s.setParams);
   const canUndo = useVase((s) => s.past.length > 0);
   const canRedo = useVase((s) => s.future.length > 0);
-  const project = useVase((s) => s.project);
   const { undo, redo, surpriseMe } = useVase.getState();
   return (
     <MakerHeader
@@ -114,27 +128,7 @@ function Header() {
           </ol>
         </>
       }
-      save={{
-        project,
-        suggestedName: () => {
-          const st = useVase.getState();
-          return VASE_TEMPLATES.find((t) => t.id === st.templateId)?.name ?? `My ${TYPE_LABEL[st.params.type].toLowerCase()}`;
-        },
-        run: async (name) => {
-          const st = useVase.getState();
-          const fine = await buildFine();
-          const id = await useProjects.getState().saveMakerProject({
-            id: st.project?.id,
-            name,
-            studio: 'vase',
-            schema: 1,
-            state: { params: st.params, templateId: st.templateId },
-            parts: fine.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: PART_COLOURS[p.id] })),
-            thumbnail: capturePreview(),
-          });
-          st.setProject({ id, name });
-        },
-      }}
+      project={controls}
     >
       <HeaderTabs<BodyType>
         label="What to make"
@@ -652,7 +646,7 @@ function download(bytes: Uint8Array, name: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-function RightPanel() {
+function RightPanel({ openInDesign }: { openInDesign: () => void }) {
   const pane = useMakerPane((s) => s.pane);
   const result = useVase((s) => s.result);
   const error = useVase((s) => s.error);
@@ -679,14 +673,6 @@ function RightPanel() {
     } finally {
       setExporting(false);
     }
-  };
-  const customise = () => {
-    if (!result) return;
-    useEditor.getState().importMeshes(
-      result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
-      { groupName: name },
-    );
-    useStudio.getState().openInDesign({ studio: 'vase', label: 'Vase Maker' });
   };
   const overhangTone = !result
     ? ''
@@ -789,10 +775,10 @@ function RightPanel() {
           </button>
           <button
             type="button"
-            onClick={customise}
+            onClick={openInDesign}
             className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
           >
-            <PencilRuler size={16} /> Open a copy in Design Studio
+            <PencilRuler size={16} /> Open in Design Studio
           </button>
           <p className="text-[11px] leading-relaxed text-muted">
             Downloads use a finer mesh than the preview. Vases for flowers: seal the inside or use a glass insert, as printed walls can

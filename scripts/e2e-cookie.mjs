@@ -224,13 +224,23 @@ check(
   `${tris} triangles`,
 );
 
-// 7. A copy in the Design Studio, and back
+// 7. The same project in the Design Studio, and back
 const kept0 = JSON.stringify((await state()).elements);
-const before = await S(() => window.modellio.store.getState().doc.rootIds.length);
-await page.getByRole('button', { name: 'Open a copy in Design Studio' }).click();
+await page.getByRole('button', { name: 'Open in Design Studio' }).click();
+// Saved first (it was never saved), then opened as the same project.
+await page.getByTestId('project-name-input').fill('Star cookie');
+await page.getByTestId('project-name-save').click();
 await page.getByTestId('left-panel').waitFor();
-const after = await S(() => window.modellio.store.getState().doc.rootIds.length);
-check('22. "Open a copy in Design Studio" adds the parts to the editor', page.url().includes('studio=design') && after === before + 1);
+const opened = await S(() => ({
+  current: window.modellio.projects.getState().current?.id,
+  cookie: window.modellioCookie.store.getState().project?.id,
+  roots: window.modellio.store.getState().doc.rootIds.length,
+}));
+check(
+  '22. "Open in Design Studio" opens this cookie as its own project (its parts, nothing merged in)',
+  page.url().includes('studio=design') && opened.current === opened.cookie && opened.roots === 1,
+  JSON.stringify(opened),
+);
 await page.getByRole('button', { name: 'Back to Cookie Maker' }).click();
 await page.getByTestId('cookie-studio').waitFor();
 st = await settled((s) => s.parts.length === 3);

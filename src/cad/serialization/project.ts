@@ -26,6 +26,12 @@ export interface ProjectMeta {
    * MODELLIO 2.0, which are Design Studio projects.
    */
   workspace?: string;
+  /** When the user last saved it (absent: never saved, e.g. a new design not yet named). */
+  savedAt?: number;
+  /** When it was last opened (for Recent designs). */
+  openedAt?: number;
+  /** A maker project that was changed and saved in the Design Studio since its maker last built it. */
+  studioEdited?: boolean;
 }
 
 /**

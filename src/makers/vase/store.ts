@@ -13,6 +13,8 @@ interface VaseState {
   /** The saved project this design belongs to. */
   project: { id: string; name: string } | null;
   setProject: (project: { id: string; name: string } | null) => void;
+  /** Changed since it was last saved, opened or started. */
+  dirty: boolean;
   /** Open saved settings (from a project). */
   loadSaved: (params: VaseParams, templateId: string | null) => void;
   result: VaseResult | null;
@@ -34,7 +36,7 @@ interface VaseState {
 }
 
 const KEY = 'modellio:vase';
-function load(): Partial<Pick<VaseState, 'params' | 'templateId' | 'tab' | 'project'>> {
+function load(): Partial<Pick<VaseState, 'params' | 'templateId' | 'tab' | 'project' | 'dirty'>> {
   try {
     return JSON.parse(localStorage.getItem(KEY) ?? '{}');
   } catch {
@@ -58,15 +60,15 @@ let generation = 0;
 
 export const useVase = create<VaseState>((set, get) => {
   const persist = () => {
-    const { params, templateId, tab, project } = get();
+    const { params, templateId, tab, project, dirty } = get();
     try {
-      localStorage.setItem(KEY, JSON.stringify({ params, templateId, tab, project }));
+      localStorage.setItem(KEY, JSON.stringify({ params, templateId, tab, project, dirty }));
     } catch {
       /* storage unavailable */
     }
   };
   const commit = (params: VaseParams, extra: Partial<VaseState> = {}) => {
-    set({ params, past: [...get().past.slice(-99), get().params], future: [], ...extra });
+    set({ params, past: [...get().past.slice(-99), get().params], future: [], dirty: true, ...extra });
     persist();
     get().rebuild();
   };
@@ -75,11 +77,12 @@ export const useVase = create<VaseState>((set, get) => {
     params: saved.params ? { ...DEFAULT_VASE, ...saved.params } : { ...VASE_TEMPLATES[0].params },
     templateId: saved.templateId ?? (saved.params ? null : VASE_TEMPLATES[0].id),
     project: saved.project ?? null,
+    dirty: saved.dirty ?? false,
     setProject: (project) => {
-      set({ project });
+      set({ project, dirty: false });
       persist();
     },
-    loadSaved: (params, templateId) => commit({ ...DEFAULT_VASE, ...structuredClone(params) }, { templateId, tab: 'design' }),
+    loadSaved: (params, templateId) => commit({ ...DEFAULT_VASE, ...structuredClone(params) }, { templateId, tab: 'design', dirty: false }),
     result: null,
     error: null,
     building: false,
@@ -92,7 +95,7 @@ export const useVase = create<VaseState>((set, get) => {
     setParams: (patch, opts) => {
       const params = { ...get().params, ...patch };
       if (opts?.transient) {
-        set({ params });
+        set({ params, dirty: true });
         persist();
         get().rebuild();
       } else commit(params);
@@ -100,21 +103,21 @@ export const useVase = create<VaseState>((set, get) => {
     beginGesture: () => set({ past: [...get().past.slice(-99), get().params], future: [] }),
     applyTemplate: (id) => {
       const tpl = VASE_TEMPLATES.find((x) => x.id === id);
-      if (tpl) commit(structuredClone(tpl.params), { templateId: id, project: null });
+      if (tpl) commit(structuredClone(tpl.params), { templateId: id, project: null, dirty: false });
     },
-    startBlank: () => commit(structuredClone(BLANK), { templateId: null, tab: 'design', project: null }),
-    surpriseMe: () => commit(surprise(), { templateId: null, project: null }),
+    startBlank: () => commit(structuredClone(BLANK), { templateId: null, tab: 'design', project: null, dirty: false }),
+    surpriseMe: () => commit(surprise(), { templateId: null, project: null, dirty: false }),
     undo: () => {
       const { past, params } = get();
       if (!past.length) return;
-      set({ params: past[past.length - 1], past: past.slice(0, -1), future: [params, ...get().future] });
+      set({ params: past[past.length - 1], past: past.slice(0, -1), future: [params, ...get().future], dirty: true });
       persist();
       get().rebuild();
     },
     redo: () => {
       const { future, params } = get();
       if (!future.length) return;
-      set({ params: future[0], future: future.slice(1), past: [...get().past, params] });
+      set({ params: future[0], future: future.slice(1), past: [...get().past, params], dirty: true });
       persist();
       get().rebuild();
     },

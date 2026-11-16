@@ -5,9 +5,7 @@ import { Box, CircleAlert, CircleCheck, Download, Info, Loader2, PencilRuler, Sh
 import type { KeyringParams, KeyringPart, KeyringRole } from '../keyring/geometry';
 import { usePlaque, type PlaqueConfig } from './config';
 import { MakerHeader, HeaderTabs } from '../shell/MakerHeader';
-import { capturePreview } from '../shell/capture';
-import { useProjects } from '@/store/projectStore';
-import { useMakerHandoff } from '@/platform/handoff';
+import { useMakerProject } from '../shell/makerProject';
 import { DesignCanvas, type RoleStyle } from '../canvas/DesignCanvas';
 import { AddBar, Inspector, LayersPanel } from '../canvas/DesignPanels';
 import { MakerPreview, downloadBytes, slugify } from '../canvas/MakerPreview';
@@ -17,8 +15,6 @@ import { Toggle } from '@/components/ui/Toggle';
 import { Segmented } from '@/components/ui/Modal';
 import { write3mf } from '@/cad/export/threemf';
 import { writeBinaryStl } from '@/cad/export/writers';
-import { useEditor } from '@/store/editorStore';
-import { useStudio } from '@/app/studio';
 import { isTypingTarget } from '@/hooks/useKeyboardShortcuts';
 
 const MONO = "font-['Space_Mono',ui-monospace,monospace]";
@@ -42,13 +38,6 @@ export function PlaqueStudio() {
       startBlank: cfg.startBlank,
       ...cfg.testHooks,
     };
-    // A saved project opened from the dashboard.
-    const handed = useMakerHandoff.getState().take(cfg.studio);
-    if (handed) {
-      const st = handed.state as { elements: never[]; params: KeyringParams; templateId: string | null };
-      useKeyring.getState().load(st.elements, st.params, st.templateId);
-      useKeyring.getState().setProject({ id: handed.projectId, name: handed.name });
-    }
     useKeyring.getState().rebuild();
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || !(e.ctrlKey || e.metaKey)) return;
@@ -65,12 +54,36 @@ export function PlaqueStudio() {
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Saving, opening, new designs and Open in Design Studio: the shared project lifecycle.
+  const mp = useMakerProject({
+    studio: cfg.studio,
+    label: cfg.label,
+    schema: 1,
+    project: () => useKeyring.getState().project,
+    setProject: (p) => useKeyring.getState().setProject(p),
+    dirty: () => useKeyring.getState().dirty,
+    state: () => {
+      const st = useKeyring.getState();
+      return { elements: st.elements, params: st.params, templateId: st.templateId };
+    },
+    parts: () => useKeyring.getState().result?.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })) ?? null,
+    load: (state) => {
+      const st = state as { elements: never[]; params: KeyringParams; templateId: string | null };
+      useKeyring.getState().load(st.elements, st.params, st.templateId);
+    },
+    startBlank: cfg.startBlank,
+    suggestedName: () => designName(cfg),
+  });
+  const project = useKeyring((s) => s.project);
+  const dirty = useKeyring((s) => s.dirty);
+  const controls = { name: project?.name ?? null, dirty, busy: mp.busy, actions: mp.actions, save: () => mp.save() };
   const pane = useMakerPane((s) => s.pane);
   const [tab, setTab] = useState<'templates' | 'design'>('design');
   const [view, setView] = useState<'design' | '3d'>('design');
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid={`${cfg.id}-studio`}>
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} project={controls} />
+      {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <aside
           className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
@@ -109,19 +122,26 @@ export function PlaqueStudio() {
             </button>
           )}
         </main>
-        <RightPanel />
+        <RightPanel openInDesign={() => void mp.openInDesign()} />
       </div>
       <MobilePaneTabs labels={{ tools: 'Templates & tools', canvas: 'Design', settings: 'Settings & export' }} />
     </div>
   );
 }
 
-function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design' | '3d') => void }) {
+function Header({
+  view,
+  setView,
+  project: controls,
+}: {
+  view: 'design' | '3d';
+  setView: (v: 'design' | '3d') => void;
+  project: NonNullable<Parameters<typeof MakerHeader>[0]['project']>;
+}) {
   const cfg = usePlaque();
   const useKeyring = cfg.store;
   const canUndo = useKeyring((s) => s.past.length > 0);
   const canRedo = useKeyring((s) => s.future.length > 0);
-  const project = useKeyring((s) => s.project);
   const { undo, redo } = useKeyring.getState();
   return (
     <MakerHeader
@@ -132,24 +152,7 @@ function Header({ view, setView }: { view: 'design' | '3d'; setView: (v: 'design
       onUndo={undo}
       onRedo={redo}
       help={cfg.help}
-      save={{
-        project,
-        suggestedName: () => designName(cfg),
-        run: async (name) => {
-          const st = useKeyring.getState();
-          if (!st.result) throw new Error('The design has not finished building.');
-          const id = await useProjects.getState().saveMakerProject({
-            id: st.project?.id,
-            name,
-            studio: cfg.studio,
-            schema: 1,
-            state: { elements: st.elements, params: st.params, templateId: st.templateId },
-            parts: st.result.parts.map((p) => ({ name: p.name, mesh: p.mesh, color: p.colour })),
-            thumbnail: capturePreview(),
-          });
-          st.setProject({ id, name });
-        },
-      }}
+      project={controls}
     >
       <HeaderTabs<'design' | '3d'>
         label="View"
@@ -538,7 +541,7 @@ function designName(cfg: PlaqueConfig) {
   return cfg.templates.find((t) => t.id === templateId)?.name ?? `My ${cfg.noun}`;
 }
 
-function RightPanel() {
+function RightPanel({ openInDesign }: { openInDesign: () => void }) {
   const pane = useMakerPane((s) => s.pane);
   const cfg = usePlaque();
   const useKeyring = cfg.store;
@@ -553,14 +556,6 @@ function RightPanel() {
   };
   const downloadStl = (p: KeyringPart) =>
     downloadBytes(new Uint8Array(writeBinaryStl([body(p)])), `${slugify(designName(cfg))}-${p.id}.stl`, 'model/stl');
-  const customise = () => {
-    if (!result) return;
-    useEditor.getState().importMeshes(
-      result.parts.map((p) => ({ name: p.name, mesh: p.mesh })),
-      { groupName: designName(cfg) },
-    );
-    useStudio.getState().openInDesign({ studio: cfg.studio, label: cfg.label });
-  };
   return (
     <aside
       className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
@@ -639,14 +634,14 @@ function RightPanel() {
           </button>
           <button
             type="button"
-            onClick={customise}
+            onClick={openInDesign}
             className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
           >
-            <PencilRuler size={16} /> Open a copy in Design Studio
+            <PencilRuler size={16} /> Open in Design Studio
           </button>
           <p className="flex gap-1.5 text-[11px] leading-relaxed text-muted">
             <Shapes size={13} className="mt-0.5 shrink-0" />
-            Keep editing here; the Design Studio gets a copy for changes this maker can’t do, with a button to come back.
+            Saves this design, then opens the same project in the Design Studio for changes this maker can’t do. Come back here any time.
           </p>
         </section>
       )}

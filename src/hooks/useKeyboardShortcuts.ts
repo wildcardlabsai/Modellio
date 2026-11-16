@@ -33,7 +33,7 @@ export function useKeyboardShortcuts() {
 
       if (mod && key === 's') {
         e.preventDefault();
-        void useProjects.getState().saveNow({ manual: true });
+        void useProjects.getState().save();
         return;
       }
       if (mod && key === 'e') {

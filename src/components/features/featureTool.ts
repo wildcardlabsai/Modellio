@@ -14,6 +14,7 @@ import {
   type HoleSpec,
 } from '@/cad/brep/types';
 import type { ShapeObject, Vec3 } from '@/types/document';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 /**
  * The solid-feature tool: Fillet and Chamfer (pick edges), Shell and Draft (pick faces) and Hole
@@ -278,4 +279,9 @@ export const useFeatureTool = create<FeatureToolState>((set, get) => {
       if (useEditor.getState().tool === 'edges') useEditor.getState().setTool('select');
     },
   };
+});
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('feature-tool', () => {
+  if (useFeatureTool.getState().session) useFeatureTool.getState().cancel();
 });

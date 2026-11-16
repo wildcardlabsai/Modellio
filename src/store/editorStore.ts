@@ -58,6 +58,7 @@ import type { FeatureOp, FeatureRecipe } from '@/cad/brep/types';
 import { buildBrepAsync } from '@/cad/brep/client';
 import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
+import { onProjectSwitch } from '@/platform/projectScope';
 import type { CombineMode, Frame, PlaneId, RefPlane, SketchId, SketchPlacement, SurfaceFinish, TextContent } from '@/types/document';
 import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
 import { guardSketchBodies, sketchControlled, type BlockedResize } from '@/cad/sketchBodies';
@@ -1595,3 +1596,8 @@ export const useEditor = create<EditorState>()((set, get) => {
 
 /** Convenience selectors */
 export const selectPrimaryId = (s: EditorState) => s.selection[s.selection.length - 1] ?? null;
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('editor', () =>
+  useEditor.setState({ tool: 'select', measurePoints: [], notice: null, blockedResize: null, transaction: null, readOnly: false }),
+);

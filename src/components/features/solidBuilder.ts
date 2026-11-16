@@ -5,6 +5,7 @@ import { findFreePosition } from '@/cad/document';
 import type { BrepBuild, FeatureBase, LoftSection } from '@/cad/brep/types';
 import type { Sketch } from '@/cad/sketch/types';
 import type { Vec3 } from '@/types/document';
+import { onProjectSwitch } from '@/platform/projectScope';
 
 /**
  * Loft and Sweep: build a new precise solid from sketches (or edit one), with a live preview in
@@ -190,3 +191,6 @@ export const useSolidBuilder = create<BuilderState>((set, get) => {
     },
   };
 });
+
+// A newly opened design starts clean (see platform/projectScope).
+onProjectSwitch('solid-builder', () => useSolidBuilder.getState().cancel());
