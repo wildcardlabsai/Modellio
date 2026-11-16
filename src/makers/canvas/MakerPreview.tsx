@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { clearPreview, productShot } from '@/utils/productShot';
+import { PREVIEW_GRID, clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -43,7 +43,7 @@ export function MakerPreview({
         <hemisphereLight args={['#ffffff', '#b9c2d0', 1.5]} />
         <directionalLight position={[120, -160, 260]} intensity={1.7} />
         <directionalLight position={[-160, 120, 80]} intensity={0.5} />
-        {!productShot && <gridHelper args={[400, 40, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
+        {!productShot && <gridHelper args={[400, 40, ...PREVIEW_GRID]} rotation={[Math.PI / 2, 0, 0]} />}
         <group ref={group}>
           {parts.map((p) => (
             <PartMesh key={`${p.id}-${p.mesh.indices.length}-${p.mesh.positions.length}`} part={p} />
@@ -52,7 +52,7 @@ export function MakerPreview({
         <FitControls target={group} fitRef={fit} contentKey={contentKey} />
       </Canvas>
       {!compact && (
-        <div className="absolute right-3 top-3 rounded-xl bg-white/95 p-1 shadow-panel">
+        <div className="absolute right-3 top-3 rounded-xl bg-panel/95 p-1 shadow-panel">
           <IconButton label="Fit in view" tooltipSide="left" onClick={() => fit.current()}>
             <Maximize size={17} />
           </IconButton>

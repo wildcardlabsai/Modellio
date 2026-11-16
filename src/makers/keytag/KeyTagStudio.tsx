@@ -55,7 +55,7 @@ function NumberingSettings() {
         </p>
       ) : (
         <p className="mt-2 rounded-lg bg-amber-50 p-2 text-[12px] leading-relaxed text-amber-900">
-          Put <code className="rounded bg-white px-1">{NUMBER_TOKEN}</code> in a text item where the number should go.
+          Put <code className="rounded bg-panel px-1">{NUMBER_TOKEN}</code> in a text item where the number should go.
         </p>
       )}
       <div className="mt-2 flex items-center justify-between rounded-lg bg-canvas px-2 py-1.5 text-[12px]">
@@ -64,7 +64,7 @@ function NumberingSettings() {
           aria-label="Previous tag"
           disabled={index <= 0}
           onClick={() => useKeyTag.getState().setParams({ preview: index - 1 }, { transient: true })}
-          className="rounded p-1 hover:bg-white disabled:opacity-30"
+          className="rounded p-1 hover:bg-canvas disabled:opacity-30"
         >
           <ChevronLeft size={16} />
         </button>
@@ -76,7 +76,7 @@ function NumberingSettings() {
           aria-label="Next tag"
           disabled={index >= count - 1}
           onClick={() => useKeyTag.getState().setParams({ preview: index + 1 }, { transient: true })}
-          className="rounded p-1 hover:bg-white disabled:opacity-30"
+          className="rounded p-1 hover:bg-canvas disabled:opacity-30"
         >
           <ChevronRight size={16} />
         </button>
@@ -131,7 +131,7 @@ function BatchDownload() {
         type="button"
         onClick={() => void run()}
         disabled={!!progress}
-        className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-brand text-[13px] font-semibold text-brand hover:bg-brand-50 disabled:opacity-60"
+        className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-brand text-[13px] font-semibold text-brand-ink hover:bg-brand-50 disabled:opacity-60"
         data-testid="keytag-download-all"
       >
         {progress ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}

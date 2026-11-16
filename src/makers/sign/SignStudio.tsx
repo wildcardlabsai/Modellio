@@ -23,7 +23,7 @@ const PANEL: PanelConfig = {
 const section = 'border-b border-line p-4';
 const heading = 'mb-2 text-[13px] font-semibold text-ink';
 const tool =
-  'flex h-8 items-center justify-center gap-1.5 rounded-md border border-line px-2 text-[12px] font-medium text-[#344054] hover:bg-[#f9fafb]';
+  'flex h-8 items-center justify-center gap-1.5 rounded-md border border-line px-2 text-[12px] font-medium text-ink-2 hover:bg-canvas';
 
 /** Front text items, top line first. */
 const lines = (els: DesignElement[]) => els.filter((e) => e.kind === 'text' && (e.side ?? 'front') === 'front').sort((a, b) => b.y - a.y);
@@ -104,7 +104,7 @@ function LineTools() {
           <Rows3 size={15} />
         </button>
       </div>
-      <div className="mt-2 flex items-center justify-between gap-3 text-[13px] text-[#344054]">
+      <div className="mt-2 flex items-center justify-between gap-3 text-[13px] text-ink-2">
         <span>Line gap</span>
         <div className="w-[110px]">
           <NumberField value={gap} onCommit={setGap} min={0} max={60} step={1} decimals={1} suffix="mm" ariaLabel="Line gap (mm)" />
@@ -122,7 +122,7 @@ function LineTools() {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1 text-[13px] text-[#344054]">
+    <div className="flex items-center justify-between gap-3 py-1 text-[13px] text-ink-2">
       <span>{label}</span>
       <div className="w-[110px]">{children}</div>
     </div>

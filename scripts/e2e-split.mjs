@@ -147,7 +147,10 @@ const canvasStats = (hex) =>
     let painted = 0;
     let match = 0;
     for (let i = 0; i < d.length; i += 4) {
-      if (Math.abs(d[i] - 245) + Math.abs(d[i + 1] - 247) + Math.abs(d[i + 2] - 251) > 30) painted++;
+      // The workspace background (#0b1128) and its grid lines (#1f2852, #34427e, anti-aliased
+      // between them) are dark and blue-dominant; anything else is the model.
+      const scenery = Math.max(d[i], d[i + 1], d[i + 2]) < 150 && d[i + 2] >= d[i] && d[i + 2] >= d[i + 1] && d[i + 2] - d[i] > 12;
+      if (!scenery) painted++;
       if (target) {
         // Hue match tolerant to shading: compare normalised RGB direction.
         const s1 = d[i] + d[i + 1] + d[i + 2] + 1;
@@ -245,9 +248,10 @@ const hitPoint = await S(() => {
   for (let y = 0; y < cv.height; y++)
     for (let x = 0; x < cv.width; x++) {
       const i = (y * cv.width + x) * 4;
-      const bg = Math.abs(d[i] - 245) + Math.abs(d[i + 1] - 247) + Math.abs(d[i + 2] - 251) < 40;
-      const grid = Math.abs(d[i] - d[i + 2]) < 25 && d[i] > 180;
-      if (bg || grid) continue;
+      // The workspace background (#0b1128) and its grid lines (#1f2852, #34427e, anti-aliased
+      // between them) are dark and blue-dominant: not the model.
+      const scenery = Math.max(d[i], d[i + 1], d[i + 2]) < 150 && d[i + 2] >= d[i] && d[i + 2] >= d[i + 1] && d[i + 2] - d[i] > 12;
+      if (scenery) continue;
       const dist = Math.hypot(x - cv.width / 2, y - cv.height / 2);
       if (!best || dist < best.dist) best = { x: x / cv.width, y: y / cv.height, dist };
     }

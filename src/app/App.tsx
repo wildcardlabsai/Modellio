@@ -167,8 +167,9 @@ export function App() {
   const Workspace = WORKSPACES[studio];
 
   return (
-    // The Design Studio uses the dark professional shell; the makers keep their light look.
-    <div className="flex h-full flex-col" data-ui={Workspace ? undefined : 'studio-dark'}>
+    // One visual system: the Design Studio, every maker and Split Studio share the dark
+    // professional theme (the dashboard keeps its own night surfaces).
+    <div className="flex h-full flex-col" data-ui={studio === 'dashboard' ? undefined : 'studio-dark'}>
       <TopBar onShowShortcuts={() => setShowShortcuts(true)} />
       <ReturnBar />
       {/* Project questions and dialogs work in every workspace. */}

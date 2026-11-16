@@ -9,7 +9,7 @@ export function LeftPanel() {
   const step = useSplit((s) => s.step);
   return (
     <aside
-      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-r border-line bg-white xl:w-[300px]"
+      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel xl:w-[300px]"
       aria-label={step === 'import' ? 'Model and colours' : 'Step settings'}
       data-testid="split-left"
     >
@@ -53,7 +53,7 @@ function FileInfo() {
   return (
     <section className="border-b border-line p-4" aria-labelledby="split-file-heading" data-testid="split-file-info">
       <div className="mb-3 flex items-start gap-2">
-        <FileBox size={18} className="mt-0.5 shrink-0 text-brand" />
+        <FileBox size={18} className="mt-0.5 shrink-0 text-brand-ink" />
         <div className="min-w-0 flex-1">
           <h2 id="split-file-heading" className="truncate text-[14px] font-semibold text-ink" title={doc.fileName}>
             {doc.metadata.Title || doc.fileName}
@@ -63,7 +63,7 @@ function FileInfo() {
         <button
           type="button"
           onClick={close}
-          className="rounded-md p-1 text-muted hover:bg-[#f2f4f7] hover:text-ink"
+          className="rounded-md p-1 text-muted hover:bg-canvas hover:text-ink"
           aria-label="Close file"
           title="Close file"
         >
@@ -74,14 +74,14 @@ function FileInfo() {
         {rows.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-muted">{k}</dt>
-            <dd className="min-w-0 break-words font-medium text-[#344054]">{v}</dd>
+            <dd className="min-w-0 break-words font-medium text-ink-2">{v}</dd>
           </div>
         ))}
       </dl>
       <button
         type="button"
         onClick={openSplitPicker}
-        className="mt-3 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+        className="mt-3 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
       >
         <FolderOpen size={15} /> Open another 3MF
       </button>
@@ -102,7 +102,7 @@ function ColourList() {
           Colours <span className="font-normal text-muted">({components.length})</span>
         </h2>
         {hidden.length > 0 && (
-          <button type="button" onClick={showAll} className="text-[12px] font-medium text-brand hover:underline">
+          <button type="button" onClick={showAll} className="text-[12px] font-medium text-brand-ink hover:underline">
             Show all
           </button>
         )}
@@ -115,7 +115,7 @@ function ColourList() {
           return (
             <li
               key={c.materialId}
-              className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 ${isSelected ? 'border-brand bg-brand-50' : 'border-transparent hover:bg-[#f9fafb]'}`}
+              className={`group flex items-center gap-2 rounded-lg border px-2 py-1.5 ${isSelected ? 'border-brand bg-brand-50' : 'border-transparent hover:bg-canvas'}`}
               data-testid="split-colour"
               data-material-id={c.materialId}
             >
@@ -149,7 +149,7 @@ function ColourList() {
               <button
                 type="button"
                 onClick={() => isolate(c.materialId)}
-                className="rounded-md p-1 text-muted opacity-0 hover:bg-white hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+                className="rounded-md p-1 text-muted opacity-0 hover:bg-canvas hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
                 aria-label={`Show only ${c.name}`}
                 title="Show only this colour"
               >
@@ -158,7 +158,7 @@ function ColourList() {
               <button
                 type="button"
                 onClick={() => toggleHidden(c.materialId)}
-                className="rounded-md p-1 text-muted hover:bg-white hover:text-ink"
+                className="rounded-md p-1 text-muted hover:bg-canvas hover:text-ink"
                 aria-label={`${isHidden ? 'Show' : 'Hide'} ${c.name}`}
                 aria-pressed={isHidden}
                 title={isHidden ? 'Show' : 'Hide'}

@@ -86,7 +86,7 @@ export function PlaqueStudio() {
       {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <aside
-          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
+          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-panel xl:w-[320px] ${paneClass(pane, 'tools')}`}
           aria-label={`${cfg.title} design`}
           data-testid={`${cfg.id}-left`}
         >
@@ -111,11 +111,11 @@ export function PlaqueStudio() {
             <button
               type="button"
               onClick={() => setView('3d')}
-              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-white shadow-panel"
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-panel shadow-panel"
               aria-label="Show the 3D preview larger"
               data-testid={`${cfg.id}-mini-preview`}
             >
-              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-[#344054]">3D preview</span>
+              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-ink-2">3D preview</span>
               <span className="pointer-events-none block h-full w-full">
                 <Preview3D />
               </span>
@@ -267,7 +267,7 @@ function SideSwitch() {
   const backCount = useKeyring((s) => s.elements.filter((e) => e.side === 'back').length);
   return (
     <div className="absolute left-3 top-3 flex items-center gap-2" data-testid={`${cfg.id}-sides`}>
-      <div className="w-[180px] rounded-lg bg-white shadow-sm">
+      <div className="w-[180px] rounded-lg bg-panel shadow-sm">
         <Segmented<'front' | 'back'>
           label="Side of the tag"
           value={side}
@@ -279,9 +279,7 @@ function SideSwitch() {
         />
       </div>
       {side === 'back' && (
-        <span className="rounded-md bg-white/90 px-2 py-1 text-[11px] text-[#475467] shadow-sm">
-          Seen from behind · engraved or flush only
-        </span>
+        <span className="rounded-md bg-panel/90 px-2 py-1 text-[11px] text-ink-3 shadow-sm">Seen from behind · engraved or flush only</span>
       )}
     </div>
   );
@@ -365,7 +363,7 @@ function Preview3D({ large = false }: { large?: boolean }) {
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1 text-[13px] text-[#344054]">
+    <div className="flex items-center justify-between gap-3 py-1 text-[13px] text-ink-2">
       <span>{label}</span>
       <div className="w-[110px]">{children}</div>
     </div>
@@ -385,7 +383,7 @@ function Swatches({ value, onChange, label }: { value: string; onChange: (c: str
             aria-checked={value.toLowerCase() === c.toLowerCase()}
             aria-label={c}
             onClick={() => onChange(c)}
-            className={`h-6 w-6 rounded-full border ${value.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-brand ring-offset-1' : 'border-[#c9d1de]'}`}
+            className={`h-6 w-6 rounded-full border ${value.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-brand ring-offset-1' : 'border-line-strong'}`}
             style={{ background: c }}
           />
         ))}
@@ -394,7 +392,7 @@ function Swatches({ value, onChange, label }: { value: string; onChange: (c: str
           value={value}
           onChange={(e) => onChange(e.target.value)}
           aria-label={`${label}: custom colour`}
-          className="h-6 w-8 cursor-pointer rounded border border-line bg-white p-0"
+          className="h-6 w-8 cursor-pointer rounded border border-line bg-panel p-0"
         />
       </div>
     </div>
@@ -517,7 +515,7 @@ function TagSettings() {
             <button
               type="button"
               onClick={cfg.placeHoleAtEdge}
-              className="shrink-0 rounded-md border border-line px-2 py-1 text-[11px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+              className="shrink-0 rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink-2 hover:bg-canvas"
             >
               Put on edge
             </button>
@@ -558,7 +556,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
     downloadBytes(new Uint8Array(writeBinaryStl([body(p)])), `${slugify(designName(cfg))}-${p.id}.stl`, 'model/stl');
   return (
     <aside
-      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-panel xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Tag settings and result"
       data-testid={`${cfg.id}-right`}
     >
@@ -566,7 +564,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
       {cfg.ExtraSettings && <cfg.ExtraSettings />}
       <section className={section} aria-labelledby={`${cfg.id}-result-heading`}>
         <h2 id={`${cfg.id}-result-heading`} className={`${heading} flex items-center gap-2`}>
-          Result {building && <Loader2 size={14} className="animate-spin text-brand" aria-label="updating" />}
+          Result {building && <Loader2 size={14} className="animate-spin text-brand-ink" aria-label="updating" />}
         </h2>
         {error && (
           <p role="alert" className="flex gap-2 rounded-lg bg-red-50 p-2 text-[12px] text-red-800" data-testid={`${cfg.id}-error`}>
@@ -582,20 +580,20 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
               {result.parts.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center gap-2 rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]"
+                  className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-[12px]"
                   data-testid={`${cfg.id}-part`}
                   data-part={p.id}
                 >
                   <span className="h-3.5 w-3.5 shrink-0 rounded border border-black/10" style={{ background: p.colour }} aria-hidden />
                   <span className="min-w-0 flex-1 font-medium text-ink">{p.name}</span>
                   {p.watertight ? (
-                    <CircleCheck size={14} className="shrink-0 text-[#067647]" aria-label="closed solid" />
+                    <CircleCheck size={14} className="shrink-0 text-emerald-700" aria-label="closed solid" />
                   ) : (
                     <CircleAlert size={14} className="text-red-600" aria-label="not a closed solid" />
                   )}
                   <button
                     type="button"
-                    className="rounded-md px-1.5 py-1 font-medium text-brand hover:bg-brand-50"
+                    className="rounded-md px-1.5 py-1 font-medium text-brand-ink hover:bg-brand-50"
                     aria-label={`Download ${p.name} as STL`}
                     onClick={() => downloadStl(p)}
                   >
@@ -615,7 +613,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
             ))}
             {result.notes.map((n) => (
               <p key={n} className="mt-2 flex gap-2 text-[12px] leading-relaxed text-muted" data-testid={`${cfg.id}-note`}>
-                <Info size={14} className="mt-0.5 shrink-0 text-brand" /> {n}
+                <Info size={14} className="mt-0.5 shrink-0 text-brand-ink" /> {n}
               </p>
             ))}
           </>
@@ -635,7 +633,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
           <button
             type="button"
             onClick={openInDesign}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
           >
             <PencilRuler size={16} /> Open in Design Studio
           </button>

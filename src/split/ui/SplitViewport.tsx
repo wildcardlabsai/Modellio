@@ -1,5 +1,6 @@
+import { WORKSPACE_COLORS } from '@/viewport/workspaceTheme';
 import { useEffect, useMemo, useRef } from 'react';
-import { clearPreview, productShot } from '@/utils/productShot';
+import { PREVIEW_GRID, clearPreview, productShot } from '@/utils/productShot';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -46,11 +47,11 @@ export function SplitViewport() {
         <hemisphereLight args={['#ffffff', '#b9c2d0', 1.6]} />
         <directionalLight position={[80, -120, 200]} intensity={1.6} />
         <directionalLight position={[-120, 100, 60]} intensity={0.5} />
-        {!productShot && mode !== 'plates' && <gridHelper args={[400, 40, '#c9d1de', '#e3e8f0']} rotation={[Math.PI / 2, 0, 0]} />}
+        {!productShot && mode !== 'plates' && <gridHelper args={[400, 40, ...PREVIEW_GRID]} rotation={[Math.PI / 2, 0, 0]} />}
         <Content mode={mode} doc={doc} parts={parts} contentKey={contentKey} />
       </Canvas>
       {doc && (
-        <div className="absolute right-3 top-3 rounded-xl bg-white/95 p-1 shadow-panel">
+        <div className="absolute right-3 top-3 rounded-xl bg-panel/95 p-1 shadow-panel">
           <IconButton label="Fit model in view" tooltipSide="left" onClick={() => splitView.fit()} data-testid="split-fit">
             <Maximize size={17} />
           </IconButton>
@@ -65,8 +66,8 @@ function ExplodeSlider() {
   const explode = useSplit((s) => s.explode);
   const setExplode = useSplit((s) => s.setExplode);
   return (
-    <div className="absolute bottom-4 left-1/2 flex w-[min(420px,80%)] -translate-x-1/2 items-center gap-3 rounded-xl bg-white/95 px-4 py-2.5 shadow-panel">
-      <label htmlFor="split-explode" className="text-[12px] font-semibold text-[#344054]">
+    <div className="absolute bottom-4 left-1/2 flex w-[min(420px,80%)] -translate-x-1/2 items-center gap-3 rounded-xl bg-panel/95 px-4 py-2.5 shadow-panel">
+      <label htmlFor="split-explode" className="text-[12px] font-semibold text-ink-2">
         Explode
       </label>
       <input
@@ -76,7 +77,7 @@ function ExplodeSlider() {
         max={100}
         value={Math.round(explode * 100)}
         onChange={(e) => setExplode(Number(e.target.value) / 100)}
-        className="flex-1 accent-[#2463eb]"
+        className="flex-1 accent-brand"
         data-testid="split-explode"
       />
       <span className="w-9 text-right text-[12px] tabular-nums text-muted">{Math.round(explode * 100)}%</span>
@@ -292,7 +293,7 @@ function PlateMeshes({ parts }: { parts: SplitPart[] }) {
         const o = plateOffset(plate.index, plateSettings);
         return (
           <mesh key={plate.index} geometry={plateGeom} position={[o[0] + plateSettings.width / 2, o[1] + plateSettings.depth / 2, -0.41]}>
-            <meshStandardMaterial color="#e4e8ef" roughness={0.9} />
+            <meshStandardMaterial color={WORKSPACE_COLORS.dark.plate} roughness={0.9} />
           </mesh>
         );
       })}

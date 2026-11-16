@@ -16,7 +16,7 @@ export function RightPanel() {
   const issues = !partsMode ? doc.issues : step === 'split' ? split!.issues : [...split!.issues, ...(connected?.issues ?? [])];
   return (
     <aside
-      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px]"
+      className="flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-panel xl:w-[300px]"
       aria-label="Details"
       data-testid="split-right"
     >
@@ -31,7 +31,7 @@ function Dimensions({ box }: { box: THREE.Box3 }) {
   return (
     <div className="grid grid-cols-3 gap-1.5" data-testid="split-dimensions">
       {(['X', 'Y', 'Z'] as const).map((axis, i) => (
-        <div key={axis} className="rounded-lg bg-[#f5f7fb] px-2 py-1.5 text-center">
+        <div key={axis} className="rounded-lg bg-canvas px-2 py-1.5 text-center">
           <div className={`text-[11px] font-semibold ${['text-axis-x', 'text-axis-y', 'text-axis-z'][i]}`}>{axis}</div>
           <div className="text-[13px] font-medium tabular-nums text-ink">{formatMm(size.getComponent(i))}</div>
         </div>
@@ -78,13 +78,13 @@ function Selection() {
       <Dimensions box={box} />
       <dl className="mt-3 grid grid-cols-[88px_1fr] gap-x-2 gap-y-1 text-[12px]">
         <dt className="text-muted">Triangles</dt>
-        <dd className="font-medium text-[#344054]">{formatCount(component.triangleCount)}</dd>
+        <dd className="font-medium text-ink-2">{formatCount(component.triangleCount)}</dd>
         <dt className="text-muted">Surface</dt>
-        <dd className="font-medium text-[#344054]">{formatArea(component.area)}</dd>
+        <dd className="font-medium text-ink-2">{formatArea(component.area)}</dd>
         <dt className="text-muted">Defined by</dt>
-        <dd className="break-words font-medium text-[#344054]">{material.sourceDefinition}</dd>
+        <dd className="break-words font-medium text-ink-2">{material.sourceDefinition}</dd>
         <dt className="text-muted">Found in</dt>
-        <dd className="font-medium text-[#344054]">
+        <dd className="font-medium text-ink-2">
           <ul>
             {names.slice(0, 6).map((n, i) => (
               <li key={i} className="truncate" title={n}>
@@ -104,7 +104,7 @@ function Selection() {
       <button
         type="button"
         onClick={() => useSplit.getState().isolate(component.materialId)}
-        className="mt-3 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+        className="mt-3 flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
       >
         <Focus size={15} /> Show only this colour
       </button>
@@ -113,7 +113,7 @@ function Selection() {
 }
 
 const ICON = { error: CircleAlert, warning: TriangleAlert, info: Info };
-const TONE = { error: 'text-red-600', warning: 'text-amber-600', info: 'text-brand' };
+const TONE = { error: 'text-red-600', warning: 'text-amber-600', info: 'text-brand-ink' };
 
 function Report({ issues, title }: { issues: ImportIssue[]; title: string }) {
   const order = { error: 0, warning: 1, info: 2 };
@@ -131,7 +131,7 @@ function Report({ issues, title }: { issues: ImportIssue[]; title: string }) {
           {sorted.map((issue, i) => {
             const Icon = ICON[issue.level];
             return (
-              <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-[#344054]" data-level={issue.level} data-code={issue.code}>
+              <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-ink-2" data-level={issue.level} data-code={issue.code}>
                 <Icon size={14} className={`mt-0.5 shrink-0 ${TONE[issue.level]}`} aria-label={issue.level} />
                 <span>{issue.message}</span>
               </li>
@@ -162,7 +162,7 @@ function PartInspector() {
         </h2>
         <p className="mb-1.5 text-[12px] text-muted">Assembled size (mm)</p>
         <Dimensions box={all} />
-        <p className={`mt-3 flex items-center gap-1.5 text-[12px] ${bad ? 'text-red-700' : 'text-[#067647]'}`}>
+        <p className={`mt-3 flex items-center gap-1.5 text-[12px] ${bad ? 'text-red-700' : 'text-emerald-700'}`}>
           {bad ? <CircleAlert size={14} /> : <CheckCircle size={14} />}
           {bad ? `${bad} part(s) are not closed solids` : 'Every part is a closed solid'}
         </p>
@@ -193,21 +193,21 @@ function PartInspector() {
       <Dimensions box={box} />
       <dl className="mt-3 grid grid-cols-[88px_1fr] gap-x-2 gap-y-1 text-[12px]">
         <dt className="text-muted">Volume</dt>
-        <dd className="font-medium text-[#344054]">{(Math.abs(part.report.volume) / 1000).toFixed(2)} cm³</dd>
+        <dd className="font-medium text-ink-2">{(Math.abs(part.report.volume) / 1000).toFixed(2)} cm³</dd>
         <dt className="text-muted">Triangles</dt>
-        <dd className="font-medium text-[#344054]">{formatCount(part.mesh.indices.length / 3)}</dd>
+        <dd className="font-medium text-ink-2">{formatCount(part.mesh.indices.length / 3)}</dd>
         <dt className="text-muted">Solid</dt>
-        <dd className={`font-medium ${part.report.watertight ? 'text-[#067647]' : 'text-red-700'}`}>
+        <dd className={`font-medium ${part.report.watertight ? 'text-emerald-700' : 'text-red-700'}`}>
           {part.report.watertight
             ? 'Closed and manifold'
             : `${part.report.boundaryEdges} open, ${part.report.nonManifoldEdges} non-manifold edges`}
         </dd>
         <dt className="text-muted">Pieces</dt>
-        <dd className="font-medium text-[#344054]">{part.report.shells}</dd>
+        <dd className="font-medium text-ink-2">{part.report.shells}</dd>
         {(pegs > 0 || sockets > 0) && (
           <>
             <dt className="text-muted">Connectors</dt>
-            <dd className="font-medium text-[#344054]">
+            <dd className="font-medium text-ink-2">
               {[pegs ? `${pegs} peg${pegs > 1 ? 's' : ''}` : '', sockets ? `${sockets} socket${sockets > 1 ? 's' : ''}` : '']
                 .filter(Boolean)
                 .join(', ')}
@@ -217,7 +217,7 @@ function PartInspector() {
         {joints.length > 0 && (
           <>
             <dt className="text-muted">Touches</dt>
-            <dd className="font-medium text-[#344054]">
+            <dd className="font-medium text-ink-2">
               <ul>
                 {joints.map((j) => (
                   <li key={j.jointId} className="truncate">

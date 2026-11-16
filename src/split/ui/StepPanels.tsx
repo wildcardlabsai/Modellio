@@ -38,7 +38,7 @@ export function partStatus(p: SplitPart): 'ok' | 'warn' | 'error' {
 }
 
 function StatusIcon({ status }: { status: 'ok' | 'warn' | 'error' }) {
-  if (status === 'ok') return <CircleCheck size={14} className="shrink-0 text-[#067647]" aria-label="ready to print" />;
+  if (status === 'ok') return <CircleCheck size={14} className="shrink-0 text-emerald-700" aria-label="ready to print" />;
   if (status === 'warn') return <TriangleAlert size={14} className="shrink-0 text-amber-600" aria-label="check this part" />;
   return <CircleAlert size={14} className="shrink-0 text-red-600" aria-label="not printable as is" />;
 }
@@ -69,7 +69,7 @@ export function PartsList() {
           Parts <span className="font-normal text-muted">({parts.length})</span>
         </h2>
         {hidden.length > 0 && (
-          <button type="button" onClick={showAllParts} className="text-[12px] font-medium text-brand hover:underline">
+          <button type="button" onClick={showAllParts} className="text-[12px] font-medium text-brand-ink hover:underline">
             Show all
           </button>
         )}
@@ -82,7 +82,7 @@ export function PartsList() {
           return (
             <li
               key={p.partId}
-              className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${isSel ? 'border-brand bg-brand-50' : 'border-transparent hover:bg-[#f9fafb]'}`}
+              className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${isSel ? 'border-brand bg-brand-50' : 'border-transparent hover:bg-canvas'}`}
               data-testid="split-part"
               data-status={partStatus(p)}
             >
@@ -110,7 +110,7 @@ export function PartsList() {
               <button
                 type="button"
                 onClick={() => togglePartHidden(p.partId)}
-                className="rounded-md p-1 text-muted hover:bg-white hover:text-ink"
+                className="rounded-md p-1 text-muted hover:bg-canvas hover:text-ink"
                 aria-label={`${isHidden ? 'Show' : 'Hide'} ${p.name}`}
                 aria-pressed={isHidden}
               >
@@ -139,7 +139,7 @@ export function SplitPanel() {
         <Toggle label="Keep objects separate" checked={o.keepObjectsSeparate} onChange={(v) => set({ keepObjectsSeparate: v })} />
         {hasPaint && <Toggle label="Split fine paint exactly" checked={o.exactPaint} onChange={(v) => set({ exactPaint: v })} />}
         <div className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-[13px] text-[#344054]" id="inlay-label">
+          <span className="text-[13px] text-ink-2" id="inlay-label">
             Inlay depth for thin colours
           </span>
           <div className="w-24">
@@ -232,7 +232,7 @@ export function ConnectPanel() {
               const cons = connected?.connectors.filter((c) => c.jointId === j.jointId) ?? [];
               const skip = connected?.skipped.find((x) => x.jointId === j.jointId);
               return (
-                <li key={j.jointId} className="rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]" data-testid="split-joint">
+                <li key={j.jointId} className="rounded-lg bg-canvas px-2.5 py-2 text-[12px]" data-testid="split-joint">
                   <p className="font-medium text-ink">
                     {name(j.partA)} ↔ {name(j.partB)}
                   </p>
@@ -308,7 +308,7 @@ export function ExportPanel() {
             const p = PLATE_PRESETS.find((x) => x.id === e.target.value);
             if (p) set({ width: p.width, depth: p.depth });
           }}
-          className="mb-2 mt-1 h-9 w-full rounded-lg border border-line bg-white px-2 text-[13px] text-ink"
+          className="mb-2 mt-1 h-9 w-full rounded-lg border border-line bg-panel px-2 text-[13px] text-ink"
         >
           {PLATE_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
@@ -378,7 +378,7 @@ export function ExportPanel() {
           {layout.plates.map((plate) => (
             <li
               key={plate.index}
-              className="flex items-center gap-2 rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]"
+              className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-[12px]"
               data-testid="split-plate"
             >
               <span
@@ -396,7 +396,7 @@ export function ExportPanel() {
               </span>
               <button
                 type="button"
-                className="rounded-md px-2 py-1 font-medium text-brand hover:bg-brand-50"
+                className="rounded-md px-2 py-1 font-medium text-brand-ink hover:bg-brand-50"
                 aria-label={`Download plate ${plate.index + 1} (${plate.name}) as 3MF`}
                 onClick={() =>
                   download(
@@ -439,7 +439,7 @@ export function ExportPanel() {
           {job?.kind === 'export' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download all (ZIP)
         </button>
         {done && (
-          <p className="mt-2 text-[12px] text-[#067647]" role="status">
+          <p className="mt-2 text-[12px] text-emerald-700" role="status">
             {done}
           </p>
         )}

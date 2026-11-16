@@ -135,7 +135,7 @@ export default function CookieStudio() {
       {mp.dialog}
       <div className="relative flex min-h-0 flex-1">
         <aside
-          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-white xl:w-[320px] ${paneClass(pane, 'tools')}`}
+          className={`flex w-[290px] shrink-0 flex-col border-r border-line bg-panel xl:w-[320px] ${paneClass(pane, 'tools')}`}
           aria-label="Cookie design"
           data-testid="cookie-left"
         >
@@ -160,11 +160,11 @@ export default function CookieStudio() {
             <button
               type="button"
               onClick={() => setView('3d')}
-              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-white shadow-panel"
+              className="absolute bottom-3 right-3 h-[180px] w-[240px] overflow-hidden max-md:h-[96px] max-md:w-[128px] rounded-xl border border-line bg-panel shadow-panel"
               aria-label="Show the 3D preview larger"
               data-testid="cookie-mini-preview"
             >
-              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-[#344054]">3D preview</span>
+              <span className="pointer-events-none absolute left-2 top-1.5 z-10 text-[11px] font-semibold text-ink-2">3D preview</span>
               <span className="pointer-events-none block h-full w-full">
                 <Preview3D />
               </span>
@@ -175,7 +175,7 @@ export default function CookieStudio() {
       </div>
       <MobilePaneTabs labels={{ tools: 'Templates & tools', canvas: 'Design', settings: 'Settings & export' }} />
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand">
+        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand-ink">
           Drop an SVG or picture to add it to the cookie
         </div>
       )}
@@ -468,13 +468,13 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
   const body = (p: CookiePart) => ({ id: p.id, name: p.name, color: PART_COLOURS[p.id], mesh: p.mesh, watertight: p.watertight });
   return (
     <aside
-      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-white xl:w-[300px] ${paneClass(pane, 'settings')}`}
+      className={`flex w-[264px] shrink-0 flex-col overflow-y-auto border-l border-line bg-panel xl:w-[300px] ${paneClass(pane, 'settings')}`}
       aria-label="Cookie settings and result"
       data-testid="cookie-right"
     >
       <section className={section} aria-labelledby="cookie-result-heading">
         <h2 id="cookie-result-heading" className={`${heading} flex items-center gap-2`}>
-          Your cookie {building && <Loader2 size={14} className="animate-spin text-brand" aria-label="updating" />}
+          Your cookie {building && <Loader2 size={14} className="animate-spin text-brand-ink" aria-label="updating" />}
         </h2>
         {error && (
           <p role="alert" className="flex gap-2 rounded-lg bg-red-50 p-2 text-[12px] text-red-800" data-testid="cookie-error">
@@ -490,7 +490,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
               {result.parts.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center gap-2 rounded-lg bg-[#f9fafb] px-2.5 py-2 text-[12px]"
+                  className="flex items-center gap-2 rounded-lg bg-canvas px-2.5 py-2 text-[12px]"
                   data-testid="cookie-part"
                   data-part={p.id}
                 >
@@ -500,13 +500,13 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
                     <span className="text-muted">{p.size.map((v) => v.toFixed(1)).join(' × ')} mm</span>
                   </span>
                   {p.watertight ? (
-                    <CircleCheck size={14} className="shrink-0 text-[#067647]" aria-label="closed solid" />
+                    <CircleCheck size={14} className="shrink-0 text-emerald-700" aria-label="closed solid" />
                   ) : (
                     <CircleAlert size={14} className="text-red-600" aria-label="not a closed solid" />
                   )}
                   <button
                     type="button"
-                    className="rounded-md px-1.5 py-1 font-medium text-brand hover:bg-brand-50"
+                    className="rounded-md px-1.5 py-1 font-medium text-brand-ink hover:bg-brand-50"
                     aria-label={`Download ${p.name} as STL`}
                     onClick={() =>
                       downloadBytes(new Uint8Array(writeBinaryStl([body(p)])), `${slugify(designName())}-${p.id}.stl`, 'model/stl')
@@ -528,7 +528,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
             ))}
             {result.notes.map((n) => (
               <p key={n} className="mt-2 flex gap-2 text-[12px] leading-relaxed text-muted">
-                <Info size={14} className="mt-0.5 shrink-0 text-brand" /> {n}
+                <Info size={14} className="mt-0.5 shrink-0 text-brand-ink" /> {n}
               </p>
             ))}
           </>
@@ -546,7 +546,7 @@ function RightPanel({ openInDesign }: { openInDesign: () => void }) {
             <button
               type="button"
               onClick={openInDesign}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+              className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
             >
               <PencilRuler size={16} /> Open in Design Studio
             </button>

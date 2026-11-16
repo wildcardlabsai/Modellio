@@ -97,7 +97,7 @@ export default function SplitStudio() {
       </div>
       <ImportProgress />
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand">
+        <div className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand bg-brand-50/80 text-[15px] font-semibold text-brand-ink">
           Drop the 3MF file to import it
         </div>
       )}
@@ -197,17 +197,17 @@ function JobProgress() {
   const pct = Math.round(job.fraction * 100);
   return (
     <div
-      className="absolute left-1/2 top-4 z-20 flex w-[min(92%,360px)] -translate-x-1/2 items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-float"
+      className="absolute left-1/2 top-4 z-20 flex w-[min(92%,360px)] -translate-x-1/2 items-center gap-3 rounded-xl bg-panel px-4 py-3 shadow-float"
       role="status"
       data-testid="split-job"
     >
-      <Loader2 size={16} className="shrink-0 animate-spin text-brand" />
+      <Loader2 size={16} className="shrink-0 animate-spin text-brand-ink" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-ink">
           {job.stage} · {pct}%
         </p>
         <div
-          className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#eef1f6]"
+          className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stage"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -220,7 +220,7 @@ function JobProgress() {
       <button
         type="button"
         onClick={() => useSplit.getState().cancelJob()}
-        className="rounded-md px-2 py-1 text-[12px] font-medium text-[#344054] hover:bg-[#f2f4f7]"
+        className="rounded-md px-2 py-1 text-[12px] font-medium text-ink-2 hover:bg-canvas"
       >
         Cancel
       </button>
@@ -251,10 +251,10 @@ function EmptyState() {
   return (
     <div className="absolute inset-0 flex items-center justify-center p-6">
       <div
-        className="w-full max-w-md rounded-2xl border-2 border-dashed border-[#c9d1de] bg-white/90 p-8 text-center shadow-panel"
+        className="w-full max-w-md rounded-2xl border-2 border-dashed border-line-strong bg-panel/90 p-8 text-center shadow-panel"
         data-testid="split-empty"
       >
-        <FileUp size={32} className="mx-auto mb-3 text-brand" />
+        <FileUp size={32} className="mx-auto mb-3 text-brand-ink" />
         <h2 className="mb-1 text-[16px] font-semibold text-ink">Import a multi-colour 3MF</h2>
         <p className="mb-5 text-[13px] leading-relaxed text-muted">
           Drop a .3mf file here, or choose one. Files stay on this device — nothing is uploaded.
@@ -270,7 +270,7 @@ function EmptyState() {
           <button
             type="button"
             onClick={openSample}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line px-4 text-[14px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-line px-4 text-[14px] font-medium text-ink-2 hover:bg-canvas"
           >
             <Sparkles size={16} /> Try a sample
           </button>
@@ -287,15 +287,15 @@ function ImportProgress() {
   const pct = Math.round(importing.fraction * 100);
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-navy/30" data-testid="split-progress">
-      <div role="status" aria-live="polite" className="w-[min(92vw,380px)] rounded-2xl bg-white p-5 shadow-float">
+      <div role="status" aria-live="polite" className="w-[min(92vw,380px)] rounded-2xl bg-panel p-5 shadow-float">
         <div className="mb-1 flex items-center gap-2 text-[14px] font-semibold text-ink">
-          <Loader2 size={16} className="animate-spin text-brand" /> Importing {importing.fileName}
+          <Loader2 size={16} className="animate-spin text-brand-ink" /> Importing {importing.fileName}
         </div>
         <p className="mb-3 text-[12px] text-muted">
           {importing.stage} · {pct}%
         </p>
         <div
-          className="mb-4 h-2 overflow-hidden rounded-full bg-[#eef1f6]"
+          className="mb-4 h-2 overflow-hidden rounded-full bg-stage"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -307,7 +307,7 @@ function ImportProgress() {
         <button
           type="button"
           onClick={cancel}
-          className="h-9 w-full rounded-lg border border-line text-[13px] font-medium text-[#344054] hover:bg-[#f9fafb]"
+          className="h-9 w-full rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-canvas"
         >
           Cancel import
         </button>

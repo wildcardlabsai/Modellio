@@ -16,6 +16,14 @@
   --color-ink: #101828;
   /* Semantic surfaces and text (light by default; the Design Studio switches them to dark below). */
   --color-panel: #ffffff;
+  /* A raised surface inside a panel (cards, wells). */
+  --color-panel-2: #f8fafc;
+  /* Around a maker's 2D artboard. */
+  --color-stage: #eef1f6;
+  /* The printable artboard itself stays light in every theme, so colours read true. */
+  --color-artboard: #faf9f6;
+  /* Secondary accent (electric blue). */
+  --color-accent-2: #2563eb;
   --color-ink-2: #344054;
   --color-ink-3: #475467;
   --color-line-strong: #c9d2e0;
@@ -112,6 +120,10 @@ input[type='number']::-webkit-outer-spin-button {
   --color-brand-100: rgb(124 58 237 / 0.3);
   --color-brand-ink: #b8a3ff;
   --shadow-float: 0 2px 8px rgb(0 0 0 / 0.35), 0 16px 40px rgb(0 0 0 / 0.45);
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.3);
+  --color-panel-2: #172042;
+  --color-stage: #0d1430;
+  --color-accent-2: #60a5fa;
   background: var(--color-canvas);
   color: var(--color-ink);
 }

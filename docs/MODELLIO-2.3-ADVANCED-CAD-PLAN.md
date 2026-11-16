@@ -525,6 +525,31 @@ Built in five increments (3a–3e), each tested, committed and pushed.
 - Split Studio projects keep the split parts and settings, not the source 3MF file, so they reopen in the Design Studio rather than as an editable split session.
 - Cloud projects get local recovery drafts only.
 
+### Stage 4D: one visual system (done)
+
+| Item | Result |
+| --- | --- |
+| Theme | The Design Studio's dark theme is now the application theme: every Maker, Split Studio and the shared dialogs use the same tokens. One token source, `src/styles/index.css`. The landing page and dashboard keep their approved night look. |
+| Tokens | New tokens `panel-2`, `stage`, `artboard` and `accent-2`. A Maker's printable **artboard stays light** in every theme so colours read true (as in the sketch editor); around it is the dark stage. |
+| Makers and Split | About 150 hard-coded interface colours are replaced with tokens: white panels, grey text and hovers, borders, success green. Brand-coloured text uses the readable `brand-ink` token. Content colours stay as they are: filament palettes, part colours, 3D materials and drawing on the artboard. |
+| 3D previews | Maker previews and Split Studio use the Design Studio's workspace colours (background, grid, build plate). Product shots stay transparent. |
+| Function | Every Maker keeps its layout and workflow. All Maker, Split, mobile and landing suites pass. |
+
+**Tests added:**
+- A guard unit test fails if a hard-coded hex interface colour or a plain-white panel appears in the Makers or Split Studio. The artboard drawing is the one allowlisted exception.
+- New `e2e-visual` suite, 112 checks: every Maker, Split Studio and the Design Studio, at desktop, laptop, tablet and phone sizes. For each it checks:
+  - the shared theme is applied
+  - no plain-white interface panels
+  - WCAG AA text contrast, measured from computed colours
+  - no sideways scrolling
+  - a screenshot is saved
+
+**Existing test changed:** `e2e-split` recognised empty space by the old light background colour. It now treats the dark, blue-dominant workspace background and grid as empty space, so the same pixel checks still run.
+
+**Limitations:**
+- The Makers' internal layouts are kept as they were (by design). This stage unified their look, not their structure.
+- Shared `Button`/`Swatches` components are used by the new dialogs; the Makers' existing controls were restyled through tokens rather than rewritten.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.
