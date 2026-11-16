@@ -24,6 +24,7 @@ import { entityPoints, solveSketch, tryConstraint } from '@/cad/sketch/solver';
 import { constraintRefs, describeConstraint, nameConstraints } from '@/cad/sketch/describe';
 import { cornerAt, extendAt, extendSpline, handleAt, mergePoints, offsetChain, trimAt, type EditResult } from '@/cad/sketch/edit';
 import { dimensionMarks, type DimensionMark } from '@/cad/sketch/dimensions';
+import { splineIssues } from '@/cad/sketch/splineCheck';
 import { sketchLoops, type ProfileOp } from '@/cad/sketch/profile';
 import type { SketchPlace } from './sketchSession';
 import { emptySketch, type Constraint, type Sketch, type SketchEntity, type SketchStatus } from '@/cad/sketch/types';
@@ -162,7 +163,10 @@ export function SketchEditor({
   const loops = useMemo(() => sketchLoops(sketch), [sketch]);
   // Revolves use only the part right of the Y axis (in both geometry engines).
   const leftOfAxis = useMemo(() => loops.loops.some((l) => l.some((p) => p[0] < -1e-6)), [loops]);
-  const useProblem = useMemo(() => (use ? use.check(sketch) : null), [use, sketch]);
+  /** Splines that look fine but would not build (crossing, cusps, folded joins). */
+  const splineProblems = useMemo(() => splineIssues(sketch), [sketch]);
+  const [dragHint, setDragHint] = useState<string | null>(null);
+  const useProblem = useMemo(() => (use ? (splineProblems[0]?.message ?? use.check(sketch)) : null), [use, sketch, splineProblems]);
   // How many bodies share this body's standalone sketch.
   const shared = useEditor((st) => {
     const o = objectId ? st.doc.objects[objectId] : undefined;
@@ -461,15 +465,27 @@ export function SketchEditor({
           return [p.x, p.y];
         })()
       : [snapGrid(x), snapGrid(y)];
+    const candidate = solveSketch(
+      { ...sketch, points: sketch.points.map((p) => (p.id === d.id ? { ...p, x: sx, y: sy } : p)) },
+      handles.has(d.id) ? [d.id, handles.get(d.id)!] : [d.id],
+    ).sketch;
+    // A drag that would leave a spline crossing itself, doubling back or folding a smooth join is
+    // held at the last good position (the curve would look fine but fail to build).
+    const worse = splineIssues(candidate).filter((i) => !splineProblems.some((o) => o.id === i.id && o.kind === i.kind));
+    if (worse.length) {
+      setDragHint(worse[0].message);
+      return;
+    }
+    setDragHint(null);
     if (!d.moved) setPast((p) => [...p.slice(-99), sketch]);
     d.moved = true;
-    commit(
-      { ...sketch, points: sketch.points.map((p) => (p.id === d.id ? { ...p, x: sx, y: sy } : p)) },
-      { pinned: handles.has(d.id) ? [d.id, handles.get(d.id)!] : [d.id], transient: true },
-    );
+    setNotice(null);
+    setInfo(null);
+    setSketchRaw(candidate);
   };
   const onUp = () => {
     drag.current = null;
+    setDragHint(null);
   };
 
   const removeSelected = () => {
@@ -732,6 +748,14 @@ export function SketchEditor({
               onInvalid={(why) => setNotice(why)}
             />
           )}
+          {dragHint && (
+            <p
+              className="pointer-events-none absolute left-1/2 top-3 max-w-[70%] -translate-x-1/2 rounded-lg bg-amber-50 px-3 py-1.5 text-center text-[12px] text-amber-900 shadow"
+              data-testid="sketch-drag-hint"
+            >
+              {dragHint}
+            </p>
+          )}
           {editPreview && !editPreview.ok && (
             <p
               className="pointer-events-none absolute left-1/2 top-3 max-w-[70%] -translate-x-1/2 rounded-lg bg-amber-50 px-3 py-1.5 text-center text-[12px] text-amber-900 shadow"
@@ -775,7 +799,7 @@ export function SketchEditor({
               {loops.loops.length} closed outline{loops.loops.length === 1 ? '' : 's'}
               {loops.open ? ` · ${loops.open} open chain${loops.open === 1 ? '' : 's'} (not part of the solid)` : ''}
             </p>
-            {(loops.branches > 0 || loops.crossing || (!use && op.kind === 'revolve' && leftOfAxis)) && (
+            {(loops.branches > 0 || loops.crossing || splineProblems.length > 0 || (!use && op.kind === 'revolve' && leftOfAxis)) && (
               <ul className="mt-2 space-y-1 text-[12px] leading-snug text-amber-800" data-testid="sketch-warnings">
                 {loops.branches > 0 && (
                   <li>
@@ -784,6 +808,11 @@ export function SketchEditor({
                   </li>
                 )}
                 {loops.crossing && <li>Outlines cross each other or themselves; the solid may not be what you expect.</li>}
+                {[...new Set(splineProblems.map((p) => p.message))].map((m) => (
+                  <li key={m} className="font-medium text-red-700" data-testid="sketch-spline-problem">
+                    {m}
+                  </li>
+                ))}
                 {!use && op.kind === 'revolve' && leftOfAxis && (
                   <li>Part of the outline is left of the green Y axis. A revolve only uses the part to its right.</li>
                 )}
@@ -885,7 +914,8 @@ export function SketchEditor({
               <button
                 type="button"
                 onClick={() => void finish()}
-                disabled={!loops.loops.length}
+                disabled={!loops.loops.length || splineProblems.length > 0}
+                title={splineProblems.length ? 'Fix the spline problems listed above first.' : undefined}
                 className="mt-3 h-10 w-full rounded-lg bg-brand text-[14px] font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                 data-testid="sketch-finish"
               >

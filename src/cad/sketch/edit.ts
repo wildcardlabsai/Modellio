@@ -531,3 +531,39 @@ export function offsetChain(s: Sketch, entityIds: string[], distance: number, ne
     return { ok: false, reason: 'The offset is too big: the copy would cross itself.' };
   return finish(s, next, `Offset ${n} curve${n === 1 ? '' : 's'} by ${+Math.abs(distance).toFixed(3)} mm`);
 }
+
+/**
+ * A sketch scaled by fx along x and fy along y (for resizing a body that is made independent of
+ * its sketch). Lengths scale with uniform scaling; any constraint the scaled geometry no longer
+ * meets is removed, and its description returned.
+ */
+export function scaleSketch(s: Sketch, fx: number, fy: number): { sketch: Sketch; dropped: string[] } {
+  const uniform = Math.abs(fx - fy) < 1e-9;
+  const scaled: Sketch = {
+    points: s.points.map((p) => ({ ...p, x: p.x * fx, y: p.y * fy })),
+    entities: s.entities.map((e) => (e.kind === 'circle' ? { ...e, r: e.r * Math.sqrt(Math.abs(fx * fy)) } : e)),
+    constraints: [],
+  };
+  const holds = (c: Sketch['constraints'][number]) => {
+    const r = solveSketch({ ...scaled, constraints: [c] });
+    if (r.status.kind === 'conflicting') return false;
+    return r.sketch.points.every((p, i) => Math.hypot(p.x - scaled.points[i].x, p.y - scaled.points[i].y) < 1e-6);
+  };
+  const kept: Sketch['constraints'] = [];
+  const dropped: string[] = [];
+  for (const c of s.constraints) {
+    const lengthLike = c.kind === 'distance' || c.kind === 'pointDistance' || c.kind === 'radius' || c.kind === 'pointLineDistance';
+    // Positions scale on their own axis even when the scaling is not uniform.
+    const candidate =
+      c.kind === 'pointX'
+        ? { ...c, value: c.value * fx }
+        : c.kind === 'pointY'
+          ? { ...c, value: c.value * fy }
+          : uniform && lengthLike
+            ? { ...c, value: c.value * fx }
+            : c;
+    if (holds(candidate)) kept.push(candidate);
+    else dropped.push(describeConstraint(c));
+  }
+  return { sketch: { ...scaled, constraints: kept }, dropped };
+}

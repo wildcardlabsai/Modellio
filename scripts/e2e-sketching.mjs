@@ -623,6 +623,97 @@ check(
     reopened.schemaVersion === 3,
 );
 
+// 9. Safeguards (Stage 4B): a spline can't be dragged into a loop; a sketched body can't be stretched.
+await S(() => window.modellio.store.getState().select([]));
+await page.getByTestId('new-sketch').click();
+await editor().waitFor();
+await tool('Spline');
+for (const [x, y] of [
+  [0, 0],
+  [15, 12],
+  [30, 0],
+])
+  await click(x, y);
+await page.keyboard.press('Escape');
+await tool('Select');
+let hs9 = await handlesNow();
+const endHandle = nearest(hs9, 25, 2);
+const target9 = [0, 25];
+{
+  const [a, b] = await toScreen(endHandle[0], endHandle[1]);
+  const [c, e] = await toScreen(target9[0], target9[1]);
+  await page.mouse.move(a, b);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(a + ((c - a) * i) / 10, b + ((e - b) * i) / 10);
+  const hint =
+    (await page
+      .getByTestId('sketch-drag-hint')
+      .textContent()
+      .catch(() => '')) ?? '';
+  check('59. Dragging a handle into a loop is held back, with the reason', /loops over itself|doubles back/.test(hint), hint);
+  await page.mouse.up();
+}
+hs9 = await handlesNow();
+const moved = nearest(hs9, target9[0], target9[1]);
+check(
+  '60. The spline stays valid (the handle stopped short of the loop)',
+  Math.hypot(moved[0] - target9[0], moved[1] - target9[1]) > 1 && (await page.getByTestId('sketch-spline-problem').count()) === 0,
+);
+await page.getByRole('button', { name: 'Close sketch without saving' }).click();
+
+// A body made from a rectangle sketch: stretching it is refused and explained.
+const sb = await S(() =>
+  window.modellio.store.getState().saveSketch(
+    null,
+    {
+      points: [
+        { id: 'a', x: 0, y: 0 },
+        { id: 'b', x: 30, y: 0 },
+        { id: 'c', x: 30, y: 10 },
+        { id: 'd', x: 0, y: 10 },
+      ],
+      entities: [
+        { id: 'l1', kind: 'line', a: 'a', b: 'b' },
+        { id: 'l2', kind: 'line', a: 'b', b: 'c' },
+        { id: 'l3', kind: 'line', a: 'c', b: 'd' },
+        { id: 'l4', kind: 'line', a: 'd', b: 'a' },
+      ],
+      constraints: [],
+    },
+    { kind: 'extrude', depth: 4, angle: 360 },
+  ),
+);
+await S((id) => window.modellio.store.getState().select([id]), sb);
+await page.getByRole('tab', { name: /^Properties/ }).click();
+const sizeX = page.getByLabel('Size X', { exact: false }).first();
+await sizeX.fill('45');
+await sizeX.press('Enter');
+await page.getByTestId('sketch-resize-dialog').waitFor();
+check(
+  '61. Stretching a sketched body is refused, with the reason',
+  (await S((id) => window.modellio.store.getState().doc.objects[id].size[0], sb)) === 30 &&
+    /stop matching that sketch/.test((await page.getByRole('dialog').textContent()) ?? ''),
+);
+await page.getByTestId('sketch-resize-independent').click();
+const sbAfter = await until(() =>
+  S((id) => {
+    const o = window.modellio.store.getState().doc.objects[id];
+    return Math.abs(o.size[0] - 45) < 1e-6 && o;
+  }, sb),
+);
+check(
+  '62. “Make independent and resize” resizes it with its own scaled sketch',
+  !!sbAfter && Math.max(...sbAfter.sketch.points.map((p) => p.x)) === 45,
+);
+const sizeZ = page.getByLabel('Size Z', { exact: false }).first();
+await sizeZ.fill('9');
+await sizeZ.press('Enter');
+check(
+  '63. Its height is its extrude depth and changes freely',
+  (await S((id) => window.modellio.store.getState().doc.objects[id].params.depth, sb)) === 9 &&
+    (await page.getByTestId('sketch-resize-dialog').count()) === 0,
+);
+
 check('No unexpected runtime errors in console', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r.ok);

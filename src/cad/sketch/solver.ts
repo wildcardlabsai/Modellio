@@ -27,6 +27,8 @@ const sub = (a: V2, b: V2): V2 => [a[0] - b[0], a[1] - b[1]];
 const len = (a: V2) => Math.hypot(a[0], a[1]);
 const cross = (a: V2, b: V2) => a[0] * b[1] - a[1] * b[0];
 const dot = (a: V2, b: V2) => a[0] * b[0] + a[1] * b[1];
+/** The angle (−π, π] between `u` and the reverse of `w`: 0 when they point in opposite directions. */
+const oppositeAngle = (u: V2, w: V2) => Math.atan2(cross(u, w), -dot(u, w));
 const unit = (a: V2): V2 => {
   const n = len(a) || 1;
   return [a[0] / n, a[1] / n];
@@ -61,17 +63,15 @@ function equations(s: Sketch): Equation[] {
     const e = ent(id);
     return e && (e.kind === 'arc' || e.kind === 'circle') ? g.P(e.c) : [0, 0];
   };
-  /** Direction of a curve at one of its end points (or anywhere along a line). */
-  const tangentAt = (g: Getter, id: string, at: string): V2 => {
+  /** The direction a curve leaves point `at` (one of its ends) in. */
+  const awayFrom = (g: Getter, id: string, at: string): V2 => {
     const e = ent(id);
     if (!e) return [1, 0];
-    if (e.kind === 'line') return sub(g.P(e.b), g.P(e.a));
-    if (e.kind === 'arc' || e.kind === 'circle') {
-      const r = sub(g.P(at), g.P(e.c));
-      return [-r[1], r[0]];
-    }
-    // Bézier: leaving a along c1 − a, arriving at b along b − c2.
-    return at === e.a ? sub(g.P(e.c1), g.P(e.a)) : sub(g.P(e.b), g.P(e.c2));
+    if (e.kind === 'line') return e.a === at ? sub(g.P(e.b), g.P(e.a)) : sub(g.P(e.a), g.P(e.b));
+    if (e.kind === 'bezier') return e.a === at ? sub(g.P(e.c1), g.P(e.a)) : sub(g.P(e.c2), g.P(e.b));
+    // Arcs run counter-clockwise from a to b: leaving a goes counter-clockwise, leaving b clockwise.
+    const r = sub(g.P(at), g.P((e as { c: string }).c));
+    return e.kind === 'arc' && e.b === at ? [r[1], -r[0]] : [-r[1], r[0]];
   };
 
   const out: Equation[] = [];
@@ -145,8 +145,9 @@ function equations(s: Sketch): Equation[] {
         const pts = [...ptsOf(c.e1), ...ptsOf(c.e2)];
         const circ = [...circlesOf(c.e1), ...circlesOf(c.e2)];
         if (c.at) {
-          // At a shared end point: the two directions line up.
-          eq(pts, circ, (g) => [cross(unit(tangentAt(g, c.e1, c.at!)), unit(tangentAt(g, c.e2, c.at!)))]);
+          // At a shared end point: the curve carries straight on (each one's direction away from
+          // the point is the reverse of the other's), not doubling back into a cusp.
+          eq(pts, circ, (g) => [oppositeAngle(awayFrom(g, c.e1, c.at!), awayFrom(g, c.e2, c.at!))]);
         } else if ((k1 === 'line') !== (k2 === 'line')) {
           // A line tangent to an arc or circle: the centre is one radius from the line.
           const [l, k] = k1 === 'line' ? [c.e1, c.e2] : [c.e2, c.e1];
@@ -217,9 +218,12 @@ function equations(s: Sketch): Equation[] {
         });
         break;
       case 'smooth':
+        // The two handles point in opposite directions from the anchor (a straight line through
+        // it). Measured as the angle between one and the reverse of the other, so handles folded
+        // onto the same side (a cusp that only looks smooth) do not count as solved.
         eq([c.point, c.h1, c.h2], [], (g) => {
           const p = g.P(c.point);
-          return [cross(unit(sub(g.P(c.h1), p)), unit(sub(g.P(c.h2), p)))];
+          return [oppositeAngle(sub(g.P(c.h1), p), sub(g.P(c.h2), p))];
         });
         break;
     }

@@ -60,6 +60,9 @@ import type { Sketch } from '@/cad/sketch/types';
 import { placeOnUndersideDraft, type UndersideMode } from '@/cad/underside';
 import type { CombineMode, Frame, PlaneId, RefPlane, SketchId, SketchPlacement, SurfaceFinish, TextContent } from '@/types/document';
 import { guardPlacedBodies, placeBodiesDraft, planeUsers } from '@/cad/sketchPlacement';
+import { guardSketchBodies, sketchControlled, type BlockedResize } from '@/cad/sketchBodies';
+import { scaleSketch } from '@/cad/sketch/edit';
+import { splineIssues } from '@/cad/sketch/splineCheck';
 import { planeFrame } from '@/cad/placement';
 import { addSketchRecordDraft, forkSketchLinksDraft, sketchRecords, sketchUsers } from '@/cad/sketchRecords';
 import { matrixToTransform } from '@/cad/transforms/transform';
@@ -117,6 +120,15 @@ export interface EditorState {
   setReadOnly: (v: boolean) => void;
   /** Short message for the UI (e.g. why an operation is unavailable). */
   notice: { text: string; seq: number } | null;
+  /** A resize refused because it would stretch a body away from the sketch that controls it (shown as a dialog). */
+  blockedResize: BlockedResize | null;
+  clearBlockedResize: () => void;
+  /**
+   * Resize a sketch-controlled body anyway by giving it its own copy of the sketch, scaled to the
+   * new size (it is no longer linked to or placed by the original). One undo step; dimensions the
+   * scaling breaks are removed and named.
+   */
+  resizeIndependent: (id: ObjectId, size: Vec3) => Promise<boolean>;
 
   // --- generic mutation API ---
   /** Apply a recorded (undoable) change. Inside a transaction it is folded into the transaction. */
@@ -335,6 +347,19 @@ export const useEditor = create<EditorState>()((set, get) => {
     }
     return g.doc === next ? next : g.doc;
   };
+  /**
+   * Every change passes these checks before it is kept: bodies that sit on a placed sketch stay
+   * put, and bodies whose outline comes from a sketch are not stretched away from it.
+   */
+  const afterChange = (prev: ModelDocument, next: ModelDocument): ModelDocument => {
+    if (next === prev) return next;
+    const s = guardSketchBodies(prev, next);
+    if (s.blocked) {
+      if (!get().blockedResize) set({ blockedResize: s.blocked });
+      return prev;
+    }
+    return guardPlaced(prev, s.doc);
+  };
   /** An undo step that is allowed to move placed bodies (it is what places them). */
   const applyPlacing = (label: string, recipe: Recipe) => {
     placing = true;
@@ -426,6 +451,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     lastAction: null,
     actionSeq: 0,
     notice: null,
+    blockedResize: null,
+    clearBlockedResize: () => set({ blockedResize: null }),
     readOnly: false,
     units: (() => {
       try {
@@ -451,7 +478,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         return;
       }
       const { doc, history, transaction } = get();
-      const next = guardPlaced(doc, produce(doc, recipe));
+      const next = afterChange(doc, produce(doc, recipe));
       if (next === doc) return;
       if (transaction) {
         set({ doc: next });
@@ -472,7 +499,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     applyTransient: (recipe) => {
       if (get().readOnly) return;
       const { doc } = get();
-      const next = guardPlaced(doc, produce(doc, recipe));
+      const next = afterChange(doc, produce(doc, recipe));
       if (next !== doc) set({ doc: next });
     },
 
@@ -938,6 +965,11 @@ export const useEditor = create<EditorState>()((set, get) => {
         refuseReadOnly();
         return null;
       }
+      const bad = splineIssues(sketch);
+      if (bad.length) {
+        get().notify(`${bad[0].message} Nothing was built.`);
+        return null;
+      }
       const k = await initKernel();
       const mesh = buildProfileMesh(k, sketch, op);
       if (!mesh) {
@@ -1002,6 +1034,11 @@ export const useEditor = create<EditorState>()((set, get) => {
         return false;
       }
       if (!sketchRecords(get().doc)[sketchId]) return false;
+      const bad = splineIssues(sketch);
+      if (bad.length) {
+        get().notify(`${bad[0].message} The sketch was not saved.`);
+        return false;
+      }
       const users = await rebuildUsers(sketchId, sketch);
       applyPlacing('Edit sketch', (d) => writeSketch(d, sketchId, sketch, users));
       reportFailed(users.failed);
@@ -1034,6 +1071,39 @@ export const useEditor = create<EditorState>()((set, get) => {
       get().apply('Delete sketch', (d) => {
         if (d.sketches) delete d.sketches[sketchId];
       });
+    },
+
+    resizeIndependent: async (id, size) => {
+      const o = get().doc.objects[id];
+      if (!sketchControlled(get().doc, o) || !o.sketch) return false;
+      const revolve = (o.params.op ?? 0) >= 1;
+      // Sketch x → body X; sketch y → body Y for an extrude, body Z (height) for a revolve.
+      const f = [size[0] / o.size[0], revolve ? size[2] / o.size[2] : size[1] / o.size[1]];
+      const { sketch, dropped } = scaleSketch(o.sketch, f[0], f[1]);
+      const op: ProfileOp = {
+        kind: revolve ? 'revolve' : 'extrude',
+        depth: revolve ? (o.params.depth ?? 5) : size[2],
+        angle: o.params.angle ?? 360,
+      };
+      const k = await initKernel();
+      const mesh = buildProfileMesh(k, sketch, op);
+      if (!mesh) {
+        get().notify('At that size the outline no longer closes, so nothing was changed.');
+        return false;
+      }
+      const ext = meshDataBounds(mesh).getSize(new THREE.Vector3());
+      applyPlacing('Make independent and resize', (d) => {
+        forkSketchLinksDraft(d, [id]);
+        const t = d.objects[id] as ShapeObject;
+        t.sketch = sketch;
+        if (t.sketchId && d.sketches?.[t.sketchId]) d.sketches[t.sketchId].sketch = sketch;
+        t.params = { ...t.params, depth: op.depth };
+        t.size = [roundTo(ext.x), roundTo(ext.y), roundTo(ext.z)];
+      });
+      get().notify(
+        `${o.name} now has its own sketch, resized.${dropped.length ? ` Dimensions that no longer hold were removed: ${dropped.join(', ')}.` : ''}`,
+      );
+      return true;
     },
 
     addPlane: (base, offset = 0, tilt = 0) => {

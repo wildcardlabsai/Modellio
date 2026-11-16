@@ -34,6 +34,7 @@ import { SharedBanner } from '@/components/layout/SharedBanner';
 import { TEMPLATES } from '@/templates/templates';
 import { Tour, useFirstRunTour } from '@/components/onboarding/Tour';
 import { useGuides } from '@/viewport/guides';
+import { SketchResizeDialog } from '@/components/sketch/SketchResizeDialog';
 import { FacePickBanner } from '@/components/sketch/FacePickBanner';
 import { watchAttachments } from '@/cad/sketch/attachments';
 import { useEditor } from '@/store/editorStore';
@@ -267,6 +268,7 @@ function DesignStudio({ panel, choosePanel, compact, leftOpen, inspectorOpen, vi
           {!compact && <HistoryTimeline />}
           <SketchHost />
           <FacePickBanner />
+          <SketchResizeDialog />
         </main>
         {(!compact || inspectorOpen) && (
           <div className={compact ? 'absolute bottom-0 right-0 top-0 z-30 flex shadow-float' : 'contents'} data-testid="inspector-panel">

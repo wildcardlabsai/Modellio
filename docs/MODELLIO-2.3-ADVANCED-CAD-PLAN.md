@@ -459,6 +459,42 @@ Built in five increments (3a–3e), each tested, committed and pushed.
 - A body built from a placed sketch can still be resized; its size then no longer matches the sketch.
 - The editing tools' icons show their names only on wide screens; tooltips always do.
 
+### Stage 4: project workflow, unified design system and assemblies (approved plan)
+
+**Decisions taken with the user:**
+- **Explicit save with recovery.** Edits go continuously to a recovery draft; the project itself changes only on Save. New or Open with unsaved work asks Save / Discard / Cancel. After a refresh, recovery offers Restore or Discard.
+- **Maker projects: one project, two views.** Opening a Maker project in Design Studio opens that same project (same id and name, Maker settings kept). Going back to the Maker warns before regenerating over Studio edits; the edited version is kept in version history.
+
+**Findings from the audit:**
+- **Merge bug.** The Makers' "Open a copy in Design Studio" appends the parts to whatever design is open, and autosave then writes them into it.
+- **Maker state ignores projects.** Maker working state lives in localStorage regardless of project.
+- **Split Studio has no project saving.**
+- **Switching projects leaks state.** About a dozen per-project stores are never reset (sketch session, feature tool, face pick, hover, guides, inspector tab, tool, camera frame…).
+- **Components are not linked.** A component is a group flag; every copy is an independent deep copy. There are no instances, grounding, joints or exploded views in Design Studio.
+- **Visual system.** Tokens exist in one place, but the dark theme is scoped to Design Studio. The Makers have light panels with about 150 hard-coded UI colours, and there are few shared controls.
+
+**Order:**
+1. **4B:** Stage 3 safeguards (small, closes data-integrity holes first).
+2. **4C:** shared UI building blocks and the project lifecycle.
+3. **4D:** one visual system for the Makers and Split Studio.
+4. **4E:** linked components and assemblies (schema 4).
+5. **4F:** joints, limits, exploded views and the full regression.
+
+### Stage 4B: Stage 3 safeguards (done)
+
+| Item | Result |
+| --- | --- |
+| Bodies controlled by a sketch | A resize that would stretch a sketched body's outline (X/Y of an extrude, any axis of a revolve) is refused by a check every change passes through, so it applies to Inspector fields, resize handles and group scaling alike. A dialog explains why and offers **Edit sketch** or **Make independent and resize**. The latter is one undo step: the body gets its own copy of the sketch, scaled. Uniform scaling rescales its dimensions; uneven scaling removes the ones that no longer hold, and names them. Changing an extruded body's height is allowed and becomes its extrude depth, so it still matches the sketch. |
+| Smooth joins | The smooth constraint now requires the handles to point in opposite directions. Handles folded onto the same side (a cusp that only looks smooth) no longer count as solved. A tangent join at a shared point must carry straight on rather than double back. |
+| Invalid splines | `splineIssues` finds a Bézier that crosses itself, one that stops and doubles back (a cusp), and smooth joins that are folded or have a handle sitting on its anchor. A handle drag that would create one is held at the last valid position, with the reason shown. Such problems in a loaded sketch are listed, and Create/Update solid is blocked until they are fixed. The store refuses to build or save such sketches by any route. |
+| Fixed along the way | Dialogs took focus while the key that opened them was still being handled. An Enter that committed a field and opened a dialog went on to press the dialog's first button, closing it straight away. Focus now moves after the event, and `data-autofocus` chooses the button. |
+
+**Tests added:** 12 unit tests (`src/store/safeguards.test.ts`) and 5 browser checks in `e2e-sketching`.
+
+**Limitations:**
+- A group that contains sketched bodies cannot be scaled (refused and explained). Resize those bodies one at a time or through their sketches.
+- Non-uniform scaling turns a circle into a circle of the mean radius; sketches have no ellipses.
+
 ## 10. Implementation order
 
 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8, with a report and approval point after each stage.
